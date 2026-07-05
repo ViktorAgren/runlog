@@ -1,0 +1,70 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "runlog"
+version = "0.1.0"
+description = "Extract and locally store running fitness data from Strava and Apple Health."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "Viktor Ågren" }]
+keywords = [
+    "running",
+    "strava",
+    "apple-health",
+    "fitness",
+    "gpx",
+    "sqlite",
+]
+dependencies = [
+    "requests>=2.31",
+    "gpxpy>=1.6",
+    "python-dotenv>=1.0",
+    "matplotlib>=3.8",
+    "anthropic>=0.69",
+    "pydantic>=2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "black>=24.1",
+    "mypy>=1.8",
+    "ruff>=0.2",
+    "types-requests>=2.31",
+]
+
+[project.scripts]
+runlog = "runlog.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["runlog*"]
+
+[tool.setuptools.package-data]
+runlog = ["db/*.sql"]
+
+[tool.black]
+line-length = 88
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+files = ["runlog"]
+
+[[tool.mypy.overrides]]
+module = ["matplotlib.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+addopts = "--disable-warnings"
+testpaths = ["runlog", "tests"]
