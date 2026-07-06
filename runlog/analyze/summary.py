@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     from datetime import date
 
     from runlog.analyze.analytics import BestEffortProgression, PmcPoint, Trend
+    from runlog.analyze.anomaly import AnomalyReport
     from runlog.analyze.metrics import (
         BestEffort,
         BucketPace,
@@ -22,6 +23,11 @@ _MARKER_LABELS = {
     "vo2max": "VO2max",
     "resting_hr": "Resting HR",
     "hrv_sdnn": "HRV (SDNN)",
+    "spo2": "SpO2",
+    "sleep_hours": "Sleep (h)",
+    "hr_recovery_1min": "HR rec 1min",
+    "body_mass": "Body mass",
+    "walking_asymmetry": "Walk asym",
 }
 
 
@@ -143,4 +149,35 @@ def analytics_section(
         for effort in best_efforts:
             best_seconds = min(seconds for _, seconds in effort.progression)
             lines.append(f"{effort.label:<4} {_clock(best_seconds)}")
+    return "\n".join(lines)
+
+
+_ANOMALY_LABELS = {
+    "resting_hr": "Resting HR",
+    "hrv_sdnn": "HRV",
+    "spo2": "SpO2",
+    "sleep_hours": "Sleep",
+    "hr_recovery_1min": "HR recovery",
+    "efficiency_factor": "Efficiency",
+}
+
+
+def anomaly_section(report: AnomalyReport, recent: int = 8) -> str:
+    """Render the anomalies block: red-flag days plus recent off-readings."""
+    lines: list[str] = ["", "Anomalies (rolling-baseline)", "=" * 40]
+    if report.red_flag_days:
+        lines += ["Readiness red-flag days (>=2 signals)", "-" * 40]
+        for flag in report.red_flag_days[-recent:]:
+            names = ", ".join(_ANOMALY_LABELS.get(m, m) for m in flag.metrics)
+            lines.append(f"{flag.day}  {names}")
+    else:
+        lines.append("No readiness red-flag days.")
+
+    if report.performance:
+        lines += ["", "Off runs (slow for the effort)", "-" * 40]
+        for anomaly in report.performance[-recent:]:
+            lines.append(
+                f"{anomaly.day}  efficiency {anomaly.value:.2f} "
+                f"vs {anomaly.baseline:.2f} ({anomaly.deviation:+.1f} sigma)"
+            )
     return "\n".join(lines)

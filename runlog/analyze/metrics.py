@@ -23,7 +23,7 @@ from runlog.domain import ActivityId, Source
 
 if TYPE_CHECKING:
     import sqlite3
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
 _RUN_SPORTS = ("Run", "Running")
 _ROLLING_WEEKS = 4
@@ -44,6 +44,18 @@ _METRIC_RANGES: dict[str, tuple[float, float]] = {
     "vo2max": (20.0, 90.0),
     "resting_hr": (25.0, 120.0),
     "hrv_sdnn": (0.0, 200.0),
+    "spo2": (0.5, 1.0),
+    "hr_recovery_1min": (0.0, 100.0),
+    "body_mass": (30.0, 200.0),
+    "walking_speed": (0.0, 3.0),
+    "walking_asymmetry": (0.0, 1.0),
+    "walking_steadiness": (0.0, 1.0),
+    "physical_effort": (0.0, 20.0),
+    "sleep_hours": (0.0, 16.0),
+    "active_energy": (0.0, 10000.0),
+    "exercise_minutes": (0.0, 600.0),
+    "steps": (0.0, 100000.0),
+    "flights_climbed": (0.0, 500.0),
 }
 
 
@@ -67,6 +79,12 @@ class Run:
     tz: str | None = None
     avg_cadence: float | None = None
     elevation_gain_m: float | None = None
+    relative_effort: float | None = None
+    grade_adj_distance_m: float | None = None
+    avg_power_w: float | None = None
+    avg_stride_length_m: float | None = None
+    avg_vertical_oscillation_cm: float | None = None
+    avg_ground_contact_ms: float | None = None
 
     @property
     def distance_km(self) -> float | None:
@@ -94,11 +112,19 @@ def canonical_run_activities(
     De-duplicates by dropping the Apple twin of each link, discards junk
     activities shorter than ``min_distance_km`` (accidental/aborted starts), and
     optionally limits to runs on/after ``since``.
+
+    The kept Strava row inherits the running-dynamics fields (power, stride,
+    vertical oscillation, ground contact) from its dropped Apple twin, since
+    those live only on the Apple side.
     """
-    linked_apple = {
-        int(row["apple_activity_id"])
-        for row in conn.execute("SELECT apple_activity_id FROM activity_links")
+    twin_of = {
+        int(row["strava_activity_id"]): int(row["apple_activity_id"])
+        for row in conn.execute(
+            "SELECT strava_activity_id, apple_activity_id FROM activity_links"
+        )
     }
+    linked_apple = set(twin_of.values())
+    apple_dynamics = _apple_dynamics(conn, linked_apple)
     placeholders = ",".join("?" for _ in sports)
     conditions = [f"sport_type IN ({placeholders})"]
     params: list[object] = list(sports)
@@ -110,7 +136,10 @@ def canonical_run_activities(
     for row in conn.execute(
         f"""
         SELECT id, source, start_time_utc, tz, distance_m, moving_s,
-               avg_pace_s_per_km, avg_hr, max_hr, avg_cadence, elevation_gain_m
+               avg_pace_s_per_km, avg_hr, max_hr, avg_cadence, elevation_gain_m,
+               relative_effort, grade_adj_distance_m, avg_power_w,
+               avg_stride_length_m, avg_vertical_oscillation_cm,
+               avg_ground_contact_ms
         FROM activities
         WHERE {where}
         ORDER BY start_time_utc
@@ -122,6 +151,7 @@ def canonical_run_activities(
         distance_m = row["distance_m"]
         if distance_m is not None and distance_m / 1000 < min_distance_km:
             continue
+        twin = apple_dynamics.get(twin_of.get(int(row["id"]), -1), {})
         runs.append(
             Run(
                 activity_id=ActivityId(int(row["id"])),
@@ -135,9 +165,51 @@ def canonical_run_activities(
                 max_hr=row["max_hr"],
                 avg_cadence=row["avg_cadence"],
                 elevation_gain_m=row["elevation_gain_m"],
+                relative_effort=row["relative_effort"],
+                grade_adj_distance_m=row["grade_adj_distance_m"],
+                avg_power_w=_coalesce(row, twin, "avg_power_w"),
+                avg_stride_length_m=_coalesce(row, twin, "avg_stride_length_m"),
+                avg_vertical_oscillation_cm=_coalesce(
+                    row, twin, "avg_vertical_oscillation_cm"
+                ),
+                avg_ground_contact_ms=_coalesce(row, twin, "avg_ground_contact_ms"),
             )
         )
     return runs
+
+
+def _coalesce(row: sqlite3.Row, twin: dict[str, float], field: str) -> float | None:
+    """Row's own value for ``field``, else the linked Apple twin's."""
+    value: float | None = row[field]
+    return value if value is not None else twin.get(field)
+
+
+# Running-dynamics fields that exist only on the Apple side of a linked pair.
+_APPLE_DYNAMICS = (
+    "avg_power_w",
+    "avg_stride_length_m",
+    "avg_vertical_oscillation_cm",
+    "avg_ground_contact_ms",
+)
+
+
+def _apple_dynamics(
+    conn: sqlite3.Connection, apple_ids: set[int]
+) -> dict[int, dict[str, float]]:
+    """Map each linked Apple activity id to its non-null running-dynamics values."""
+    if not apple_ids:
+        return {}
+    placeholders = ",".join("?" for _ in apple_ids)
+    fields = ", ".join(_APPLE_DYNAMICS)
+    return {
+        int(row["id"]): {
+            field: row[field] for field in _APPLE_DYNAMICS if row[field] is not None
+        }
+        for row in conn.execute(
+            f"SELECT id, {fields} FROM activities WHERE id IN ({placeholders})",
+            tuple(apple_ids),
+        )
+    }
 
 
 def _week_start(moment: datetime) -> date:
@@ -315,6 +387,51 @@ def pace_by_weekday(runs: Sequence[Run]) -> list[list[float]]:
         if run.avg_pace_s_per_km is not None and _plausible_pace(run.avg_pace_s_per_km):
             buckets[run.start.weekday()].append(run.avg_pace_s_per_km)
     return buckets
+
+
+# --- Enriched per-run trends (form dynamics, effort, grade) ------------------
+
+
+def run_trend(
+    runs: Sequence[Run], value: Callable[[Run], float | None]
+) -> list[tuple[date, float]]:
+    """One ``(date, value)`` point per run that carries ``value``.
+
+    Generic accessor for the enriched per-run fields (running power, stride
+    length, vertical oscillation, ground-contact time, relative effort) so each
+    plots through the same daily-marker pipeline as the health metrics.
+    """
+    points: list[tuple[date, float]] = []
+    for run in runs:
+        reading = value(run)
+        if reading is not None:
+            points.append((run.start.date(), reading))
+    return points
+
+
+def grade_adjusted_pace_points(runs: Sequence[Run]) -> list[PacePoint]:
+    """Grade-adjusted pace per run (Strava's grade-adjusted distance / time).
+
+    Reuses :class:`PacePoint` (``distance_km`` is the grade-adjusted distance)
+    so the standard pace-over-time chart renders it unchanged.
+    """
+    points: list[PacePoint] = []
+    for run in runs:
+        gad_m = run.grade_adj_distance_m
+        if run.moving_s is None or gad_m is None or gad_m <= 0:
+            continue
+        pace = run.moving_s / (gad_m / 1000)
+        if not _plausible_pace(pace):
+            continue
+        points.append(
+            PacePoint(
+                start=run.start,
+                pace_s_per_km=pace,
+                distance_km=gad_m / 1000,
+                avg_hr=run.avg_hr,
+            )
+        )
+    return points
 
 
 # --- Heart rate & effort ----------------------------------------------------

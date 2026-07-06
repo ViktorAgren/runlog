@@ -74,6 +74,39 @@ def test_canonical_keeps_unlinked_from_both_sources(conn: sqlite3.Connection) ->
     assert len(metrics.canonical_run_activities(conn)) == 2
 
 
+def test_canonical_inherits_dynamics_from_dropped_apple_twin(
+    conn: sqlite3.Connection,
+) -> None:
+    # Strava keeps the pair but lacks running dynamics; the Apple twin carries
+    # them and is dropped, so the canonical run must inherit its dynamics.
+    when = datetime(2026, 6, 1, 7, tzinfo=UTC)
+    strava = _add_run(conn, when, source="strava")
+    apple = store.store_record(
+        conn,
+        ActivityRecord(
+            activity=Activity(
+                source="apple_health",
+                source_id=SourceId("apple:dyn"),
+                sport_type="Running",
+                start_time_utc=when,
+                distance_m=5000.0,
+                moving_s=1500,
+                avg_stride_length_m=1.15,
+                avg_power_w=245.0,
+                avg_ground_contact_ms=250.0,
+            ),
+        ),
+    )
+    store.insert_link(conn, strava, apple, 1.0)
+
+    run = metrics.canonical_run_activities(conn)[0]
+    assert (run.source, run.avg_stride_length_m, run.avg_power_w) == (
+        "strava",
+        1.15,
+        245.0,
+    )
+
+
 def test_weekly_volume_gap_fills_and_rolls(conn: sqlite3.Connection) -> None:
     # Week A: 5km. Skip a week (gap). Week C: 10km. Rolling mean spans 4 weeks.
     _add_run(conn, datetime(2026, 6, 1, 7, tzinfo=UTC), distance_m=5000.0)
@@ -294,4 +327,75 @@ def test_overall_summary_totals(conn: sqlite3.Connection) -> None:
         17.0,
         12.0,
         17.0,
+    )
+
+
+def _run(when: datetime, **fields: float | None) -> metrics.Run:
+    moving = fields.get("moving_s")
+    return metrics.Run(
+        activity_id=ActivityId(1),
+        source="strava",
+        start=when,
+        distance_m=fields.get("distance_m", 5000.0),
+        moving_s=int(moving) if moving is not None else None,
+        avg_pace_s_per_km=fields.get("avg_pace_s_per_km"),
+        avg_hr=fields.get("avg_hr"),
+        max_hr=None,
+        avg_power_w=fields.get("avg_power_w"),
+        grade_adj_distance_m=fields.get("grade_adj_distance_m"),
+        relative_effort=fields.get("relative_effort"),
+    )
+
+
+def test_run_trend_keeps_only_runs_carrying_the_field() -> None:
+    runs = [
+        _run(datetime(2026, 6, 1, tzinfo=UTC), avg_power_w=245.0),
+        _run(datetime(2026, 6, 2, tzinfo=UTC)),  # no power -> excluded
+        _run(datetime(2026, 6, 3, tzinfo=UTC), avg_power_w=260.0),
+    ]
+    assert metrics.run_trend(runs, lambda r: r.avg_power_w) == [
+        (date(2026, 6, 1), 245.0),
+        (date(2026, 6, 3), 260.0),
+    ]
+
+
+def test_grade_adjusted_pace_uses_grade_adjusted_distance() -> None:
+    # 1500 s over a grade-adjusted 5.0 km -> 300 s/km.
+    runs = [
+        _run(
+            datetime(2026, 6, 1, tzinfo=UTC),
+            moving_s=1500.0,
+            grade_adj_distance_m=5000.0,
+            avg_hr=150.0,
+        ),
+        _run(datetime(2026, 6, 2, tzinfo=UTC)),  # no grade-adjusted distance
+    ]
+    points = metrics.grade_adjusted_pace_points(runs)
+    assert [(p.pace_s_per_km, p.distance_km, p.avg_hr) for p in points] == [
+        (300.0, 5.0, 150.0)
+    ]
+
+
+def test_canonical_run_reads_enriched_columns(conn: sqlite3.Connection) -> None:
+    store.store_record(
+        conn,
+        ActivityRecord(
+            activity=Activity(
+                source="strava",
+                source_id=SourceId("strava:enriched"),
+                sport_type="Run",
+                start_time_utc=datetime(2026, 6, 1, 7, tzinfo=UTC),
+                distance_m=5000.0,
+                moving_s=1500,
+                relative_effort=56.0,
+                grade_adj_distance_m=5100.0,
+                avg_power_w=245.0,
+            ),
+        ),
+    )
+    run = metrics.canonical_run_activities(conn)[0]
+    assert (run.relative_effort, run.grade_adj_distance_m, run.avg_power_w) == (
+        56.0,
+        5100.0,
+        245.0,
     )

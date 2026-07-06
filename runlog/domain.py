@@ -44,6 +44,25 @@ class Activity:
     calories: float | None = None
     name: str | None = None
     raw_path: str | None = None
+    # Strava extras (from the bulk CSV).
+    relative_effort: float | None = None
+    grade_adj_distance_m: float | None = None
+    max_speed_mps: float | None = None
+    elevation_loss_m: float | None = None
+    avg_grade: float | None = None
+    max_grade: float | None = None
+    avg_watts: float | None = None
+    training_load: float | None = None
+    intensity: float | None = None
+    temp_c: float | None = None
+    humidity: float | None = None
+    wind_mps: float | None = None
+    # Apple running dynamics (from workout statistics).
+    avg_power_w: float | None = None
+    avg_stride_length_m: float | None = None
+    avg_vertical_oscillation_cm: float | None = None
+    avg_ground_contact_ms: float | None = None
+    avg_running_speed_mps: float | None = None
 
 
 @dataclass(frozen=True)

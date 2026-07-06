@@ -42,6 +42,18 @@ class BulkRow:
     calories: float | None
     total_steps: float | None
     track_name: str | None
+    relative_effort: float | None = None
+    grade_adj_distance_m: float | None = None
+    max_speed_mps: float | None = None
+    elevation_loss_m: float | None = None
+    avg_grade: float | None = None
+    max_grade: float | None = None
+    avg_watts: float | None = None
+    training_load: float | None = None
+    intensity: float | None = None
+    temp_c: float | None = None
+    humidity: float | None = None
+    wind_mps: float | None = None
 
 
 def _num(value: str | None) -> float | None:
@@ -91,6 +103,18 @@ def parse_activities_csv(text: str) -> list[BulkRow]:
             "Elevation Gain",
             "Calories",
             "Total Steps",
+            "Relative Effort",
+            "Grade Adjusted Distance",
+            "Max Speed",
+            "Elevation Loss",
+            "Average Grade",
+            "Max Grade",
+            "Average Watts",
+            "Training Load",
+            "Intensity",
+            "Weather Temperature",
+            "Humidity",
+            "Wind Speed",
             "Filename",
         ),
     )
@@ -117,6 +141,20 @@ def parse_activities_csv(text: str) -> list[BulkRow]:
                 elevation_gain_m=_num(_cell(row, idx.get("Elevation Gain"))),
                 calories=_num(_cell(row, idx.get("Calories"))),
                 total_steps=_num(_cell(row, idx.get("Total Steps"))),
+                relative_effort=_num(_cell(row, idx.get("Relative Effort"))),
+                grade_adj_distance_m=_num(
+                    _cell(row, idx.get("Grade Adjusted Distance"))
+                ),
+                max_speed_mps=_num(_cell(row, idx.get("Max Speed"))),
+                elevation_loss_m=_num(_cell(row, idx.get("Elevation Loss"))),
+                avg_grade=_num(_cell(row, idx.get("Average Grade"))),
+                max_grade=_num(_cell(row, idx.get("Max Grade"))),
+                avg_watts=_num(_cell(row, idx.get("Average Watts"))),
+                training_load=_num(_cell(row, idx.get("Training Load"))),
+                intensity=_num(_cell(row, idx.get("Intensity"))),
+                temp_c=_num(_cell(row, idx.get("Weather Temperature"))),
+                humidity=_num(_cell(row, idx.get("Humidity"))),
+                wind_mps=_num(_cell(row, idx.get("Wind Speed"))),
                 track_name=_track_name(_cell(row, idx.get("Filename"))),
             )
         )

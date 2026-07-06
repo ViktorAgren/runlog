@@ -8,10 +8,11 @@ and never mixed into the training charts or totals.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from runlog.analyze import analytics, charts, metrics, summary
+from runlog.analyze import analytics, anomaly, charts, metrics, summary
 from runlog.db import store
 
 _DEFAULT_HR_REST = 50.0
@@ -27,7 +28,43 @@ _RECOVERY_MARKERS = {
     "vo2max": ("VO2max (Apple estimate)", "ml/kg/min"),
     "resting_hr": ("Resting heart rate (passive)", "bpm"),
     "hrv_sdnn": ("HRV SDNN (passive)", "ms"),
+    "spo2": ("Blood oxygen (SpO2)", "fraction"),
+    "sleep_hours": ("Sleep duration", "hours"),
+    "hr_recovery_1min": ("1-minute HR recovery", "bpm drop"),
+    "body_mass": ("Body mass", "kg"),
+    "walking_asymmetry": ("Walking asymmetry", "fraction"),
 }
+
+# Enriched per-run form/effort fields plotted as daily-marker trend charts,
+# each gated on having data so sources lacking the field emit no empty figure.
+_FormAccessor = Callable[[metrics.Run], "float | None"]
+_FORM_TRENDS: tuple[tuple[str, str, str, _FormAccessor], ...] = (
+    ("Running power over time", "Watts", "running_power.png", lambda r: r.avg_power_w),
+    (
+        "Stride length over time",
+        "Metres",
+        "stride_length.png",
+        lambda r: r.avg_stride_length_m,
+    ),
+    (
+        "Vertical oscillation over time",
+        "Centimetres",
+        "vertical_oscillation.png",
+        lambda r: r.avg_vertical_oscillation_cm,
+    ),
+    (
+        "Ground contact time over time",
+        "Milliseconds",
+        "ground_contact.png",
+        lambda r: r.avg_ground_contact_ms,
+    ),
+    (
+        "Relative effort over time",
+        "Effort score",
+        "relative_effort.png",
+        lambda r: r.relative_effort,
+    ),
+)
 
 
 @dataclass(frozen=True)
@@ -102,6 +139,15 @@ def run(
     elevation = metrics.monthly_elevation_by_year(runs)
     if elevation:
         produced.append(charts.elevation_by_month_chart(elevation, training_dir))
+    grade_pace = metrics.grade_adjusted_pace_points(runs)
+    if grade_pace:
+        produced.append(charts.grade_adjusted_pace_chart(grade_pace, training_dir))
+    for title, ylabel, filename, accessor in _FORM_TRENDS:
+        trend = metrics.run_trend(runs, accessor)
+        if trend:
+            produced.append(
+                charts.marker_chart(trend, title, ylabel, filename, training_dir)
+            )
 
     latest_markers: dict[str, tuple[date, float] | None] = {}
     for metric, (title, ylabel) in _RECOVERY_MARKERS.items():
@@ -109,15 +155,11 @@ def run(
         latest_markers[metric] = (
             (series[-1][0].date(), series[-1][1]) if series else None
         )
-        produced.append(
-            charts.marker_chart(
-                metrics.daily_means(series),
-                title,
-                ylabel,
-                f"{metric}.png",
-                recovery_dir,
+        daily = metrics.daily_means(series)
+        if daily:
+            produced.append(
+                charts.marker_chart(daily, title, ylabel, f"{metric}.png", recovery_dir)
             )
-        )
 
     # High-level analytics: TRIMP-based Fitness/Fatigue/Form, ACWR, efficiency
     # trend, decoupling, and true best efforts from the streams. Resting HR is
@@ -131,6 +173,7 @@ def run(
     efficiency = analytics.efficiency_factor(runs)
     ef_trend = analytics.linear_trend(efficiency)
     best_efforts = analytics.best_effort_progressions(conn, runs)
+    anomalies = anomaly.analyze(conn, runs, since=since)
     produced += [
         charts.pmc_chart(pmc, analytics_dir),
         charts.acwr_chart(acwr, analytics_dir),
@@ -139,6 +182,7 @@ def run(
             analytics.aerobic_decoupling(conn, runs), analytics_dir
         ),
         charts.best_effort_progression_chart(best_efforts, analytics_dir),
+        charts.anomaly_timeline_chart(anomalies, analytics_dir),
     ]
 
     text = summary.build_summary_text(
@@ -153,6 +197,7 @@ def run(
         recent_weeks=recent_weeks,
     )
     text += "\n" + summary.analytics_section(pmc, acwr, ef_trend, best_efforts)
+    text += "\n" + summary.anomaly_section(anomalies)
     return ReportResult(charts=produced, summary_text=text)
 
 

@@ -22,6 +22,25 @@ CREATE TABLE IF NOT EXISTS activities (
     calories          REAL,
     name              TEXT,
     raw_path          TEXT,
+    -- Strava extras
+    relative_effort   REAL,
+    grade_adj_distance_m REAL,
+    max_speed_mps     REAL,
+    elevation_loss_m  REAL,
+    avg_grade         REAL,
+    max_grade         REAL,
+    avg_watts         REAL,
+    training_load     REAL,
+    intensity         REAL,
+    temp_c            REAL,
+    humidity          REAL,
+    wind_mps          REAL,
+    -- Apple running dynamics
+    avg_power_w                 REAL,
+    avg_stride_length_m         REAL,
+    avg_vertical_oscillation_cm REAL,
+    avg_ground_contact_ms       REAL,
+    avg_running_speed_mps       REAL,
     UNIQUE (source, source_id)
 );
 
