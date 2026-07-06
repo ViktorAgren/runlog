@@ -71,6 +71,18 @@ def _merge_activity(
         calories=row.calories,
         name=row.name,
         raw_path=raw_path,
+        relative_effort=row.relative_effort,
+        grade_adj_distance_m=row.grade_adj_distance_m,
+        max_speed_mps=row.max_speed_mps,
+        elevation_loss_m=row.elevation_loss_m,
+        avg_grade=row.avg_grade,
+        max_grade=row.max_grade,
+        avg_watts=row.avg_watts,
+        training_load=row.training_load,
+        intensity=row.intensity,
+        temp_c=row.temp_c,
+        humidity=row.humidity,
+        wind_mps=row.wind_mps,
     )
 
 

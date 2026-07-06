@@ -6,6 +6,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 
 from runlog.analyze import charts
+from runlog.analyze.anomaly import Anomaly, AnomalyReport, Direction, RedFlagDay
 from runlog.analyze.metrics import (
     BucketPace,
     Heatmap,
@@ -41,6 +42,14 @@ def test_pace_over_time_chart_writes_png(tmp_path: Path) -> None:
         for d in range(1, 8)
     ]
     assert _wrote_png(charts.pace_over_time_chart(points, tmp_path))
+
+
+def test_grade_adjusted_pace_chart_writes_png(tmp_path: Path) -> None:
+    points = [
+        PacePoint(datetime(2026, 6, d, tzinfo=UTC), 300.0 + d, 5.0, 150.0)
+        for d in range(1, 8)
+    ]
+    assert _wrote_png(charts.grade_adjusted_pace_chart(points, tmp_path))
 
 
 def test_fastest_by_bucket_chart_writes_png(tmp_path: Path) -> None:
@@ -107,9 +116,28 @@ def test_cadence_elevation_timing_charts_write_png(tmp_path: Path) -> None:
     )
 
 
+def test_anomaly_timeline_chart_writes_png(tmp_path: Path) -> None:
+    report = AnomalyReport(
+        health=[
+            Anomaly(date(2026, 6, 1), "resting_hr", 62.0, 50.0, 4.0, Direction.HIGH),
+            Anomaly(date(2026, 6, 1), "hrv_sdnn", 30.0, 60.0, -4.0, Direction.LOW),
+        ],
+        red_flag_days=[RedFlagDay(date(2026, 6, 1), ("hrv_sdnn", "resting_hr"))],
+        performance=[
+            Anomaly(
+                date(2026, 6, 5), "efficiency_factor", 5.0, 6.0, -3.0, Direction.LOW
+            )
+        ],
+    )
+    assert _wrote_png(charts.anomaly_timeline_chart(report, tmp_path))
+
+
 def test_charts_handle_empty_data(tmp_path: Path) -> None:
     assert _wrote_png(charts.pace_over_time_chart([], tmp_path))
     assert _wrote_png(
         charts.training_heatmap_chart(Heatmap([], [[] for _ in range(7)]), tmp_path)
     )
     assert _wrote_png(charts.distance_histogram([], tmp_path))
+    assert _wrote_png(
+        charts.anomaly_timeline_chart(AnomalyReport([], [], []), tmp_path)
+    )

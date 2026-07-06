@@ -64,6 +64,25 @@ def test_parse_activities_csv_maps_rows() -> None:
     ]
 
 
+def test_parse_activities_csv_reads_extra_fields() -> None:
+    csv_text = (
+        '"Activity ID","Activity Date","Activity Type","Distance",'
+        '"Relative Effort","Max Speed","Average Grade","Weather Temperature",'
+        '"Humidity","Wind Speed"\n'
+        '"9","Jun 1, 2026, 7:30:00 AM","Run","10.0",'
+        '"56","4.9","0.1","13.0","0.62","3.0"\n'
+    )
+    row = parse_activities_csv(csv_text)[0]
+    assert (
+        row.relative_effort,
+        row.max_speed_mps,
+        row.avg_grade,
+        row.temp_c,
+        row.humidity,
+        row.wind_mps,
+    ) == (56.0, 4.9, 0.1, 13.0, 0.62, 3.0)
+
+
 @pytest.mark.parametrize(
     ("name", "expected"),
     [

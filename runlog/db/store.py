@@ -48,57 +48,64 @@ def _iso(dt: datetime) -> str:
     return dt.astimezone(UTC).isoformat()
 
 
+# Activity columns persisted, in order. Names match `Activity` dataclass fields
+# (except source_id / start_time_utc, which are serialized in `_activity_params`).
+_ACTIVITY_COLUMNS: tuple[str, ...] = (
+    "source",
+    "source_id",
+    "sport_type",
+    "start_time_utc",
+    "tz",
+    "elapsed_s",
+    "moving_s",
+    "distance_m",
+    "avg_hr",
+    "max_hr",
+    "avg_pace_s_per_km",
+    "avg_cadence",
+    "elevation_gain_m",
+    "calories",
+    "name",
+    "raw_path",
+    "relative_effort",
+    "grade_adj_distance_m",
+    "max_speed_mps",
+    "elevation_loss_m",
+    "avg_grade",
+    "max_grade",
+    "avg_watts",
+    "training_load",
+    "intensity",
+    "temp_c",
+    "humidity",
+    "wind_mps",
+    "avg_power_w",
+    "avg_stride_length_m",
+    "avg_vertical_oscillation_cm",
+    "avg_ground_contact_ms",
+    "avg_running_speed_mps",
+)
+_ACTIVITY_KEY = ("source", "source_id")
+
+
+def _activity_params(activity: Activity) -> dict[str, object]:
+    params: dict[str, object] = {c: getattr(activity, c) for c in _ACTIVITY_COLUMNS}
+    params["source_id"] = str(activity.source_id)
+    params["start_time_utc"] = _iso(activity.start_time_utc)
+    return params
+
+
 def _upsert_activity(conn: sqlite3.Connection, activity: Activity) -> ActivityId:
     """Insert or update an activity, returning its internal id."""
+    columns = ", ".join(_ACTIVITY_COLUMNS)
+    placeholders = ", ".join(f":{c}" for c in _ACTIVITY_COLUMNS)
+    updates = ", ".join(
+        f"{c} = excluded.{c}" for c in _ACTIVITY_COLUMNS if c not in _ACTIVITY_KEY
+    )
     cur = conn.execute(
-        """
-        INSERT INTO activities (
-            source, source_id, sport_type, start_time_utc, tz,
-            elapsed_s, moving_s, distance_m, avg_hr, max_hr,
-            avg_pace_s_per_km, avg_cadence, elevation_gain_m, calories,
-            name, raw_path
-        )
-        VALUES (
-            :source, :source_id, :sport_type, :start_time_utc, :tz,
-            :elapsed_s, :moving_s, :distance_m, :avg_hr, :max_hr,
-            :avg_pace_s_per_km, :avg_cadence, :elevation_gain_m, :calories,
-            :name, :raw_path
-        )
-        ON CONFLICT (source, source_id) DO UPDATE SET
-            sport_type = excluded.sport_type,
-            start_time_utc = excluded.start_time_utc,
-            tz = excluded.tz,
-            elapsed_s = excluded.elapsed_s,
-            moving_s = excluded.moving_s,
-            distance_m = excluded.distance_m,
-            avg_hr = excluded.avg_hr,
-            max_hr = excluded.max_hr,
-            avg_pace_s_per_km = excluded.avg_pace_s_per_km,
-            avg_cadence = excluded.avg_cadence,
-            elevation_gain_m = excluded.elevation_gain_m,
-            calories = excluded.calories,
-            name = excluded.name,
-            raw_path = excluded.raw_path
-        RETURNING id
-        """,
-        {
-            "source": activity.source,
-            "source_id": str(activity.source_id),
-            "sport_type": activity.sport_type,
-            "start_time_utc": _iso(activity.start_time_utc),
-            "tz": activity.tz,
-            "elapsed_s": activity.elapsed_s,
-            "moving_s": activity.moving_s,
-            "distance_m": activity.distance_m,
-            "avg_hr": activity.avg_hr,
-            "max_hr": activity.max_hr,
-            "avg_pace_s_per_km": activity.avg_pace_s_per_km,
-            "avg_cadence": activity.avg_cadence,
-            "elevation_gain_m": activity.elevation_gain_m,
-            "calories": activity.calories,
-            "name": activity.name,
-            "raw_path": activity.raw_path,
-        },
+        f"INSERT INTO activities ({columns}) VALUES ({placeholders}) "
+        f"ON CONFLICT (source, source_id) DO UPDATE SET {updates} RETURNING id",
+        _activity_params(activity),
     )
     row = cur.fetchone()
     return ActivityId(int(row["id"]))

@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from runlog.analyze.analytics import BestEffortProgression, PmcPoint, Trend
+    from runlog.analyze.anomaly import AnomalyReport
     from runlog.analyze.metrics import (
         BucketPace,
         Heatmap,
@@ -34,6 +35,16 @@ if TYPE_CHECKING:
         WeeklyLoad,
         WeeklyVolume,
     )
+
+# Y-axis rows (bottom to top) for the anomaly timeline, with display labels.
+_ANOMALY_ROWS = (
+    ("efficiency_factor", "Efficiency"),
+    ("hr_recovery_1min", "HR recovery"),
+    ("sleep_hours", "Sleep"),
+    ("spo2", "SpO2"),
+    ("hrv_sdnn", "HRV"),
+    ("resting_hr", "Resting HR"),
+)
 
 _WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 _ROLLING_WINDOW = 5
@@ -150,6 +161,27 @@ def pace_over_time_chart(points: Sequence[PacePoint], out_dir: Path) -> Path:
     _pace_axis(ax)
     fig.autofmt_xdate()
     return _save(fig, out_dir, "pace_over_time.png")
+
+
+def grade_adjusted_pace_chart(points: Sequence[PacePoint], out_dir: Path) -> Path:
+    """Grade-adjusted pace over time (flattens hilly runs for a fair trend)."""
+    fig, ax = _figure("Grade-adjusted pace over time", "Date", "Pace (min/km)")
+    ordered = sorted(points, key=lambda p: p.start)
+    if ordered:
+        starts = [p.start for p in ordered]
+        paces = [p.pace_s_per_km for p in ordered]
+        ax.scatter(starts, paces, s=14, color="#5891f5", alpha=0.5, label="Runs")
+        ax.plot(
+            starts,
+            _rolling_median(paces),
+            color="#e0566f",
+            linewidth=2,
+            label="Rolling median",
+        )
+        ax.legend()
+    _pace_axis(ax)
+    fig.autofmt_xdate()
+    return _save(fig, out_dir, "grade_adjusted_pace.png")
 
 
 def fastest_by_bucket_chart(buckets: Sequence[BucketPace], out_dir: Path) -> Path:
@@ -495,3 +527,21 @@ def best_effort_progression_chart(
     _pace_axis(ax)
     fig.autofmt_xdate()
     return _save(fig, out_dir, "best_effort_progression.png")
+
+
+def anomaly_timeline_chart(report: AnomalyReport, out_dir: Path) -> Path:
+    """One row per metric, a dot per flagged day; red-flag days shaded."""
+    fig, ax = _figure("Anomaly timeline", "Date", "")
+    rows = {metric: i for i, (metric, _) in enumerate(_ANOMALY_ROWS)}
+    ax.set_yticks(range(len(_ANOMALY_ROWS)))
+    ax.set_yticklabels([label for _, label in _ANOMALY_ROWS])
+    ax.set_ylim(-0.5, len(_ANOMALY_ROWS) - 0.5)
+
+    for flag in report.red_flag_days:
+        ax.axvline(flag.day, color="#e0566f", linestyle="--", lw=0.8, alpha=0.6)
+    for anomaly in (*report.health, *report.performance):
+        row = rows.get(anomaly.metric)
+        if row is not None:
+            ax.scatter(anomaly.day, row, s=40, color="#e0566f", alpha=0.7, zorder=3)
+    fig.autofmt_xdate()
+    return _save(fig, out_dir, "anomaly_timeline.png")
