@@ -18,6 +18,7 @@ if TYPE_CHECKING:
         Summary,
         WeeklyVolume,
     )
+    from runlog.analyze.physiology import IntensityDistribution
 
 _MARKER_LABELS = {
     "vo2max": "VO2max",
@@ -180,4 +181,20 @@ def anomaly_section(report: AnomalyReport, recent: int = 8) -> str:
                 f"{anomaly.day}  efficiency {anomaly.value:.2f} "
                 f"vs {anomaly.baseline:.2f} ({anomaly.deviation:+.1f} sigma)"
             )
+    return "\n".join(lines)
+
+
+def physiology_section(
+    intensity: IntensityDistribution | None, median_drift: float | None
+) -> str:
+    """Render the stream-based physiology block (intensity split + drift)."""
+    lines: list[str] = ["", "Physiology (from HR/velocity streams)", "=" * 40]
+    if intensity is not None:
+        lines.append(
+            f"Intensity      easy {intensity.easy_pct:.0f}% / "
+            f"mod {intensity.moderate_pct:.0f}% / hard {intensity.hard_pct:.0f}%  "
+            f"(easy:hard {intensity.easy_to_hard})"
+        )
+    if median_drift is not None:
+        lines.append(f"Cardiac drift  {median_drift:+.1f}% median (>0 = drift up)")
     return "\n".join(lines)
