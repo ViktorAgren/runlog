@@ -22,6 +22,8 @@ dependencies = [
     "gpxpy>=1.6",
     "python-dotenv>=1.0",
     "matplotlib>=3.8",
+    "seaborn>=0.13",
+    "jinja2>=3.1",
     "anthropic>=0.69",
     "pydantic>=2",
 ]
@@ -42,7 +44,7 @@ runlog = "runlog.cli:main"
 include = ["runlog*"]
 
 [tool.setuptools.package-data]
-runlog = ["db/*.sql"]
+runlog = ["db/*.sql", "analyze/templates/*.j2"]
 
 [tool.black]
 line-length = 88
@@ -62,7 +64,7 @@ warn_unreachable = true
 files = ["runlog"]
 
 [[tool.mypy.overrides]]
-module = ["matplotlib.*"]
+module = ["matplotlib.*", "seaborn.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

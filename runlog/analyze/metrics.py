@@ -750,6 +750,19 @@ class HrZone:
         )
 
 
+def hr_zone_labels() -> tuple[str, ...]:
+    """Zone labels (Z1..Z5), shared by the pooled and per-run zone functions."""
+    return tuple(label for label, _low, _high in _HR_ZONES)
+
+
+def hr_zone_index(fraction: float) -> int | None:
+    """Index (0..4) of the HR zone for a fraction of HR max, or None if below Z1."""
+    for index, (_label, low, high) in enumerate(_HR_ZONES):
+        if low <= fraction < high:
+            return index
+    return None
+
+
 def hr_zone_seconds(samples: Sequence[float], hr_max: float) -> list[HrZone]:
     """Time (approx, ~1 sample/s) in each HR zone from workout HR samples.
 
@@ -758,11 +771,9 @@ def hr_zone_seconds(samples: Sequence[float], hr_max: float) -> list[HrZone]:
     """
     counts = [0] * len(_HR_ZONES)
     for hr in samples:
-        fraction = hr / hr_max if hr_max else 0.0
-        for index, (_label, low, high) in enumerate(_HR_ZONES):
-            if low <= fraction < high:
-                counts[index] += 1
-                break
+        index = hr_zone_index(hr / hr_max) if hr_max else None
+        if index is not None:
+            counts[index] += 1
     zones: list[HrZone] = []
     for index, (label, low, high) in enumerate(_HR_ZONES):
         zones.append(

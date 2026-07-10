@@ -132,6 +132,18 @@ def test_anomaly_timeline_chart_writes_png(tmp_path: Path) -> None:
     assert _wrote_png(charts.anomaly_timeline_chart(report, tmp_path))
 
 
+def test_stream_charts_write_png(tmp_path: Path) -> None:
+    from runlog.analyze.physiology import IntensityDistribution
+    from runlog.analyze.streams import RouteGroup
+
+    daily = [(date(2026, 6, d), 300.0 + d) for d in range(1, 6)]
+    assert _wrote_png(charts.pace_trend_chart(daily, "GAP", "gap.png", tmp_path))
+    groups = [RouteGroup("~5 km near (59.3, 18.1)", 4, daily)]
+    assert _wrote_png(charts.route_pace_chart(groups, tmp_path))
+    dist = IntensityDistribution(78.0, 8.0, 14.0, 5.6)
+    assert _wrote_png(charts.intensity_distribution_chart(dist, tmp_path))
+
+
 def test_charts_handle_empty_data(tmp_path: Path) -> None:
     assert _wrote_png(charts.pace_over_time_chart([], tmp_path))
     assert _wrote_png(

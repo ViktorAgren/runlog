@@ -126,6 +126,8 @@ def _cmd_report(args: argparse.Namespace) -> int:
     print(f"\nCharts written to {out_dir}:")
     for path in result.charts:
         print(f"  {path.parent.name}/{path.name}")
+    if result.report_html is not None:
+        print(f"\nHTML report: {result.report_html}")
     return 0
 
 
