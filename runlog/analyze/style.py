@@ -12,6 +12,7 @@ for statistical layers (KDE/regression), never for global theming.
 
 from __future__ import annotations
 
+import math
 import statistics
 from typing import TYPE_CHECKING, Any
 
@@ -105,6 +106,21 @@ def figure(
     return fig, ax
 
 
+def sig_value(value: float, sig_digits: int = 3) -> str:
+    """Format a value to ~``sig_digits`` significant digits, no trailing zeros.
+
+    Fixed-decimal formats break on fraction-scale metrics (running economy at
+    0.013 m/s per W renders as "0.0" under ``{:.1f}``); scaling the decimals to
+    the magnitude keeps callouts and trend labels meaningful at any scale.
+    """
+    if value == 0:
+        return "0"
+    decimals = max(0, sig_digits - 1 - math.floor(math.log10(abs(value))))
+    if decimals == 0:
+        return f"{value:.0f}"
+    return f"{value:.{decimals}f}".rstrip("0").rstrip(".")
+
+
 def footnote(fig: Any, text: str) -> None:
     """A small grey caption at the bottom-left (data source / n / date)."""
     fig.text(0.01, 0.005, text, fontsize=8, color=MUTED, va="bottom")
@@ -142,10 +158,11 @@ def trend_annotation(
             zorder=1,
         )
     ax.plot(xs, fit, color=color, lw=2, zorder=5, label="Trend")
+    sign = "+" if trend.per_30_days >= 0 else ""
     ax.text(
         0.02,
         0.96,
-        f"trend {trend.per_30_days:+.2f}/30d   r={trend.r:.2f}",
+        f"trend {sign}{sig_value(trend.per_30_days)}/30d   r={trend.r:.2f}",
         transform=ax.transAxes,
         va="top",
         fontsize=9,

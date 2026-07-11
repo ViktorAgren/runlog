@@ -17,7 +17,6 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from runlog.db.quality import QUARANTINE_FLAGS
 from runlog.domain import ActivityId, Source
@@ -91,16 +90,6 @@ class Run:
     @property
     def distance_km(self) -> float | None:
         return self.distance_m / 1000 if self.distance_m is not None else None
-
-    @property
-    def local_hour(self) -> int:
-        """Hour of day in the run's local timezone (falls back to UTC)."""
-        if self.tz:
-            try:
-                return self.start.astimezone(ZoneInfo(self.tz)).hour
-            except ZoneInfoNotFoundError:
-                return self.start.hour
-        return self.start.hour
 
 
 def canonical_run_activities(
@@ -402,15 +391,6 @@ def fastest_by_bucket(runs: Sequence[Run]) -> list[BucketPace]:
             )
         )
     return result
-
-
-def pace_by_weekday(runs: Sequence[Run]) -> list[list[float]]:
-    """Seven lists (Mon..Sun) of paces, for a per-weekday box plot."""
-    buckets: list[list[float]] = [[] for _ in range(7)]
-    for run in runs:
-        if run.avg_pace_s_per_km is not None and _plausible_pace(run.avg_pace_s_per_km):
-            buckets[run.start.weekday()].append(run.avg_pace_s_per_km)
-    return buckets
 
 
 # --- Enriched per-run trends (form dynamics, effort, grade) ------------------
@@ -860,11 +840,6 @@ def monthly_elevation_by_year(runs: Sequence[Run]) -> dict[int, list[float]]:
             months = by_year.setdefault(run.start.year, [0.0] * 12)
             months[run.start.month - 1] += run.elevation_gain_m
     return {year: [round(v) for v in months] for year, months in by_year.items()}
-
-
-def start_hour_distribution(runs: Sequence[Run]) -> list[int]:
-    """Local start hour (0-23) of each run."""
-    return [r.local_hour for r in runs]
 
 
 def cumulative_distance_by_year(

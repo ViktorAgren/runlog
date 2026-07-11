@@ -9,6 +9,7 @@ composes them per chart. matplotlib is loosely typed, so the plotting calls use
 
 from __future__ import annotations
 
+import math
 import statistics
 from typing import TYPE_CHECKING, Any
 
@@ -46,7 +47,6 @@ if TYPE_CHECKING:
     )
     from runlog.analyze.physiology import IntensityDistribution
     from runlog.analyze.readiness import ReadinessDay
-    from runlog.analyze.streams import RouteGroup
 
 # Y-axis rows (bottom to top) for the anomaly timeline, with display labels.
 _ANOMALY_ROWS = (
@@ -61,6 +61,9 @@ _ANOMALY_ROWS = (
 _WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 _MONTHS = ("J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D")
 _ROLLING_WINDOW = 5
+# Break rolling-median lines across stretches with no runs, instead of drawing
+# a flat segment that implies data where there is none.
+_MAX_LINE_GAP_DAYS = 30
 
 
 def _format_pace(seconds: float, _pos: Any = None) -> str:
@@ -88,6 +91,27 @@ def _rolling_median(values: Sequence[float]) -> list[float]:
         statistics.median(values[max(0, i - _ROLLING_WINDOW + 1) : i + 1])
         for i in range(len(values))
     ]
+
+
+def _gap_broken(
+    days: Sequence[Any], values: Sequence[float], max_gap_days: int = _MAX_LINE_GAP_DAYS
+) -> tuple[list[Any], list[float]]:
+    """(x, y) with a NaN inserted wherever consecutive points span a long gap.
+
+    matplotlib breaks a line at NaN, so a rolling median or weekly line drawn
+    over irregular dates stops bridging months without data with a flat,
+    misleading segment. All real points are kept.
+    """
+    xs: list[Any] = []
+    ys: list[float] = []
+    for i, (day, value) in enumerate(zip(days, values, strict=True)):
+        gap = day - days[i - 1] if i else None
+        if gap is not None and getattr(gap, "days", 0) > max_gap_days:
+            xs.append(day)
+            ys.append(math.nan)
+        xs.append(day)
+        ys.append(value)
+    return xs, ys
 
 
 def _rolling_mean(values: Sequence[float], window: int) -> list[float]:
@@ -200,18 +224,6 @@ def runs_per_week_chart(weekly: Sequence[WeeklyVolume], out_dir: Path) -> Path:
     return style.save(fig, out_dir, "runs_per_week.png")
 
 
-def rest_gap_histogram(gaps: Sequence[int], out_dir: Path) -> Path:
-    fig, ax = style.figure(
-        "Days between runs", "Rest-gap distribution", "Gap (days)", "Occurrences"
-    )
-    if gaps:
-        ax.hist(list(gaps), bins=range(0, max(gaps) + 2), color=PRIMARY, alpha=0.75)
-        median = statistics.median(gaps)
-        ax.axvline(median, color=ACCENT, lw=2, label=f"median {median:.0f} d")
-        ax.legend()
-    return style.save(fig, out_dir, "rest_gaps.png")
-
-
 def cumulative_ytd_chart(
     by_year: dict[int, list[tuple[int, float]]], out_dir: Path
 ) -> Path:
@@ -238,19 +250,6 @@ def cumulative_ytd_chart(
     return style.save(fig, out_dir, "cumulative_distance.png")
 
 
-def start_hour_chart(hours: Sequence[int], out_dir: Path) -> Path:
-    fig, ax = style.figure(
-        "Run start time of day",
-        "When runs begin (local time)",
-        "Hour (local)",
-        "Runs",
-    )
-    if hours:
-        ax.hist(list(hours), bins=range(0, 25), color=PRIMARY, alpha=0.75)
-    ax.set_xticks(range(0, 25, 3))
-    return style.save(fig, out_dir, "start_hours.png")
-
-
 # --- Pace -------------------------------------------------------------------
 
 
@@ -259,8 +258,7 @@ def _pace_scatter(
 ) -> None:
     ax.scatter(days, paces, s=16, color=MUTED, alpha=0.6, label=label)
     ax.plot(
-        days,
-        _rolling_median(paces),
+        *_gap_broken(days, _rolling_median(paces)),
         color=PRIMARY,
         linewidth=2.2,
         label="Rolling median",
@@ -305,21 +303,6 @@ def grade_adjusted_pace_chart(points: Sequence[PacePoint], out_dir: Path) -> Pat
     return style.save(fig, out_dir, "grade_adjusted_pace.png")
 
 
-def pace_trend_chart(
-    daily: Sequence[tuple[date, float]], title: str, filename: str, out_dir: Path
-) -> Path:
-    """Generic pace-over-time trend (scatter + rolling median) on a pace axis."""
-    fig, ax = style.figure(
-        title, "Per-run pace with a rolling median", "Date", "Pace (min/km)"
-    )
-    if daily:
-        _pace_scatter(ax, [d for d, _ in daily], [v for _, v in daily])
-        ax.legend()
-    _pace_axis(ax)
-    style.date_axis(ax)
-    return style.save(fig, out_dir, filename)
-
-
 def fastest_by_bucket_chart(buckets: Sequence[BucketPace], out_dir: Path) -> Path:
     fig, ax = style.figure(
         "Fastest pace by distance",
@@ -337,30 +320,17 @@ def fastest_by_bucket_chart(buckets: Sequence[BucketPace], out_dir: Path) -> Pat
                 xytext=(0, 3),
                 textcoords="offset points",
                 ha="center",
-                fontsize=8,
+                fontsize=9,
+                fontweight="bold",
                 color=SUBTLE,
             )
-    _pace_axis(ax)
+    # Format as M:SS but do NOT invert: on an inverted axis the bars hang from
+    # the top and the fastest bucket reads as the longest bar.
+    ax.yaxis.set_major_formatter(FuncFormatter(_format_pace))
+    positive = [v for v in values if v]
+    if positive:
+        ax.set_ylim(min(positive) * 0.85, max(positive) * 1.08)
     return style.save(fig, out_dir, "fastest_by_bucket.png")
-
-
-def pace_by_weekday_chart(
-    weekday_paces: Sequence[Sequence[float]], out_dir: Path
-) -> Path:
-    fig, ax = style.figure(
-        "Pace by day of week",
-        "Distribution of run pace on each weekday",
-        "Weekday",
-        "Pace (min/km)",
-    )
-    data = [list(paces) if paces else [float("nan")] for paces in weekday_paces]
-    box = ax.boxplot(data, tick_labels=list(_WEEKDAYS), patch_artist=True)
-    for patch in box["boxes"]:
-        patch.set(facecolor=PRIMARY, alpha=0.35, edgecolor=PRIMARY)
-    for median in box["medians"]:
-        median.set(color=ACCENT, linewidth=2)
-    _pace_axis(ax)
-    return style.save(fig, out_dir, "pace_by_weekday.png")
 
 
 def race_prediction_chart(predictions: Sequence[RacePrediction], out_dir: Path) -> Path:
@@ -395,28 +365,29 @@ def race_prediction_chart(predictions: Sequence[RacePrediction], out_dir: Path) 
 
 
 def hr_over_time_chart(points: Sequence[HrPoint], out_dir: Path) -> Path:
+    """Per-run average HR as a scatter with a rolling median.
+
+    A scatter (not connected lines): consecutive runs mix easy and hard
+    sessions, so lines between them read as noise, and lines across sparse
+    months imply data that is not there.
+    """
     fig, ax = style.figure(
         "Heart rate over time",
-        "Average and maximum heart rate per run",
+        "Average HR per run (dots) with a rolling median",
         "Date",
         "Heart rate (bpm)",
     )
     ordered = sorted(points, key=lambda p: p.start)
     if ordered:
         starts = [p.start for p in ordered]
+        averages = [p.avg_hr for p in ordered]
+        ax.scatter(starts, averages, s=14, color=MUTED, alpha=0.45, label="Per run")
         ax.plot(
-            starts, [p.avg_hr for p in ordered], color=PRIMARY, lw=2, label="Average"
+            *_gap_broken(starts, _rolling_median(averages)),
+            color=PRIMARY,
+            lw=2.2,
+            label="Rolling median",
         )
-        maxes = [(p.start, p.max_hr) for p in ordered if p.max_hr is not None]
-        if maxes:
-            ax.plot(
-                [s for s, _ in maxes],
-                [m for _, m in maxes],
-                color=BAD,
-                alpha=0.5,
-                lw=1.2,
-                label="Max",
-            )
         ax.legend()
     style.date_axis(ax)
     return style.save(fig, out_dir, "hr_over_time.png")
@@ -456,27 +427,6 @@ def hr_zones_chart(zones: Sequence[HrZone], hr_max: float, out_dir: Path) -> Pat
     return style.save(fig, out_dir, "hr_zones.png")
 
 
-def efficiency_chart(points: Sequence[PacePoint], out_dir: Path) -> Path:
-    fig, ax = style.figure(
-        "Aerobic efficiency (pace vs heart rate)",
-        "Each run's pace against its average HR — down-right is fitter",
-        "Pace (min/km)",
-        "Average HR (bpm)",
-    )
-    paired = [(p.pace_s_per_km, p.avg_hr) for p in points if p.avg_hr is not None]
-    if paired:
-        ax.scatter(
-            [p for p, _ in paired],
-            [h for _, h in paired],
-            s=18,
-            color=PRIMARY,
-            alpha=0.5,
-        )
-        style.footnote(fig, _count_note(len(paired)))
-    ax.xaxis.set_major_formatter(FuncFormatter(_format_pace))
-    return style.save(fig, out_dir, "efficiency.png")
-
-
 def training_load_chart(load: Sequence[WeeklyLoad], out_dir: Path) -> Path:
     fig, ax = style.figure(
         "Weekly training load",
@@ -485,9 +435,9 @@ def training_load_chart(load: Sequence[WeeklyLoad], out_dir: Path) -> Path:
         "Load (a.u.)",
     )
     if load:
+        weeks = [w.week_start for w in load]
         ax.plot(
-            [w.week_start for w in load],
-            [w.load for w in load],
+            *_gap_broken(weeks, [w.load for w in load]),
             color=PRIMARY,
             linewidth=2.2,
             marker="o",
@@ -513,7 +463,10 @@ def cadence_chart(points: Sequence[tuple[datetime, float]], out_dir: Path) -> Pa
         values = [v for _, v in ordered]
         ax.scatter(days, values, s=14, color=MUTED, alpha=0.5, label="Runs")
         ax.plot(
-            days, _rolling_mean(values, 10), color=PRIMARY, linewidth=2.2, label="Trend"
+            *_gap_broken(days, _rolling_mean(values, 10)),
+            color=PRIMARY,
+            linewidth=2.2,
+            label="Rolling mean",
         )
         ax.legend()
     style.date_axis(ax)
@@ -553,13 +506,13 @@ def marker_chart(
     trend_window: int = 14,
 ) -> Path:
     """Faint daily values with an OLS trend line, ±1σ ribbon, and a current call-out."""
-    fig, ax = style.figure(title, "Per-run values with a linear trend", "Date", ylabel)
+    fig, ax = style.figure(title, "Daily values with a linear trend", "Date", ylabel)
     if daily:
         days = [d for d, _ in daily]
         values = [v for _, v in daily]
         ax.scatter(days, values, s=14, color=MUTED, alpha=0.4, label="Daily")
         style.trend_annotation(ax, list(daily))
-        style.latest_callout(ax, days[-1], values[-1], f"{values[-1]:.1f}")
+        style.latest_callout(ax, days[-1], values[-1], style.sig_value(values[-1]))
         ax.legend(loc="lower left")
     style.date_axis(ax)
     return style.save(fig, out_dir, filename)
@@ -704,30 +657,6 @@ def best_effort_progression_chart(
     _pace_axis(ax)
     style.date_axis(ax)
     return style.save(fig, out_dir, "best_effort_progression.png")
-
-
-def route_pace_chart(groups: Sequence[RouteGroup], out_dir: Path) -> Path:
-    """Pace over time on each of the most-repeated routes (same-route fitness)."""
-    fig, ax = style.figure(
-        "Same-route pace over time",
-        "Pace on your most-repeated routes — the cleanest fitness signal",
-        "Date",
-        "Pace (min/km)",
-    )
-    for group in groups:
-        ax.plot(
-            [d for d, _ in group.paces],
-            [p for _, p in group.paces],
-            marker="o",
-            markersize=4,
-            lw=1.8,
-            label=f"{group.label} (n={group.count})",
-        )
-    if groups:
-        ax.legend(fontsize=8)
-    _pace_axis(ax)
-    style.date_axis(ax)
-    return style.save(fig, out_dir, "route_pace.png")
 
 
 def intensity_distribution_chart(dist: IntensityDistribution, out_dir: Path) -> Path:

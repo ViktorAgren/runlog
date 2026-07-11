@@ -48,3 +48,11 @@ def test_save_writes_png(tmp_path: Path) -> None:
     fig, _ax = style.figure("t")
     path = style.save(fig, tmp_path, "t.png")
     assert path.exists() and path.stat().st_size > 0
+
+
+def test_sig_value_keeps_three_significant_digits() -> None:
+    # Fraction-scale metrics (running economy 0.0133 m/s/W) must not collapse
+    # to "0.0" the way a fixed {:.1f} did; large values need no decimals.
+    assert [
+        style.sig_value(v) for v in (0.013341, 0.964, 7.5, 52.34, 245.0, -0.05, 0.0)
+    ] == ["0.0133", "0.964", "7.5", "52.3", "245", "-0.05", "0"]

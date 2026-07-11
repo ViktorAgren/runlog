@@ -1,15 +1,11 @@
-"""Unit tests for per-run stream analysis (GAP, climb, pacing, routes)."""
+"""Unit tests for per-run stream analysis (GAP, climb, pacing)."""
 
 from __future__ import annotations
-
-from datetime import UTC, datetime
 
 import pytest
 
 from runlog.analyze import streams
-from runlog.analyze.metrics import Run
-from runlog.analyze.streams import ClimbStats, PacingStats, RouteGroup, StreamSample
-from runlog.domain import ActivityId
+from runlog.analyze.streams import ClimbStats, PacingStats, StreamSample
 
 
 def _sample(offset: int, dist: float, alt: float | None = None) -> StreamSample:
@@ -68,51 +64,3 @@ def test_pacing_stats_detects_negative_split() -> None:
     assert streams.pacing_stats([*first_km, *second_km]) == PacingStats(
         even_cv=0.333, negative_split_pct=50.0
     )
-
-
-def _geo(lat: float, lng: float, dist: float) -> StreamSample:
-    return StreamSample(0, dist, None, lat, lng, None, None)
-
-
-def test_route_signature_collides_for_same_start_and_distance() -> None:
-    a = [_geo(59.3251, 18.0711, 0.0), _geo(59.3260, 18.0720, 5040.0)]
-    b = [_geo(59.3253, 18.0709, 0.0), _geo(59.3299, 18.0777, 4980.0)]
-    far = [_geo(59.4000, 18.2000, 0.0), _geo(59.4100, 18.2100, 5010.0)]
-    assert streams.route_signature(a) == streams.route_signature(b)
-    assert streams.route_signature(a) != streams.route_signature(far)
-
-
-def _run(day: int, pace: float | None) -> Run:
-    return Run(
-        activity_id=ActivityId(day),
-        source="strava",
-        start=datetime(2026, 6, day, tzinfo=UTC),
-        distance_m=5000.0,
-        moving_s=1500,
-        avg_pace_s_per_km=pace,
-        avg_hr=None,
-        max_hr=None,
-    )
-
-
-def test_rank_routes_keeps_frequent_routes_in_date_order() -> None:
-    home: streams.RouteSig = (59.325, 18.071, 5)
-    other: streams.RouteSig = (59.400, 18.200, 5)
-    labelled = [
-        (_run(1, 320.0), home),
-        (_run(2, 315.0), home),
-        (_run(3, 310.0), home),
-        (_run(4, 300.0), other),  # only one run on `other`
-        (_run(5, None), home),  # no pace -> excluded from the series
-    ]
-    assert streams._rank_routes(labelled, min_runs=3, top_n=3) == [
-        RouteGroup(
-            label="~5 km near (59.325, 18.071)",
-            count=4,
-            paces=[
-                (_run(1, 0.0).start.date(), 320.0),
-                (_run(2, 0.0).start.date(), 315.0),
-                (_run(3, 0.0).start.date(), 310.0),
-            ],
-        )
-    ]
