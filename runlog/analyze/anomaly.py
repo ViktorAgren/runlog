@@ -90,6 +90,47 @@ def _robust_scale(values: Sequence[float], center: float) -> float:
     return scale
 
 
+@dataclass(frozen=True)
+class Reading:
+    """One reading scored against its trailing baseline (median +/- MAD)."""
+
+    day: date
+    value: float
+    center: float  # trailing-baseline median
+    deviation: float  # signed robust z-score (value - center) / scale
+
+
+def robust_z_series(
+    series: Sequence[tuple[date, float]],
+    *,
+    window_days: int = _BASELINE_DAYS,
+    min_baseline: int = _MIN_BASELINE,
+) -> list[Reading]:
+    """Signed robust z-score of each reading vs. its trailing baseline.
+
+    The shared core behind :func:`detect_series` (which just thresholds these)
+    and the readiness score (which averages them across markers). Days without
+    enough prior baseline, or with a degenerate zero scale, are skipped.
+    """
+    ordered = sorted(series)
+    readings: list[Reading] = []
+    for i, (day, value) in enumerate(ordered):
+        window_start = day - timedelta(days=window_days)
+        baseline = [v for d, v in ordered[:i] if d >= window_start]
+        if len(baseline) < min_baseline:
+            continue
+        center = statistics.median(baseline)
+        scale = _robust_scale(baseline, center)
+        if scale == 0:
+            continue
+        readings.append(
+            Reading(
+                day=day, value=value, center=center, deviation=(value - center) / scale
+            )
+        )
+    return readings
+
+
 def detect_series(
     series: Sequence[tuple[date, float]],
     metric: str,
@@ -100,27 +141,23 @@ def detect_series(
     min_baseline: int = _MIN_BASELINE,
 ) -> list[Anomaly]:
     """Flag readings that deviate from their trailing baseline in ``direction``."""
-    ordered = sorted(series)
     anomalies: list[Anomaly] = []
-    for i, (day, value) in enumerate(ordered):
-        window_start = day - timedelta(days=window_days)
-        baseline = [v for d, v in ordered[:i] if d >= window_start]
-        if len(baseline) < min_baseline:
-            continue
-        center = statistics.median(baseline)
-        scale = _robust_scale(baseline, center)
-        if scale == 0:
-            continue
-        deviation = (value - center) / scale
-        flagged = deviation >= k if direction is Direction.HIGH else deviation <= -k
+    for reading in robust_z_series(
+        series, window_days=window_days, min_baseline=min_baseline
+    ):
+        flagged = (
+            reading.deviation >= k
+            if direction is Direction.HIGH
+            else reading.deviation <= -k
+        )
         if flagged:
             anomalies.append(
                 Anomaly(
-                    day=day,
+                    day=reading.day,
                     metric=metric,
-                    value=value,
-                    baseline=round(center, 2),
-                    deviation=round(deviation, 2),
+                    value=reading.value,
+                    baseline=round(reading.center, 2),
+                    deviation=round(reading.deviation, 2),
                     direction=direction,
                 )
             )

@@ -144,6 +144,21 @@ def test_stream_charts_write_png(tmp_path: Path) -> None:
     assert _wrote_png(charts.intensity_distribution_chart(dist, tmp_path))
 
 
+def test_critical_speed_and_readiness_charts_write_png(tmp_path: Path) -> None:
+    from runlog.analyze.cs import CsModel, CsPoint
+    from runlog.analyze.readiness import ReadinessDay
+
+    model = CsModel(
+        cs_mps=4.5,
+        d_prime_m=180.0,
+        r=0.99,
+        points=[CsPoint(1000.0, 200.0), CsPoint(5000.0, 1100.0)],
+    )
+    assert _wrote_png(charts.critical_speed_chart(model, tmp_path))
+    days = [ReadinessDay(date(2026, 6, d), 50.0 + d, {}) for d in range(1, 6)]
+    assert _wrote_png(charts.readiness_chart(days, tmp_path))
+
+
 def test_charts_handle_empty_data(tmp_path: Path) -> None:
     assert _wrote_png(charts.pace_over_time_chart([], tmp_path))
     assert _wrote_png(
@@ -153,3 +168,5 @@ def test_charts_handle_empty_data(tmp_path: Path) -> None:
     assert _wrote_png(
         charts.anomaly_timeline_chart(AnomalyReport([], [], []), tmp_path)
     )
+    assert _wrote_png(charts.critical_speed_chart(None, tmp_path))
+    assert _wrote_png(charts.readiness_chart([], tmp_path))

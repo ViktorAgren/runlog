@@ -433,6 +433,18 @@ def run_trend(
     return points
 
 
+def running_economy(run: Run) -> float | None:
+    """Speed per watt (m/s per W): more distance covered for the power spent.
+
+    Average speed (distance / moving time) over average running power from the
+    Apple dynamics; rising over time means improving economy. ``None`` when
+    power is missing or non-positive, so it plugs into :func:`run_trend`.
+    """
+    if run.avg_power_w and run.avg_power_w > 0 and run.distance_m and run.moving_s:
+        return round((run.distance_m / run.moving_s) / run.avg_power_w, 4)
+    return None
+
+
 def grade_adjusted_pace_points(runs: Sequence[Run]) -> list[PacePoint]:
     """Grade-adjusted pace per run (Strava's grade-adjusted distance / time).
 

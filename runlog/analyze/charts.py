@@ -33,6 +33,7 @@ if TYPE_CHECKING:
 
     from runlog.analyze.analytics import BestEffortProgression, PmcPoint, Trend
     from runlog.analyze.anomaly import AnomalyReport
+    from runlog.analyze.cs import CsModel
     from runlog.analyze.metrics import (
         BucketPace,
         Heatmap,
@@ -44,6 +45,7 @@ if TYPE_CHECKING:
         WeeklyVolume,
     )
     from runlog.analyze.physiology import IntensityDistribution
+    from runlog.analyze.readiness import ReadinessDay
     from runlog.analyze.streams import RouteGroup
 
 # Y-axis rows (bottom to top) for the anomaly timeline, with display labels.
@@ -789,3 +791,77 @@ def anomaly_timeline_chart(report: AnomalyReport, out_dir: Path) -> Path:
             ax.scatter(anomaly.day, row, s=44, color=BAD, alpha=0.75, zorder=3)
     style.date_axis(ax)
     return style.save(fig, out_dir, "anomaly_timeline.png")
+
+
+def critical_speed_chart(model: CsModel | None, out_dir: Path) -> Path:
+    """Speed-duration curve: best efforts approaching the critical-speed line."""
+    fig, ax = style.figure(
+        "Critical speed",
+        "Best efforts approach the sustainable-speed asymptote (v = CS + D'/t)",
+        "Duration (s)",
+        "Speed (m/s)",
+    )
+    if model is not None and model.points:
+        durations = [p.seconds for p in model.points]
+        ax.scatter(
+            durations,
+            [p.distance_m / p.seconds for p in model.points],
+            s=52,
+            color=PRIMARY,
+            zorder=5,
+            label="Best efforts",
+        )
+        t_max = max(durations)
+        curve_t = [t_max * pct / 100 for pct in range(5, 101)]
+        ax.plot(
+            curve_t,
+            [model.cs_mps + model.d_prime_m / t for t in curve_t],
+            color=ACCENT,
+            lw=2,
+            label="Model",
+        )
+        ax.axhline(
+            model.cs_mps,
+            color=GOOD,
+            linestyle="--",
+            lw=1.2,
+            label=f"CS {model.cs_mps:.2f} m/s",
+        )
+        ax.text(
+            0.98,
+            0.05,
+            f"CS {model.cs_mps:.2f} m/s   D' {model.d_prime_m:.0f} m   r={model.r:.2f}",
+            transform=ax.transAxes,
+            ha="right",
+            va="bottom",
+            fontsize=9,
+            color=SUBTLE,
+            bbox={
+                "boxstyle": "round,pad=0.3",
+                "fc": "white",
+                "ec": MUTED,
+                "alpha": 0.9,
+            },
+        )
+        ax.legend(loc="upper right")
+    return style.save(fig, out_dir, "critical_speed.png")
+
+
+def readiness_chart(days: Sequence[ReadinessDay], out_dir: Path) -> Path:
+    """Daily readiness score over time with the 40-60 normal band."""
+    fig, ax = style.figure(
+        "Daily readiness",
+        "Composite recovery score from resting HR, HRV, sleep, and HR-recovery",
+        "Date",
+        "Readiness (0–100)",
+    )
+    style.reference_band(ax, 40, 60, "Normal (40–60)", GOOD)
+    if days:
+        xs = [d.day for d in days]
+        ys = [d.score for d in days]
+        ax.plot(xs, ys, color=PRIMARY, lw=1.6)
+        style.latest_callout(ax, xs[-1], ys[-1], f"{ys[-1]:.0f}")
+    ax.set_ylim(0, 100)
+    ax.legend(loc="lower left")
+    style.date_axis(ax)
+    return style.save(fig, out_dir, "readiness.png")

@@ -384,6 +384,17 @@ def test_run_trend_keeps_only_runs_carrying_the_field() -> None:
     ]
 
 
+def test_running_economy_is_speed_per_watt() -> None:
+    # 5000 m in 1500 s -> 3.333 m/s; over 250 W -> 0.0133 m/s per watt.
+    run = _run(datetime(2026, 6, 1, tzinfo=UTC), moving_s=1500.0, avg_power_w=250.0)
+    assert metrics.running_economy(run) == round((5000 / 1500) / 250, 4)
+
+
+def test_running_economy_none_without_power() -> None:
+    run = _run(datetime(2026, 6, 1, tzinfo=UTC), moving_s=1500.0)
+    assert metrics.running_economy(run) is None
+
+
 def test_grade_adjusted_pace_uses_grade_adjusted_distance() -> None:
     # 1500 s over a grade-adjusted 5.0 km -> 300 s/km.
     runs = [
