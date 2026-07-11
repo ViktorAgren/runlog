@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING
 from xml.etree.ElementTree import iterparse
 
@@ -172,22 +172,77 @@ def _calories(elem: Element) -> float | None:
     return _as_float(stat.get("sum")) if stat is not None else None
 
 
-def _workout_laps(elem: Element) -> tuple[Lap, ...]:
-    """Build laps from segment/lap WorkoutEvents (interval sessions)."""
+def _activity_laps(elem: Element) -> tuple[Lap, ...]:
+    """Laps from ``WorkoutActivity`` segments (warm-up / work / cool-down).
+
+    Newer Apple exports nest each workout phase in a ``WorkoutActivity`` element
+    with its own ``WorkoutStatistics`` (distance, HR, ...). These are the real
+    per-phase splits — far richer than the bare ``Segment`` event durations — so
+    one lap is built per activity with a pace derived from distance and time.
+    """
     laps: list[Lap] = []
-    for event in elem.findall("WorkoutEvent"):
-        if event.get("type") not in _LAP_EVENT_TYPES:
+    for activity in elem.findall("WorkoutActivity"):
+        start, end = activity.get("startDate"), activity.get("endDate")
+        if not (start and end):
             continue
-        elapsed = _convert(
-            event.get("duration"), _DURATION_TO_S, event.get("durationUnit")
+        duration = (_parse_dt(end) - _parse_dt(start)).total_seconds()
+        if duration <= 0:
+            continue
+        stats = {st.get("type", ""): st for st in activity.findall("WorkoutStatistics")}
+        dist = stats.get("HKQuantityTypeIdentifierDistanceWalkingRunning")
+        distance = (
+            _convert(dist.get("sum"), _DISTANCE_TO_M, dist.get("unit"))
+            if dist is not None
+            else None
         )
+        hr = stats.get("HKQuantityTypeIdentifierHeartRate")
+        pace = duration / (distance / 1000) if distance and distance > 0 else None
         laps.append(
             Lap(
                 lap_index=len(laps),
-                elapsed_s=int(elapsed) if elapsed is not None else None,
+                elapsed_s=int(duration),
+                distance_m=round(distance, 1) if distance else None,
+                avg_hr=_as_float(hr.get("average")) if hr is not None else None,
+                avg_pace_s_per_km=round(pace, 1) if pace else None,
             )
         )
     return tuple(laps)
+
+
+def _event_laps(elem: Element) -> tuple[Lap, ...]:
+    """Fallback laps from ``Segment`` WorkoutEvents (duration only).
+
+    Apple often exports overlapping and duplicated ``Segment`` events (several
+    sharing a start time with different durations, and the whole set repeated),
+    which naively summed to ~2x the workout. We dedupe by (start, duration) and
+    keep only segments that do not overlap the previously kept one.
+    """
+    segments: set[tuple[datetime, float]] = set()
+    for event in elem.findall("WorkoutEvent"):
+        if event.get("type") not in _LAP_EVENT_TYPES:
+            continue
+        start = event.get("date")
+        duration = _convert(
+            event.get("duration"), _DURATION_TO_S, event.get("durationUnit")
+        )
+        if start and duration and duration > 0:
+            segments.add((_parse_dt(start), duration))
+    laps: list[Lap] = []
+    last_end: datetime | None = None
+    for seg_start, duration in sorted(segments):
+        if last_end is not None and seg_start < last_end:
+            continue  # overlaps the previous segment — an Apple export artifact
+        laps.append(Lap(lap_index=len(laps), elapsed_s=int(duration)))
+        last_end = seg_start + timedelta(seconds=duration)
+    return tuple(laps)
+
+
+def _workout_laps(elem: Element) -> tuple[Lap, ...]:
+    """Per-phase laps: prefer the rich WorkoutActivity segments, else events."""
+    activity_laps = _activity_laps(elem)
+    if len(activity_laps) >= 2:
+        return activity_laps
+    return _event_laps(elem)
 
 
 def _route_file(elem: Element) -> str | None:

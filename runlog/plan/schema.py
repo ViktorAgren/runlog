@@ -103,3 +103,35 @@ class TrainingPlan(BaseModel):
     )
     weeks: list[Week]
     key_advice: list[str] = Field(description="A few high-priority reminders")
+
+
+class WeekAdjustment(BaseModel):
+    """A light tweak to one planned week — never a rewrite of the plan."""
+
+    week: int = Field(description="Plan week number this note refers to")
+    focus: str = Field(description="That week's planned focus, as read from the plan")
+    adherence: Literal["ahead", "on-track", "partial", "missed"]
+    adjustment: str = Field(
+        description="Concrete tweak to make, or '' if the week is fine as planned"
+    )
+
+
+class PlanReview(BaseModel):
+    """A coaching follow-up on a plan in progress. Tips only — no plan rewrite."""
+
+    summary: str = Field(
+        description="Overall adherence and fitness trajectory vs. the plan"
+    )
+    adherence_pct: int = Field(
+        description="Rough %% of planned sessions/volume completed so far (0-100)"
+    )
+    on_track: bool
+    whats_working: list[str]
+    whats_off: list[str]
+    tips: list[str] = Field(
+        description="Prioritized, concrete tips that copy exact zone paces/HR"
+    )
+    week_adjustments: list[WeekAdjustment]
+    watch_outs: list[str] = Field(
+        description="Injury/overtraining risks to monitor (red-flag days, ACWR, etc.)"
+    )

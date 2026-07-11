@@ -7,7 +7,13 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from runlog.plan.schema import AppleWorkout, Session, TrainingPlan, WorkoutStep
+    from runlog.plan.schema import (
+        AppleWorkout,
+        PlanReview,
+        Session,
+        TrainingPlan,
+        WorkoutStep,
+    )
     from runlog.plan.targets import TrainingZone
 
 
@@ -110,4 +116,40 @@ def to_markdown(plan: TrainingPlan, zones: Sequence[TrainingZone] = ()) -> str:
     if plan.key_advice:
         lines += ["", "## Key advice", ""]
         lines += [f"- {advice}" for advice in plan.key_advice]
+    return "\n".join(lines) + "\n"
+
+
+def _bullets(header: str, items: Sequence[str]) -> list[str]:
+    if not items:
+        return []
+    return ["", f"## {header}", "", *[f"- {item}" for item in items]]
+
+
+def review_to_markdown(review: PlanReview) -> str:
+    """Render a :class:`PlanReview` as a markdown coaching follow-up."""
+    status = "on track" if review.on_track else "off track"
+    lines: list[str] = [
+        "# Plan follow-up",
+        "",
+        f"**Adherence:** {review.adherence_pct}% · **{status}**",
+        "",
+        "## Adherence",
+        "",
+        review.summary,
+    ]
+    lines += _bullets("What's working", review.whats_working)
+    lines += _bullets("What to fix", review.whats_off)
+    if review.week_adjustments:
+        lines += [
+            "",
+            "## Weekly adjustments",
+            "",
+            "| Week | Focus | Adherence | Adjustment |",
+            "| --- | --- | --- | --- |",
+        ]
+        for adj in review.week_adjustments:
+            note = (adj.adjustment or "-").replace("|", "\\|")
+            lines.append(f"| {adj.week} | {adj.focus} | {adj.adherence} | {note} |")
+    lines += _bullets("Tips", review.tips)
+    lines += _bullets("Watch-outs", review.watch_outs)
     return "\n".join(lines) + "\n"
