@@ -9,8 +9,9 @@ elevation, velocity), laps, running dynamics (power, stride length, vertical
 oscillation, ground contact), and the health metrics Strava doesn't have
 (resting HR, HRV, VO2max, SpO2, sleep, HR-recovery). From those it computes
 weekly volume, pace and HR trends, fitness/fatigue/form (CTL/ATL/TSB), ACWR,
-intensity distribution, elevation-adjusted pace, same-route comparisons, and
-flags days and runs that deviate from your rolling baseline.
+intensity distribution, elevation-adjusted pace, critical speed, a daily
+readiness score, and flags days and runs that deviate from your rolling
+baseline.
 
 ---
 
@@ -195,31 +196,29 @@ Same dry-run/API model as `plan`. Writes markdown to `data/plans/`.
 Prints a text summary (total distance, streaks, consistency, records, Riegel
 race predictions, training status, intensity split, latest markers, anomalies),
 writes `report.html` (KPI cards + every figure embedded as base64, so it's one
-file), and saves ~30 charts under three folders:
+file), and saves ~35 charts under three folders:
 
 - **`training/`** — weekly/monthly volume, runs-per-week, cumulative distance,
-  distance histogram, training heatmap, rest gaps, pace over time,
-  grade-adjusted pace, fastest by distance, pace by weekday, best-effort
-  progression, same-route pace, race predictions, HR over time, HR zones, HR
-  histogram, aerobic efficiency, training load, start time of day, running-form
-  dynamics (power, stride length, vertical oscillation, ground contact), climb,
-  and pacing.
-- **`recovery/`** — off-workout markers: VO2max, resting HR, HRV, SpO2, sleep,
-  HR-recovery, body mass, walking asymmetry.
+  distance histogram, training heatmap, pace over time, grade-adjusted pace,
+  fastest by distance, race predictions, HR over time, HR zones, HR histogram,
+  training load, cadence, elevation, and running-form dynamics (power, stride
+  length, vertical oscillation, ground contact, running economy).
+- **`recovery/`** — off-workout markers: VO2max, resting HR, HRV, sleep,
+  HR-recovery, body mass.
 - **`analytics/`** — derived models:
   - **Performance Management Chart** — Fitness (CTL) / Fatigue (ATL) / Form (TSB)
     from Banister TRIMP.
   - **ACWR** — acute:chronic workload ratio (sweet spot 0.8–1.3).
   - **Efficiency factor** trend with a fitted regression slope.
-  - **Aerobic decoupling** and **cardiac drift** from the HR + velocity streams.
+  - **Aerobic decoupling** from the HR + velocity streams.
   - **Best-effort progression** — fastest continuous 1k/5k/10k over time.
+  - **Critical speed** — the CS/D' model fit to your best efforts.
   - **Intensity distribution** — % time easy / moderate / hard.
-  - **Anomaly timeline** — red-flag days and off-runs vs. baseline.
+  - **Anomaly timeline** and **daily readiness** vs. your rolling baseline.
 
 The per-second streams (GPS, elevation, velocity, reconstructed HR) drive the
-stream metrics: elevation-adjusted pace (Minetti cost model), same-route
-grouping, per-run HR-zone splits, stream-integrated TRIMP, and OLS cardiac
-drift.
+stream metrics: elevation-adjusted pace (Minetti cost model), per-run HR-zone
+splits, stream-integrated TRIMP, and OLS cardiac drift (a summary line).
 
 Anomaly detection flags days where resting HR, HRV, SpO2, sleep, or HR-recovery
 deviate from their trailing ~42-day baseline (a red-flag day when ≥2 fire

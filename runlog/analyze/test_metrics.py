@@ -316,26 +316,6 @@ def test_cumulative_distance_by_year_accumulates(conn: sqlite3.Connection) -> No
     assert metrics.cumulative_distance_by_year(runs) == {2026: [(2, 5.0), (5, 8.0)]}
 
 
-def test_local_hour_uses_timezone(conn: sqlite3.Connection) -> None:
-    store.store_record(
-        conn,
-        ActivityRecord(
-            activity=Activity(
-                source="strava",
-                source_id=SourceId("tz-run"),
-                sport_type="Run",
-                start_time_utc=datetime(2026, 6, 1, 5, 30, tzinfo=UTC),
-                tz="Europe/Stockholm",  # +2h in summer -> 07:30 local
-                distance_m=5000.0,
-                moving_s=1500,
-                avg_pace_s_per_km=300.0,
-            )
-        ),
-    )
-    runs = metrics.canonical_run_activities(conn)
-    assert metrics.start_hour_distribution(runs) == [7]
-
-
 def test_overall_summary_totals(conn: sqlite3.Connection) -> None:
     _add_run(conn, datetime(2026, 6, 1, 7, tzinfo=UTC), distance_m=5000.0)
     _add_run(conn, datetime(2026, 6, 20, 7, tzinfo=UTC), distance_m=12000.0)

@@ -11,7 +11,6 @@ pacing quality.
 from __future__ import annotations
 
 import statistics
-from collections import defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -24,10 +23,6 @@ if TYPE_CHECKING:
 
     from runlog.analyze.metrics import Run
     from runlog.domain import ActivityId
-
-# A route signature: start latitude/longitude rounded to ~110 m plus the run's
-# distance rounded to the nearest km, so repeats of the same loop collide.
-RouteSig = tuple[float, float, int]
 
 # Minetti (2002) metabolic cost of running vs. gradient, normalized to level
 # cost so the value is a direct "flat-equivalent distance" multiplier. Valid for
@@ -200,71 +195,6 @@ def pacing_stats(stream: Sequence[StreamSample]) -> PacingStats | None:
         even_cv=round(statistics.pstdev(paces) / mean_pace, 3),
         negative_split_pct=round((first - second) / first * 100, 1) if first else 0.0,
     )
-
-
-def route_signature(
-    stream: Sequence[StreamSample], precision: int = 3, bucket_km: float = 1.0
-) -> RouteSig | None:
-    """A key that collides for repeats of the same start point + distance."""
-    if not stream or stream[0].lat is None or stream[0].lng is None:
-        return None
-    total_km = stream[-1].distance_m / 1000
-    return (
-        round(stream[0].lat, precision),
-        round(stream[0].lng, precision),
-        round(total_km / bucket_km),
-    )
-
-
-@dataclass(frozen=True)
-class RouteGroup:
-    label: str
-    count: int
-    paces: list[tuple[date, float]]  # (date, avg pace s/km) per run on the route
-
-
-def _rank_routes(
-    labelled: Sequence[tuple[Run, RouteSig | None]], min_runs: int, top_n: int
-) -> list[RouteGroup]:
-    """Group runs by route signature; keep the most-repeated routes."""
-    groups: dict[RouteSig, list[Run]] = defaultdict(list)
-    for run, sig in labelled:
-        if sig is not None:
-            groups[sig].append(run)
-    frequent = sorted(
-        (item for item in groups.items() if len(item[1]) >= min_runs),
-        key=lambda item: len(item[1]),
-        reverse=True,
-    )[:top_n]
-    result: list[RouteGroup] = []
-    for (lat, lng, km), members in frequent:
-        paces = [
-            (run.start.date(), run.avg_pace_s_per_km)
-            for run in sorted(members, key=lambda r: r.start)
-            if run.avg_pace_s_per_km is not None
-        ]
-        if len(paces) >= 2:
-            result.append(
-                RouteGroup(
-                    label=f"~{km} km near ({lat:.3f}, {lng:.3f})",
-                    count=len(members),
-                    paces=paces,
-                )
-            )
-    return result
-
-
-def route_pace_series(
-    conn: sqlite3.Connection,
-    runs: Sequence[Run],
-    min_runs: int = 4,
-    top_n: int = 3,
-) -> list[RouteGroup]:
-    """Pace-over-time on the athlete's most-repeated routes (same-route fitness)."""
-    labelled = [
-        (run, route_signature(full_stream(conn, run.activity_id))) for run in runs
-    ]
-    return _rank_routes(labelled, min_runs, top_n)
 
 
 def run_stream_series(

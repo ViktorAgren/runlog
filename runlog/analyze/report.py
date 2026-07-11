@@ -38,18 +38,6 @@ if TYPE_CHECKING:
     from datetime import date
     from pathlib import Path
 
-    from runlog.analyze.streams import StreamSample
-
-
-def _ascent_m(stream: list[StreamSample]) -> float | None:
-    stats = streams.climb_stats(stream)
-    return stats.ascent_m if stats is not None else None
-
-
-def _negative_split_pct(stream: list[StreamSample]) -> float | None:
-    stats = streams.pacing_stats(stream)
-    return stats.negative_split_pct if stats is not None else None
-
 
 # Passive, off-workout health metrics kept strictly separate from training data
 # (title, y-axis label) so they are never mixed into the running analysis.
@@ -63,6 +51,8 @@ _RECOVERY_MARKERS = {
     "body_mass": ("Body mass", "kg"),
     "walking_asymmetry": ("Walking asymmetry", "fraction"),
 }
+# Markers tracked for the summary + anomaly detection but too flat to chart.
+_UNCHARTED_MARKERS = frozenset({"spo2", "walking_asymmetry"})
 
 # Enriched per-run form/effort fields plotted as daily-marker trend charts,
 # each gated on having data so sources lacking the field emit no empty figure.
@@ -86,12 +76,6 @@ _FORM_TRENDS: tuple[tuple[str, str, str, _FormAccessor], ...] = (
         "Milliseconds",
         "ground_contact.png",
         lambda r: r.avg_ground_contact_ms,
-    ),
-    (
-        "Relative effort over time",
-        "Effort score",
-        "relative_effort.png",
-        lambda r: r.relative_effort,
     ),
     (
         "Running economy over time",
@@ -121,8 +105,6 @@ _SECTION_SPEC: tuple[tuple[str, str, tuple[str, ...]], ...] = (
             "cumulative_distance",
             "training_heatmap",
             "distance_histogram",
-            "rest_gaps",
-            "start_hours",
             "elevation_by_month",
         ),
     ),
@@ -132,11 +114,8 @@ _SECTION_SPEC: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         (
             "pace_over_time",
             "grade_adjusted_pace",
-            "elevation_gap",
-            "pace_by_weekday",
             "fastest_by_bucket",
             "best_effort_progression",
-            "route_pace",
             "race_predictions",
         ),
     ),
@@ -147,19 +126,14 @@ _SECTION_SPEC: tuple[tuple[str, str, tuple[str, ...]], ...] = (
             "hr_over_time",
             "hr_zones",
             "hr_histogram",
-            "efficiency",
             "training_load",
             "intensity_distribution",
-            "cardiac_drift",
             "cadence",
             "running_power",
             "stride_length",
             "vertical_oscillation",
             "ground_contact",
             "running_economy",
-            "relative_effort",
-            "climb_ascent",
-            "pacing_negative_split",
         ),
     ),
     (
@@ -188,22 +162,16 @@ _TITLE_OVERRIDES = {
     "hr_zones": "Time in HR zones",
     "hr_histogram": "HR distribution",
     "grade_adjusted_pace": "Grade-adjusted pace",
-    "elevation_gap": "Elevation-based GAP",
-    "efficiency": "Aerobic efficiency (pace vs HR)",
     "efficiency_factor": "Aerobic efficiency factor",
     "critical_speed": "Critical speed",
     "readiness": "Daily readiness",
     "running_economy": "Running economy (speed per watt)",
-    "pacing_negative_split": "Negative-split %",
-    "cardiac_drift": "Cardiac drift %",
     "vo2max": "VO2max",
     "resting_hr": "Resting heart rate",
     "hrv_sdnn": "HRV (SDNN)",
-    "spo2": "Blood oxygen (SpO2)",
     "sleep_hours": "Sleep hours",
     "hr_recovery_1min": "HR recovery (1 min)",
     "body_mass": "Body mass",
-    "walking_asymmetry": "Walking asymmetry",
 }
 
 
@@ -253,19 +221,15 @@ def run(
         ),
         charts.distance_histogram(metrics.distance_distribution(runs), training_dir),
         charts.training_heatmap_chart(metrics.training_heatmap(runs), training_dir),
-        charts.rest_gap_histogram(metrics.run_gap_days(runs), training_dir),
         charts.pace_over_time_chart(pace, training_dir),
         charts.fastest_by_bucket_chart(buckets, training_dir),
-        charts.pace_by_weekday_chart(metrics.pace_by_weekday(runs), training_dir),
         charts.race_prediction_chart(predictions, training_dir),
         charts.hr_over_time_chart(metrics.hr_over_time(runs), training_dir),
         charts.hr_histogram(hr, training_dir, zones),
         charts.hr_zones_chart(zones, hr_max_value, training_dir),
-        charts.efficiency_chart(pace, training_dir),
         charts.training_load_chart(
             metrics.weekly_training_load(runs, hr_max_value), training_dir
         ),
-        charts.start_hour_chart(metrics.start_hour_distribution(runs), training_dir),
     ]
 
     # Data-dependent charts: only emit them when there is something to plot, so
@@ -287,41 +251,6 @@ def run(
                 charts.marker_chart(trend, title, ylabel, filename, training_dir)
             )
 
-    # Per-second stream analyses (GPS + elevation + velocity): elevation-based
-    # grade-adjusted pace, climb load, and pacing discipline, plus same-route
-    # pace tracking. All skip-empty gated (runs without streams contribute none).
-    gap = streams.run_stream_series(conn, runs, streams.grade_adjusted_pace_s_per_km)
-    if gap:
-        produced.append(
-            charts.pace_trend_chart(
-                gap,
-                "Grade-adjusted pace (elevation-based)",
-                "elevation_gap.png",
-                training_dir,
-            )
-        )
-    ascent = streams.run_stream_series(conn, runs, _ascent_m)
-    if ascent:
-        produced.append(
-            charts.marker_chart(
-                ascent, "Ascent per run", "metres", "climb_ascent.png", training_dir
-            )
-        )
-    pacing = streams.run_stream_series(conn, runs, _negative_split_pct)
-    if pacing:
-        produced.append(
-            charts.marker_chart(
-                pacing,
-                "Negative-split % per run",
-                "%",
-                "pacing_negative_split.png",
-                training_dir,
-            )
-        )
-    route_groups = streams.route_pace_series(conn, runs)
-    if route_groups:
-        produced.append(charts.route_pace_chart(route_groups, training_dir))
-
     latest_markers: dict[str, tuple[date, float] | None] = {}
     for metric, (title, ylabel) in _RECOVERY_MARKERS.items():
         series = metrics.metric_series(conn, metric, since=since)
@@ -329,7 +258,7 @@ def run(
             (series[-1][0].date(), series[-1][1]) if series else None
         )
         daily = metrics.daily_means(series)
-        if daily:
+        if daily and metric not in _UNCHARTED_MARKERS:
             produced.append(
                 charts.marker_chart(daily, title, ylabel, f"{metric}.png", recovery_dir)
             )
@@ -374,13 +303,8 @@ def run(
     intensity = physiology.training_intensity_distribution(conn, runs, hr_max_value)
     if intensity is not None:
         produced.append(charts.intensity_distribution_chart(intensity, analytics_dir))
+    # Cardiac drift feeds a summary line only; as a per-run scatter it was noise.
     drift = streams.run_stream_series(conn, runs, physiology.cardiac_drift_pct)
-    if drift:
-        produced.append(
-            charts.marker_chart(
-                drift, "Cardiac drift %", "%", "cardiac_drift.png", analytics_dir
-            )
-        )
     median_drift = statistics.median(v for _, v in drift) if drift else None
 
     # Pace-based intensity split (session intent) alongside the HR-based one,

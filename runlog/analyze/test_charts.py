@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -61,11 +62,6 @@ def test_fastest_by_bucket_chart_writes_png(tmp_path: Path) -> None:
     assert _wrote_png(charts.fastest_by_bucket_chart(buckets, tmp_path))
 
 
-def test_pace_by_weekday_chart_writes_png(tmp_path: Path) -> None:
-    weekday_paces: list[list[float]] = [[300.0, 310.0], [], [290.0], [], [], [], []]
-    assert _wrote_png(charts.pace_by_weekday_chart(weekday_paces, tmp_path))
-
-
 def test_hr_charts_write_png(tmp_path: Path) -> None:
     hr_points = [
         HrPoint(datetime(2026, 6, d, tzinfo=UTC), 150.0, 180.0) for d in range(1, 5)
@@ -74,10 +70,8 @@ def test_hr_charts_write_png(tmp_path: Path) -> None:
     assert _wrote_png(charts.hr_histogram([120.0, 130.0, 140.0, 150.0], tmp_path))
 
 
-def test_efficiency_and_marker_charts_write_png(tmp_path: Path) -> None:
-    points = [PacePoint(datetime(2026, 6, 1, tzinfo=UTC), 300.0, 5.0, 150.0)]
+def test_marker_chart_writes_png(tmp_path: Path) -> None:
     daily = [(date(2026, 6, d), 50.0 + d) for d in range(1, 4)]
-    assert _wrote_png(charts.efficiency_chart(points, tmp_path))
     assert _wrote_png(
         charts.marker_chart(daily, "VO2max", "ml/kg/min", "vo2max.png", tmp_path)
     )
@@ -94,7 +88,6 @@ def test_race_prediction_chart_writes_png(tmp_path: Path) -> None:
 def test_consistency_and_load_charts_write_png(tmp_path: Path) -> None:
     weekly = [WeeklyVolume(date(2026, 6, 1), 10.0, 3, 10.0)]
     assert _wrote_png(charts.runs_per_week_chart(weekly, tmp_path))
-    assert _wrote_png(charts.rest_gap_histogram([1, 2, 2, 5], tmp_path))
     zones = [
         HrZone("Z1", 60, 90, 108),
         HrZone("Z2", 120, 108, 126),
@@ -110,7 +103,6 @@ def test_cadence_elevation_timing_charts_write_png(tmp_path: Path) -> None:
     cadence = [(datetime(2026, 6, d, tzinfo=UTC), 82.0 + d) for d in range(1, 5)]
     assert _wrote_png(charts.cadence_chart(cadence, tmp_path))
     assert _wrote_png(charts.elevation_by_month_chart({2026: [10.0] * 12}, tmp_path))
-    assert _wrote_png(charts.start_hour_chart([6, 7, 7, 18], tmp_path))
     assert _wrote_png(
         charts.cumulative_ytd_chart({2026: [(2, 5.0), (5, 8.0)]}, tmp_path)
     )
@@ -134,14 +126,18 @@ def test_anomaly_timeline_chart_writes_png(tmp_path: Path) -> None:
 
 def test_stream_charts_write_png(tmp_path: Path) -> None:
     from runlog.analyze.physiology import IntensityDistribution
-    from runlog.analyze.streams import RouteGroup
 
-    daily = [(date(2026, 6, d), 300.0 + d) for d in range(1, 6)]
-    assert _wrote_png(charts.pace_trend_chart(daily, "GAP", "gap.png", tmp_path))
-    groups = [RouteGroup("~5 km near (59.3, 18.1)", 4, daily)]
-    assert _wrote_png(charts.route_pace_chart(groups, tmp_path))
     dist = IntensityDistribution(78.0, 8.0, 14.0, 5.6)
     assert _wrote_png(charts.intensity_distribution_chart(dist, tmp_path))
+
+
+def test_gap_broken_inserts_nan_across_long_gaps() -> None:
+    # A 60-day hole between the 2nd and 3rd points must break the line there,
+    # while keeping every real point.
+    days = [date(2026, 1, 1), date(2026, 1, 8), date(2026, 3, 9), date(2026, 3, 12)]
+    xs, ys = charts._gap_broken(days, [1.0, 2.0, 3.0, 4.0], max_gap_days=30)
+    assert xs == [days[0], days[1], days[2], days[2], days[3]]
+    assert ys[:2] == [1.0, 2.0] and math.isnan(ys[2]) and ys[3:] == [3.0, 4.0]
 
 
 def test_critical_speed_and_readiness_charts_write_png(tmp_path: Path) -> None:
