@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 
     from runlog.analyze.analytics import BestEffortProgression, PmcPoint, Trend
     from runlog.analyze.anomaly import AnomalyReport
+    from runlog.analyze.cs import CsModel
     from runlog.analyze.metrics import (
         BestEffort,
         BucketPace,
@@ -19,6 +20,7 @@ if TYPE_CHECKING:
         WeeklyVolume,
     )
     from runlog.analyze.physiology import IntensityDistribution
+    from runlog.analyze.readiness import ReadinessDay
 
 _MARKER_LABELS = {
     "vo2max": "VO2max",
@@ -181,6 +183,44 @@ def anomaly_section(report: AnomalyReport, recent: int = 8) -> str:
                 f"{anomaly.day}  efficiency {anomaly.value:.2f} "
                 f"vs {anomaly.baseline:.2f} ({anomaly.deviation:+.1f} sigma)"
             )
+    return "\n".join(lines)
+
+
+_CS_PREDICTIONS: tuple[tuple[str, float], ...] = (
+    ("3k", 3000.0),
+    ("5k", 5000.0),
+    ("10k", 10000.0),
+)
+
+
+def advanced_section(
+    cs_model: CsModel | None,
+    readiness_latest: ReadinessDay | None,
+    readiness_r: float | None,
+) -> str:
+    """Render the Critical Speed model and readiness score (empty if neither)."""
+    if cs_model is None and readiness_latest is None:
+        return ""
+    lines: list[str] = ["", "Advanced models", "=" * 40]
+    if cs_model is not None:
+        lines.append(
+            f"Critical speed {cs_model.cs_mps:.2f} m/s  "
+            f"(D' {cs_model.d_prime_m:.0f} m, r={cs_model.r:.2f})"
+        )
+        for label, meters in _CS_PREDICTIONS:
+            seconds = cs_model.predict_seconds(meters)
+            if seconds is not None:
+                lines.append(f"  CS {label:<4} {_clock(seconds)}")
+    if readiness_latest is not None:
+        lines.append(
+            f"Readiness      {readiness_latest.score:.0f}/100  "
+            f"({readiness_latest.day}, 40-60 normal)"
+        )
+    if readiness_r is not None:
+        lines.append(
+            f"Readiness vs performance  r={readiness_r:+.2f} "
+            f"(explains ~{round(readiness_r**2 * 100)}% of off-day variance)"
+        )
     return "\n".join(lines)
 
 

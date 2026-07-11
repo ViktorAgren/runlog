@@ -18,9 +18,11 @@ from runlog.analyze import (
     analytics,
     anomaly,
     charts,
+    cs,
     html_report,
     metrics,
     physiology,
+    readiness,
     report_model,
     streams,
     summary,
@@ -91,6 +93,12 @@ _FORM_TRENDS: tuple[tuple[str, str, str, _FormAccessor], ...] = (
         "relative_effort.png",
         lambda r: r.relative_effort,
     ),
+    (
+        "Running economy over time",
+        "m/s per watt",
+        "running_economy.png",
+        metrics.running_economy,
+    ),
 )
 
 
@@ -148,6 +156,7 @@ _SECTION_SPEC: tuple[tuple[str, str, tuple[str, ...]], ...] = (
             "stride_length",
             "vertical_oscillation",
             "ground_contact",
+            "running_economy",
             "relative_effort",
             "climb_ascent",
             "pacing_negative_split",
@@ -155,13 +164,20 @@ _SECTION_SPEC: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ),
     (
         "Fitness & form",
-        "Fitness/fatigue balance, workload ratio, and aerobic-efficiency trend.",
-        ("pmc_fitness_form", "acwr", "efficiency_factor", "aerobic_decoupling"),
+        "Fitness/fatigue balance, workload ratio, aerobic efficiency, and "
+        "the critical-speed model.",
+        (
+            "pmc_fitness_form",
+            "acwr",
+            "efficiency_factor",
+            "aerobic_decoupling",
+            "critical_speed",
+        ),
     ),
     (
-        "Anomalies",
+        "Anomalies & readiness",
         "Days and runs that deviate from your own rolling baseline.",
-        ("anomaly_timeline",),
+        ("anomaly_timeline", "readiness"),
     ),
 )
 
@@ -175,6 +191,9 @@ _TITLE_OVERRIDES = {
     "elevation_gap": "Elevation-based GAP",
     "efficiency": "Aerobic efficiency (pace vs HR)",
     "efficiency_factor": "Aerobic efficiency factor",
+    "critical_speed": "Critical speed",
+    "readiness": "Daily readiness",
+    "running_economy": "Running economy (speed per watt)",
     "pacing_negative_split": "Negative-split %",
     "cardiac_drift": "Cardiac drift %",
     "vo2max": "VO2max",
@@ -339,6 +358,17 @@ def run(
         charts.anomaly_timeline_chart(anomalies, analytics_dir),
     ]
 
+    # Advanced models: Critical Speed from best efforts, and a daily readiness
+    # score from the recovery markers (with its link to performance). Skip-empty
+    # gated — sparse streams or health data simply omit the figure.
+    cs_model = cs.critical_speed(conn, runs)
+    if cs_model is not None:
+        produced.append(charts.critical_speed_chart(cs_model, analytics_dir))
+    readiness_days = readiness.readiness_series(conn, since=since)
+    readiness_r = readiness.performance_correlation(readiness_days, runs)
+    if readiness_days:
+        produced.append(charts.readiness_chart(readiness_days, analytics_dir))
+
     # Stream-based physiology: intensity distribution (polarization) and
     # regression cardiac drift, both from each run's own HR/velocity stream.
     intensity = physiology.training_intensity_distribution(conn, runs, hr_max_value)
@@ -372,6 +402,10 @@ def run(
     text += "\n" + summary.analytics_section(pmc, acwr, ef_trend, best_efforts)
     text += "\n" + summary.anomaly_section(anomalies)
     text += "\n" + summary.physiology_section(intensity, median_drift, pace_intensity)
+    readiness_latest = readiness_days[-1] if readiness_days else None
+    advanced = summary.advanced_section(cs_model, readiness_latest, readiness_r)
+    if advanced:
+        text += "\n" + advanced
     quarantined = metrics.quarantined_count(conn)
     if quarantined:
         text += f"\n\n{quarantined} run(s) quarantined (data errors, excluded)."
@@ -381,7 +415,16 @@ def run(
         title="Running analytics report",
         subtitle=f"{span} · {overall.run_count} runs",
         generated_at=datetime.now().strftime("%Y-%m-%d %H:%M"),
-        kpis=_build_kpis(overall, pmc, acwr, ef_trend, intensity, latest_markers),
+        kpis=_build_kpis(
+            overall,
+            pmc,
+            acwr,
+            ef_trend,
+            intensity,
+            latest_markers,
+            cs_model,
+            readiness_latest,
+        ),
         sections=_build_sections(produced, out_dir),
     )
     report_html = html_report.render(model, out_dir)
@@ -395,6 +438,8 @@ def _build_kpis(
     ef_trend: analytics.Trend | None,
     intensity: physiology.IntensityDistribution | None,
     latest_markers: dict[str, tuple[date, float] | None],
+    cs_model: cs.CsModel | None,
+    readiness_latest: readiness.ReadinessDay | None,
 ) -> list[Kpi]:
     kpis = [
         Kpi(
@@ -451,12 +496,40 @@ def _build_kpis(
                 tone,
             )
         )
+    if cs_model is not None:
+        kpis.append(
+            Kpi(
+                "Critical speed",
+                f"{cs_model.cs_mps:.2f}",
+                "m/s",
+                f"D' {cs_model.d_prime_m:.0f} m; r={cs_model.r:.2f}",
+            )
+        )
+    if readiness_latest is not None:
+        kpis.append(
+            Kpi(
+                "Readiness",
+                f"{readiness_latest.score:.0f}",
+                "/100",
+                f"latest {readiness_latest.day}; 40-60 normal",
+                _readiness_tone(readiness_latest.score),
+            )
+        )
     markers = (("vo2max", "VO2max", "ml/kg/min"), ("resting_hr", "Resting HR", "bpm"))
     for key, label, unit in markers:
         marker = latest_markers.get(key)
         if marker is not None:
             kpis.append(Kpi(label, f"{marker[1]:.0f}", unit, f"latest {marker[0]}"))
     return kpis
+
+
+def _readiness_tone(score: float) -> report_model.Tone:
+    """Green when recovered (>=60), red when depressed (<40), else neutral."""
+    if score >= 60:
+        return "good"
+    if score < 40:
+        return "bad"
+    return "neutral"
 
 
 def _build_sections(produced: Sequence[Path], out_dir: Path) -> list[Section]:
