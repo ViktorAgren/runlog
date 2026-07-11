@@ -185,6 +185,54 @@ def _cmd_plan(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_plan_review(args: argparse.Namespace) -> int:
+    import anthropic
+
+    from runlog.plan import generate as generator
+    from runlog.plan.profile import build_profile
+    from runlog.plan.progress import build_progress
+    from runlog.plan.prompt import review_dry_run_text
+    from runlog.plan.render import review_to_markdown
+
+    plan_path = Path(args.plan)
+    if not plan_path.exists():
+        print(f"Plan file not found: {plan_path}")
+        return 1
+    plan_md = plan_path.read_text()
+    start = date.fromisoformat(args.start)
+
+    paths = resolve_paths()
+    conn = store.connect(paths.db_path)
+    store.init_db(conn)
+    profile = build_profile(conn, hr_max=args.hr_max)
+    progress = build_progress(conn, start, hr_max=args.hr_max)
+
+    if args.dry_run:
+        print(review_dry_run_text(plan_md, progress, profile))
+        return 0
+
+    try:
+        review = generator.generate_review(plan_md, progress, profile, model=args.model)
+    except (anthropic.AnthropicError, RuntimeError) as error:
+        print(
+            f"Review generation failed: {error}\n"
+            "Set ANTHROPIC_API_KEY in .env (see .env.example)."
+        )
+        return 1
+
+    out = (
+        Path(args.out)
+        if args.out
+        else paths.data_dir / "plans" / f"review-{plan_path.stem}-{date.today()}.md"
+    )
+    out.parent.mkdir(parents=True, exist_ok=True)
+    markdown = review_to_markdown(review)
+    out.write_text(markdown)
+    print(markdown)
+    print(f"\nReview written to {out}")
+    return 0
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="runlog", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -267,6 +315,29 @@ def _build_parser() -> argparse.ArgumentParser:
         help="print the grounded prompt instead of calling the API (no key/credits)",
     )
     plan_cmd.set_defaults(func=_cmd_plan)
+
+    review_cmd = sub.add_parser(
+        "plan-review", help="review progress against an existing plan"
+    )
+    review_cmd.add_argument(
+        "--plan", required=True, help="path to the plan markdown file"
+    )
+    review_cmd.add_argument(
+        "--start", required=True, help="date the plan block began, YYYY-MM-DD"
+    )
+    review_cmd.add_argument(
+        "--hr-max", type=float, help="your true max HR (anchors the HR zones)"
+    )
+    review_cmd.add_argument("--out", help="output markdown path")
+    review_cmd.add_argument(
+        "--model", default="claude-opus-4-8", help="Claude model to use"
+    )
+    review_cmd.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="print the review prompt instead of calling the API (no key/credits)",
+    )
+    review_cmd.set_defaults(func=_cmd_plan_review)
     return parser
 
 

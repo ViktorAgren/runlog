@@ -153,6 +153,64 @@ def test_parse_export_collects_standalone_dynamics_sorted_and_converted() -> Non
     }
 
 
+_OVERLAPPING_SEGMENTS_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
+<HealthData locale="en_GB">
+ <Workout workoutActivityType="HKWorkoutActivityTypeRunning" duration="10"
+   durationUnit="min" sourceName="Watch"
+   startDate="2026-06-01 07:00:00 +0000" endDate="2026-06-01 07:10:00 +0000">
+   <WorkoutEvent type="HKWorkoutEventTypeSegment"
+     date="2026-06-01 07:00:00 +0000" duration="4" durationUnit="min"/>
+   <WorkoutEvent type="HKWorkoutEventTypeSegment"
+     date="2026-06-01 07:00:00 +0000" duration="7" durationUnit="min"/>
+   <WorkoutEvent type="HKWorkoutEventTypeSegment"
+     date="2026-06-01 07:04:00 +0000" duration="6" durationUnit="min"/>
+   <WorkoutEvent type="HKWorkoutEventTypeSegment"
+     date="2026-06-01 07:00:00 +0000" duration="4" durationUnit="min"/>
+ </Workout>
+</HealthData>
+"""
+
+
+_WORKOUT_ACTIVITY_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
+<HealthData locale="en_GB">
+ <Workout workoutActivityType="HKWorkoutActivityTypeRunning" duration="20"
+   durationUnit="min" sourceName="Watch"
+   startDate="2026-06-01 07:00:00 +0000" endDate="2026-06-01 07:20:00 +0000">
+   <WorkoutActivity startDate="2026-06-01 07:00:00 +0000"
+     endDate="2026-06-01 07:10:00 +0000">
+     <WorkoutStatistics type="HKQuantityTypeIdentifierHeartRate" average="150"/>
+     <WorkoutStatistics type="HKQuantityTypeIdentifierDistanceWalkingRunning"
+       sum="2" unit="km"/>
+   </WorkoutActivity>
+   <WorkoutActivity startDate="2026-06-01 07:10:00 +0000"
+     endDate="2026-06-01 07:20:00 +0000">
+     <WorkoutStatistics type="HKQuantityTypeIdentifierHeartRate" average="178"/>
+     <WorkoutStatistics type="HKQuantityTypeIdentifierDistanceWalkingRunning"
+       sum="2.5" unit="km"/>
+   </WorkoutActivity>
+   <WorkoutStatistics type="HKQuantityTypeIdentifierHeartRate" average="164"/>
+ </Workout>
+</HealthData>
+"""
+
+
+def test_parse_export_builds_laps_from_workout_activities() -> None:
+    # Two WorkoutActivity phases, each with its own distance + HR; pace is
+    # derived. Phase 1: 2 km in 600 s -> 300 s/km @ 150 bpm.
+    workout = parse_export(io.BytesIO(_WORKOUT_ACTIVITY_XML)).workouts[0]
+    assert [
+        (lap.elapsed_s, lap.distance_m, lap.avg_hr, lap.avg_pace_s_per_km)
+        for lap in workout.laps
+    ] == [(600, 2000.0, 150.0, 300.0), (600, 2500.0, 178.0, 240.0)]
+
+
+def test_parse_export_dedupes_overlapping_apple_segments() -> None:
+    # Two segments share 07:00 (4 and 7 min, overlapping) plus a duplicate; only
+    # the non-overlapping sequence [07:00 +4min, 07:04 +6min] should survive.
+    workout = parse_export(io.BytesIO(_OVERLAPPING_SEGMENTS_XML)).workouts[0]
+    assert [lap.elapsed_s for lap in workout.laps] == [240, 360]
+
+
 def test_parse_export_reads_distance_and_energy_from_statistics() -> None:
     # Modern exports omit totalDistance/totalEnergyBurned attributes and carry
     # them in WorkoutStatistics instead.

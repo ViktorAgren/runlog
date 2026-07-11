@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from runlog.plan.profile import AthleteProfile, PlanRequest
+    from runlog.plan.progress import ProgressReport, WorkoutDetail
 
 COACH_SYSTEM = (
     "You are an expert running coach. Design a safe, progressive, personalized "
@@ -137,5 +138,168 @@ def build_user_message(profile: AthleteProfile, request: PlanRequest) -> str:
             f"- VO2max {profile.vo2max}, resting HR {profile.resting_hr}",
             "",
             _zones_block(profile),
+        ]
+    )
+
+
+# --- Plan follow-up / coaching review ---------------------------------------
+
+REVIEW_SYSTEM = (
+    "You are an expert running coach reviewing an athlete's progress against a "
+    "training plan they have been following. You are given the original plan "
+    "verbatim, a PER-WORKOUT LOG of every run they actually did (with date, "
+    "weekday, kind, distance, pace, HR, and HR-zone split), a PLAN-WEEK ROLLUP, "
+    "and block aggregates. Rules: (1) Do a SESSION-BY-SESSION comparison — for "
+    "each planned session, find the performed run on that date in the log and "
+    "judge it: was the distance met, and did the average pace and HR land in the "
+    "prescribed zone? Quote the specific date, pace, and HR. Note planned "
+    "sessions with no matching run (missed) and extra unplanned runs. (2) Roll "
+    "that up per plan week (planned km/sessions vs the PLAN-WEEK ROLLUP) into an "
+    "adherence assessment and a completion %. (3) Ground EVERY claim in the log's "
+    "numbers — never speak only in block averages, and never invent data. "
+    "(4) Tips MUST copy the EXACT pace/HR bands from the TRAINING ZONES table. "
+    "(5) Call out the biggest mismatches: easy days run too hard (check the "
+    "zone split and pace vs the Easy band), quality sessions missing their "
+    "target pace, or long runs cut short. (6) Suggest only light per-week tweaks; "
+    "DO NOT rewrite the plan — if a full rewrite is warranted, say so in "
+    "watch_outs and recommend re-running the planner. (7) Flag injury/"
+    "overtraining risk: red-flag days, ACWR above 1.5, a sharp CTL drop, or a "
+    "deeply negative Form (TSB). Keep everything concrete and prioritized; fill "
+    "every field of the required structured format."
+)
+
+_REVIEW_FORMAT_HINT = (
+    "Produce the review as markdown: '## Adherence' (an honest short paragraph "
+    "plus the completion %), '## What's working' bullets, '## What to fix' "
+    "bullets, a '## Weekly adjustments' table (Week | Focus | Adherence | "
+    "Adjustment), '## Tips' (prioritized, copying exact zone paces/HR), and "
+    "'## Watch-outs' (injury/overtraining risks). Do NOT rewrite the plan."
+)
+
+
+def _num(value: float | None, suffix: str = "") -> str:
+    return "unknown" if value is None else f"{value:g}{suffix}"
+
+
+def _progress_block(progress: ProgressReport) -> str:
+    """Serialize the deterministic actuals-since-start into the user turn."""
+    if progress.easy_pct is not None:
+        mix = (
+            f"easy {progress.easy_pct:g}% / moderate {progress.moderate_pct:g}% / "
+            f"hard {progress.hard_pct:g}%"
+        )
+    else:
+        mix = "unavailable (no HR streams)"
+    return "\n".join(
+        [
+            f"PROGRESS SINCE START (plan began {progress.start}, now "
+            f"{progress.today} — week {progress.weeks_elapsed} of the block):",
+            f"- Runs: {progress.total_runs} totaling {progress.total_km:g} km; "
+            f"longest {progress.longest_run_km:g} km",
+            f"- Weekly km since start: {progress.weekly_km}",
+            f"- Cadence: {progress.runs_per_week:g} runs/week",
+            f"- Typical pace: {_pace(progress.median_pace_s_per_km)}",
+            f"- Intensity split: {mix}",
+            f"- Best efforts this block: {_efforts(progress.best_efforts)}",
+            f"- Fitness: CTL {_num(progress.ctl_start)} -> {_num(progress.ctl_now)}; "
+            f"Form(TSB) {_num(progress.tsb_now)}, ACWR {_num(progress.acwr_now)}",
+            f"- Efficiency trend this block: "
+            f"{_num(progress.efficiency_trend_per_month)} per month",
+            f"- Flags: {progress.red_flag_days} readiness red-flag day(s), "
+            f"{progress.off_runs} off-run(s) (slow for the effort)",
+        ]
+    )
+
+
+def _hms(seconds: int | None) -> str:
+    return _clock(seconds) if seconds else "-"
+
+
+def _km(distance_km: float | None) -> str:
+    return f"{distance_km:.1f}" if distance_km is not None else "-"
+
+
+def _zone_split(workout: WorkoutDetail) -> str:
+    if workout.easy_pct is None:
+        return "-"
+    return f"{workout.easy_pct:.0f}/{workout.moderate_pct:.0f}/{workout.hard_pct:.0f}"
+
+
+def _lap_line(workout: WorkoutDetail) -> str:
+    parts = []
+    for lap in workout.laps:
+        if lap.distance_m and lap.pace_s_per_km:
+            piece = f"{lap.distance_m / 1000:.1f}km {_pace(lap.pace_s_per_km)}"
+            if lap.avg_hr:
+                piece += f" @{lap.avg_hr:.0f}"
+            parts.append(piece)
+        elif lap.seconds:
+            parts.append(f"{lap.seconds}s")
+    return " · ".join(parts)
+
+
+def _workout_log_block(progress: ProgressReport) -> str:
+    """Per-plan-week rollup + a per-workout table + any structured-session splits."""
+    lines = ["PLAN-WEEK ROLLUP (actual, bucketed from the start date):"]
+    for week in progress.plan_weeks:
+        tally = ", ".join(f"{k} {n}" for k, n in sorted(week.kinds.items()))
+        lines.append(f"- Week {week.week}: {week.km:g} km, {week.runs} runs ({tally})")
+
+    lines += [
+        "",
+        "PER-WORKOUT LOG (compare each to the plan's session for that date; "
+        "E/M/H% = time in easy Z1-2 / moderate Z3 / hard Z4-5; Kind is inferred "
+        "from HR-zone time, so a true interval session and a high-HR easy run can "
+        "both read 'Quality' — weigh pace and the E/M/H% split too):",
+        "| Date | Day | Kind | km | Time | Pace | avgHR | maxHR | E/M/H% | GAP |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for w in progress.workouts:
+        lines.append(
+            f"| {w.day} | {w.weekday} | {w.kind} "
+            f"| {_km(w.distance_km)} | {_hms(w.moving_s)} "
+            f"| {_pace(w.avg_pace_s_per_km)} "
+            f"| {_num(w.avg_hr)} | {_num(w.max_hr)} | {_zone_split(w)} "
+            f"| {_pace(float(w.gap_pace_s_per_km)) if w.gap_pace_s_per_km else '-'} |"
+        )
+
+    splits = [(w, _lap_line(w)) for w in progress.workouts if w.laps]
+    if splits:
+        lines += ["", "STRUCTURED-SESSION SPLITS (laps as recorded):"]
+        lines += [f"- {w.day} ({w.kind}): {line}" for w, line in splits if line]
+    return "\n".join(lines)
+
+
+def build_review_message(
+    plan_md: str, progress: ProgressReport, profile: AthleteProfile
+) -> str:
+    """Assemble the review user turn: the plan, the actuals, and the zones."""
+    return "\n".join(
+        [
+            "=== ORIGINAL PLAN (verbatim) ===",
+            plan_md.strip(),
+            "",
+            "=== ACTUAL TRAINING DATA ===",
+            _progress_block(progress),
+            "",
+            _workout_log_block(progress),
+            "",
+            _zones_block(profile),
+        ]
+    )
+
+
+def review_dry_run_text(
+    plan_md: str, progress: ProgressReport, profile: AthleteProfile
+) -> str:
+    """The full review prompt as pasteable text (for Claude Code / claude.ai)."""
+    return "\n\n".join(
+        [
+            "=== SYSTEM (coach review instructions) ===",
+            REVIEW_SYSTEM,
+            "=== PLAN + ACTUAL DATA ===",
+            build_review_message(plan_md, progress, profile),
+            "=== OUTPUT FORMAT ===",
+            _REVIEW_FORMAT_HINT,
         ]
     )
