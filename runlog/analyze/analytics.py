@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import TYPE_CHECKING
 
+from runlog.analyze.metrics import PLAUSIBLE_PACE_S_PER_KM
+
 if TYPE_CHECKING:
     import sqlite3
     from collections.abc import Sequence
@@ -188,14 +190,18 @@ def best_effort_seconds(
 ) -> float | None:
     """Fastest time to cover ``target_m`` in a run via a sliding window.
 
-    ``points`` are (offset_s, cumulative_distance_m) ordered by time.
+    ``points`` are (offset_s, cumulative_distance_m) ordered by time. Windows
+    implying an impossibly fast pace (a corrupted stream where distance jumps
+    with near-zero time) are rejected via the shared plausibility floor.
     """
+    low_pace, _high = PLAUSIBLE_PACE_S_PER_KM
+    min_elapsed = low_pace * target_m / 1000
     best: float | None = None
     start = 0
     for end in range(len(points)):
         while points[end][1] - points[start][1] >= target_m:
             elapsed = points[end][0] - points[start][0]
-            if best is None or elapsed < best:
+            if elapsed >= min_elapsed and (best is None or elapsed < best):
                 best = float(elapsed)
             start += 1
     return best
