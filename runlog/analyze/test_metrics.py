@@ -40,6 +40,9 @@ def _add_run(
     stream = tuple(
         StreamPoint(offset_s=i, hr=hr) for i, hr in enumerate(hr_stream or [])
     )
+    # Moving time follows distance at ``pace`` so fixtures stay physiologically
+    # plausible (a fixed 1500 s made a 12 km run read as 2:05/km and get flagged).
+    moving_s = int(distance_m / 1000 * pace) if distance_m and pace else 1500
     return store.store_record(
         conn,
         ActivityRecord(
@@ -49,7 +52,7 @@ def _add_run(
                 sport_type="Run" if source == "strava" else "Running",
                 start_time_utc=when,
                 distance_m=distance_m,
-                moving_s=1500,
+                moving_s=moving_s,
                 avg_pace_s_per_km=pace,
                 avg_hr=avg_hr,
             ),
@@ -72,6 +75,28 @@ def test_canonical_keeps_unlinked_from_both_sources(conn: sqlite3.Connection) ->
     _add_run(conn, datetime(2026, 6, 2, 7, tzinfo=UTC), source="apple_health")
 
     assert len(metrics.canonical_run_activities(conn)) == 2
+
+
+def test_canonical_quarantines_corrupted_runs(conn: sqlite3.Connection) -> None:
+    _add_run(conn, datetime(2026, 6, 1, 7, tzinfo=UTC), source="strava")
+    # 5 km in 60 s -> implausible pace, flagged at ingest and excluded here.
+    store.store_record(
+        conn,
+        ActivityRecord(
+            activity=Activity(
+                source="strava",
+                source_id=SourceId("s:bad"),
+                sport_type="Run",
+                start_time_utc=datetime(2026, 6, 2, 7, tzinfo=UTC),
+                distance_m=5000.0,
+                moving_s=60,
+                avg_pace_s_per_km=12.0,
+            ),
+        ),
+    )
+
+    runs = metrics.canonical_run_activities(conn)
+    assert (len(runs), metrics.quarantined_count(conn)) == (1, 1)
 
 
 def test_canonical_inherits_dynamics_from_dropped_apple_twin(

@@ -63,6 +63,8 @@ class Activity:
     avg_vertical_oscillation_cm: float | None = None
     avg_ground_contact_ms: float | None = None
     avg_running_speed_mps: float | None = None
+    # Comma-joined data-quality flags computed at ingest (None when clean).
+    quality_flags: str | None = None
 
 
 @dataclass(frozen=True)

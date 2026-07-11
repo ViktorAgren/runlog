@@ -353,6 +353,10 @@ def run(
         )
     median_drift = statistics.median(v for _, v in drift) if drift else None
 
+    # Pace-based intensity split (session intent) alongside the HR-based one,
+    # using the athlete's own VDOT pace bands derived from their best 5k.
+    pace_intensity = _pace_intensity(conn, runs, best_efforts)
+
     overall = metrics.overall_summary(runs)
     text = summary.build_summary_text(
         summary=overall,
@@ -367,7 +371,10 @@ def run(
     )
     text += "\n" + summary.analytics_section(pmc, acwr, ef_trend, best_efforts)
     text += "\n" + summary.anomaly_section(anomalies)
-    text += "\n" + summary.physiology_section(intensity, median_drift)
+    text += "\n" + summary.physiology_section(intensity, median_drift, pace_intensity)
+    quarantined = metrics.quarantined_count(conn)
+    if quarantined:
+        text += f"\n\n{quarantined} run(s) quarantined (data errors, excluded)."
 
     span = f"{overall.first_run} to {overall.last_run}"
     model = ReportModel(
@@ -473,6 +480,29 @@ def _build_sections(produced: Sequence[Path], out_dir: Path) -> list[Section]:
             )
         )
     return sections
+
+
+def _pace_intensity(
+    conn: sqlite3.Connection,
+    runs: Sequence[metrics.Run],
+    best_efforts: Sequence[analytics.BestEffortProgression],
+) -> physiology.IntensityDistribution | None:
+    """Pace-based intensity split using VDOT bands derived from the best 5k."""
+    from runlog.plan import targets
+
+    best_5k = next(
+        (min(s for _, s in e.progression) for e in best_efforts if e.label == "5k"),
+        None,
+    )
+    if best_5k is None:
+        return None
+    paces = targets.training_paces(targets.vdot_from_effort(5000, best_5k))
+    return physiology.pace_intensity_distribution(
+        conn,
+        runs,
+        easy_ceiling_s=paces["Marathon"][1],
+        hard_floor_s=paces["Threshold"][0],
+    )
 
 
 def _resolve_hr_rest(conn: sqlite3.Connection) -> float:

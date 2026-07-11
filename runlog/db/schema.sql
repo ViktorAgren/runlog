@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS activities (
     avg_vertical_oscillation_cm REAL,
     avg_ground_contact_ms       REAL,
     avg_running_speed_mps       REAL,
+    quality_flags               TEXT,
     UNIQUE (source, source_id)
 );
 

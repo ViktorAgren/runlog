@@ -7,12 +7,14 @@ wholesale on each store so a re-fetch simply overwrites.
 
 from __future__ import annotations
 
+import dataclasses
 import sqlite3
 from datetime import UTC, datetime
 from importlib import resources
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from runlog.db import quality
 from runlog.domain import ActivityId
 
 if TYPE_CHECKING:
@@ -84,6 +86,7 @@ _ACTIVITY_COLUMNS: tuple[str, ...] = (
     "avg_vertical_oscillation_cm",
     "avg_ground_contact_ms",
     "avg_running_speed_mps",
+    "quality_flags",
 )
 _ACTIVITY_KEY = ("source", "source_id")
 
@@ -116,7 +119,11 @@ def store_record(conn: sqlite3.Connection, record: ActivityRecord) -> ActivityId
 
     Commits on success. Returns the internal activity id.
     """
-    activity_id = _upsert_activity(conn, record.activity)
+    flags = quality.stream_flags(record.activity, record.stream)
+    activity = dataclasses.replace(
+        record.activity, quality_flags=",".join(flags) or None
+    )
+    activity_id = _upsert_activity(conn, activity)
     conn.execute("DELETE FROM laps WHERE activity_id = ?", (activity_id,))
     conn.execute("DELETE FROM stream_points WHERE activity_id = ?", (activity_id,))
     conn.executemany(

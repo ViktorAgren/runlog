@@ -19,6 +19,7 @@ from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from runlog.db.quality import QUARANTINE_FLAGS
 from runlog.domain import ActivityId, Source
 
 if TYPE_CHECKING:
@@ -85,6 +86,7 @@ class Run:
     avg_stride_length_m: float | None = None
     avg_vertical_oscillation_cm: float | None = None
     avg_ground_contact_ms: float | None = None
+    quality_flags: str | None = None
 
     @property
     def distance_km(self) -> float | None:
@@ -139,7 +141,7 @@ def canonical_run_activities(
                avg_pace_s_per_km, avg_hr, max_hr, avg_cadence, elevation_gain_m,
                relative_effort, grade_adj_distance_m, avg_power_w,
                avg_stride_length_m, avg_vertical_oscillation_cm,
-               avg_ground_contact_ms
+               avg_ground_contact_ms, quality_flags
         FROM activities
         WHERE {where}
         ORDER BY start_time_utc
@@ -148,6 +150,8 @@ def canonical_run_activities(
     ):
         if int(row["id"]) in linked_apple:
             continue
+        if _is_quarantined(row["quality_flags"]):
+            continue  # corrupted stream (implausible pace / paused / fragment)
         distance_m = row["distance_m"]
         if distance_m is not None and distance_m / 1000 < min_distance_km:
             continue
@@ -173,9 +177,29 @@ def canonical_run_activities(
                     row, twin, "avg_vertical_oscillation_cm"
                 ),
                 avg_ground_contact_ms=_coalesce(row, twin, "avg_ground_contact_ms"),
+                quality_flags=row["quality_flags"],
             )
         )
     return runs
+
+
+def _is_quarantined(flags: str | None) -> bool:
+    return flags is not None and bool(set(flags.split(",")) & QUARANTINE_FLAGS)
+
+
+def quarantined_count(
+    conn: sqlite3.Connection, sports: Sequence[str] = _RUN_SPORTS
+) -> int:
+    """How many running activities are excluded from analytics as data errors."""
+    placeholders = ",".join("?" for _ in sports)
+    return sum(
+        _is_quarantined(row["quality_flags"])
+        for row in conn.execute(
+            f"SELECT quality_flags FROM activities "
+            f"WHERE sport_type IN ({placeholders}) AND quality_flags IS NOT NULL",
+            tuple(sports),
+        )
+    )
 
 
 def _coalesce(row: sqlite3.Row, twin: dict[str, float], field: str) -> float | None:

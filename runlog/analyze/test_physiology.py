@@ -15,6 +15,18 @@ def _hr(offset: int, hr: float | None, vel: float | None = None) -> StreamSample
     return StreamSample(offset, float(offset), None, None, None, hr, vel)
 
 
+def test_pace_zone_seconds_buckets_by_velocity() -> None:
+    # easy_ceiling 360 s/km (2.78 m/s), hard_floor 300 s/km (3.33 m/s).
+    # 2 m/s -> 500 s/km (easy), 3 m/s -> 333 s/km (moderate), 5 m/s -> 200 (hard).
+    stream = [
+        _hr(0, None, vel=2.0),
+        _hr(10, None, vel=3.0),
+        _hr(20, None, vel=5.0),
+        _hr(30, None, vel=5.0),
+    ]
+    assert physiology.pace_zone_seconds(stream, 360.0, 300.0) == (10.0, 10.0, 10.0)
+
+
 def test_zone_seconds_weights_by_dt_and_buckets_by_fraction() -> None:
     # hr_max 200: 120 bpm = 0.60 -> Z2; 180 bpm = 0.90 -> Z5. Each sample spans
     # 10 s to the next; the final sample has no successor so it is not counted.
