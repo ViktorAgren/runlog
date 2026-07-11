@@ -64,6 +64,17 @@ def test_best_effort_seconds_sliding_window() -> None:
     assert analytics.best_effort_seconds(points, 50.0) == 50.0
 
 
+def test_best_effort_seconds_rejects_stream_glitch() -> None:
+    # Corrupted stream: 1000 m appears in 1 s (impossibly fast) -> rejected;
+    # a real 1000 m at 4 m/s (250 s) is accepted.
+    glitch = [(0, 0.0), (1, 1000.0)]
+    real = [(t, float(t) * 4) for t in range(0, 300)]
+    assert (
+        analytics.best_effort_seconds(glitch, 1000.0),
+        analytics.best_effort_seconds(real, 1000.0),
+    ) == (None, 250.0)
+
+
 def test_efficiency_factor_speed_per_hr() -> None:
     run = _run(datetime(2026, 6, 1), avg_hr=150.0, moving_s=1500)
     # 5000 m / 25 min = 200 m/min; /150 bpm = 1.333.
