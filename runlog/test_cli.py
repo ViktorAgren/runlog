@@ -46,6 +46,34 @@ def test_cli_pipeline_imports_and_reports(
     )
 
 
+def _no_strava_creds() -> None:
+    raise RuntimeError("no credentials")
+
+
+def test_cli_sync_imports_apple_and_links(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    data_dir = tmp_path / "data"
+    monkeypatch.setenv("RUNLOG_DATA_DIR", str(data_dir))
+    # Force the Strava-skip path so the test needs no credentials or network.
+    monkeypatch.setattr("runlog.cli.load_strava_credentials", _no_strava_creds)
+    bulk_zip = tmp_path / "strava.zip"
+    apple_zip = tmp_path / "apple.zip"
+    _build_archive(bulk_zip)
+    _build_export(apple_zip)
+
+    main(["db", "init"])
+    main(["strava", "import-bulk", str(bulk_zip)])
+    code = main(["sync", "--apple", str(apple_zip)])
+
+    out = capsys.readouterr().out
+    conn = store.connect(data_dir / "runlog.db")
+    counts = store.table_counts(conn)
+    assert (code, "no credentials configured" in out) == (0, True)
+    # Apple import ran after Strava (2 strava + 1 apple), then link executed.
+    assert (counts["activities:strava"], counts["activities:apple_health"]) == (2, 1)
+
+
 def test_cli_requires_a_command(capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit):
         main([])

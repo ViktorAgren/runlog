@@ -2,12 +2,17 @@
 
 Own your running data. `runlog` extracts your runs from **Strava** and **Apple
 Health**, stores them locally in a raw archive + a normalized **SQLite**
-database, produces **trend charts and training analytics**, and generates a
+database, produces **publication-quality trend charts, a self-contained HTML
+dashboard, and deep training analytics**, and generates (and follows up on) a
 **personalized, data-grounded training plan** via Claude.
 
-It captures per-activity summaries, per-point streams (heart rate, GPS, pace,
-cadence, altitude, power), interval laps, and the health metrics Strava does not
-expose (resting HR, HRV, VO2max) — all offline and yours.
+It captures per-activity summaries, per-second streams (heart rate, GPS,
+elevation, velocity), interval/phase laps, per-run running dynamics (power,
+stride length, vertical oscillation, ground contact), and the health metrics
+Strava does not expose (resting HR, HRV, VO2max, SpO2, sleep, HR-recovery) — all
+offline and yours. On top of that it computes fitness/fatigue/form, intensity
+distribution, elevation-adjusted pace, same-route fitness, and flags readiness
+and performance **anomalies** against your own rolling baseline.
 
 ---
 
@@ -40,10 +45,16 @@ python3 -m runlog strava import-bulk ~/Downloads/export.zip  # 2. import Strava
 python3 -m runlog apple import ~/Downloads/export.zip        # 2. import Apple
 python3 -m runlog link                                       # 3. de-dupe across sources
 python3 -m runlog status                                     # 4. verify
-python3 -m runlog report --hr-max 190                        # 5. charts + analytics
+python3 -m runlog report --hr-max 190                        # 5. charts + HTML + analytics
 python3 -m runlog plan --goal 5k --date 2026-09-01 \
         --days mon,wed,sat --hr-max 190 --dry-run            # 6. training plan
+python3 -m runlog plan-review --plan data/plans/plan-5k-2026-09-01.md \
+        --start 2026-07-01 --hr-max 190 --dry-run            # 7. follow up mid-block
 ```
+
+Already set up? **`runlog sync`** refreshes everything in the right order
+(Strava → Apple → link) and prints status; add `--report` to regenerate the
+charts and HTML dashboard in one go.
 
 ---
 
@@ -105,14 +116,27 @@ link with a confidence score — it does **not** merge or delete anything).
 
 Print row counts per table (and per-source activity counts). No parameters.
 
-### `report`
+### `sync`
 
-Compute training analytics and render PNG charts to disk + a terminal summary.
-Running only; runs de-duplicated across sources.
+Refresh all sources in the correct order and print status. Runs Strava API sync
+(skipped if no credentials), then Apple import, then linking. **Apple is imported
+after Strava on purpose** — that's how per-second HR and running dynamics get
+backfilled onto new Strava-logged runs (those metrics only exist Apple-side).
 
 | Flag | Default | Description |
 | --- | --- | --- |
-| `--out DIR` | `data/reports` | Output directory for the `training/`, `recovery/`, `analytics/` PNG folders |
+| `--apple PATH` | the archived export | Apple export `.zip` to import (else re-imports the archived one under `data/raw/`) |
+| `--report` | off | Also render the report + HTML dashboard afterwards |
+
+### `report`
+
+Compute training analytics, render PNG charts, and write a **self-contained
+`report.html` dashboard** + a terminal summary. Running only; runs
+de-duplicated across sources.
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--out DIR` | `data/reports` | Output dir for the `training/`, `recovery/`, `analytics/` PNGs and `report.html` |
 | `--weeks N` | `6` | How many recent weeks to list in the terminal summary |
 | `--since DATE` | all history | ISO date; only analyze runs on/after it |
 | `--min-distance KM` | `1.0` | Drop runs shorter than this (removes accidental/aborted starts) |
@@ -137,6 +161,22 @@ markdown to `data/plans/` and prints it. Needs `ANTHROPIC_API_KEY` unless
 | `--model NAME` | `claude-opus-4-8` | Claude model (e.g. `claude-sonnet-4-6`) |
 | `--dry-run` | off | Print the grounded prompt instead of calling the API (no key/credits) |
 
+### `plan-review`
+
+Follow up on a plan you're partway through: compares the plan against every run
+you actually did since it started and returns an adherence assessment, per-week
+adjustments, tips, and watch-outs (**tips only — it never rewrites the plan**).
+Same dry-run/API model as `plan`. Writes markdown to `data/plans/`.
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--plan PATH` (**required**) | — | The plan markdown file to review against |
+| `--start DATE` (**required**) | — | The date the plan block began, `YYYY-MM-DD` |
+| `--hr-max BPM` | highest recorded | Your true max HR (anchors the HR zones) |
+| `--out PATH` | `data/plans/review-<plan>-<today>.md` | Output markdown path |
+| `--model NAME` | `claude-opus-4-8` | Claude model to use |
+| `--dry-run` | off | Print the review prompt instead of calling the API (no key/credits) |
+
 ---
 
 ## How it works
@@ -157,30 +197,48 @@ markdown to `data/plans/` and prints it. Needs `ANTHROPIC_API_KEY` unless
 ### Analyzing (`report`)
 
 Prints an overview (total distance, streaks, consistency, records, Riegel race
-predictions, latest VO2max / resting HR / HRV) and writes ~19 running charts to
-`training/` (weekly/monthly volume, runs-per-week, cumulative distance, distance
-histogram, training heatmap, rest-gap histogram, pace over time, fastest by
-distance, pace by weekday, race predictions, HR over time, HR histogram, HR
-zones, aerobic efficiency, training load, cadence, elevation by month,
-start-time-of-day), 3 passive markers to `recovery/` (VO2max, resting HR, HRV),
-and 5 derived models to `analytics/`:
+predictions, training status, intensity split, latest markers, and any
+**anomalies**), writes a **self-contained `report.html` dashboard** (KPI cards
+with context + every figure embedded as base64, so it's one shareable file), and
+saves ~30 professional charts under three folders:
 
-- **Performance Management Chart** — Fitness (CTL) / Fatigue (ATL) / Form (TSB)
-  from Banister TRIMP.
-- **ACWR** — acute:chronic workload ratio (injury-risk sweet spot 0.8–1.3).
-- **Efficiency factor** trend with a fitted regression slope.
-- **Aerobic decoupling** — cardiac drift from the HR + velocity streams.
-- **Best-effort progression** — fastest continuous 1k/5k/10k over time, via a
-  sliding window over the per-point streams.
+- **`training/`** — weekly/monthly volume, runs-per-week, cumulative distance,
+  distance histogram, training heatmap, rest gaps, pace over time,
+  elevation-based **grade-adjusted pace**, fastest by distance, pace by weekday,
+  best-effort progression, **same-route pace** (cleanest fitness signal), race
+  predictions, HR over time, HR zones, HR histogram, aerobic efficiency,
+  training load, start time of day, and **running-form dynamics** (power, stride
+  length, vertical oscillation, ground contact), climb, and pacing.
+- **`recovery/`** — passive off-workout markers: VO2max, resting HR, HRV, SpO2,
+  sleep, HR-recovery, body mass, walking asymmetry.
+- **`analytics/`** — derived models:
+  - **Performance Management Chart** — Fitness (CTL) / Fatigue (ATL) / Form (TSB)
+    from Banister TRIMP.
+  - **ACWR** — acute:chronic workload ratio (injury-risk sweet spot 0.8–1.3).
+  - **Efficiency factor** trend with a fitted regression slope.
+  - **Aerobic decoupling** and **regression cardiac drift** from the HR +
+    velocity streams.
+  - **Best-effort progression** — fastest continuous 1k/5k/10k over time.
+  - **Intensity distribution** — % time easy / moderate / hard (polarization).
+  - **Anomaly timeline** — readiness red-flag days and off-runs vs. baseline.
+
+The per-second streams (GPS, elevation, velocity, reconstructed HR) drive the
+stream-based metrics: elevation-adjusted pace (Minetti cost model), same-route
+clustering, per-run HR-zone splits, stream-integrated TRIMP, and OLS cardiac
+drift.
+
+**Anomaly detection** flags days where resting HR, HRV, SpO2, sleep, or
+HR-recovery deviate from their trailing ~42-day baseline (a "red-flag day" when
+≥2 fire together — a possible illness/overtraining signal), plus runs whose
+efficiency drops below baseline ("slow for the effort").
 
 **Data hygiene** is built in: cross-source runs are de-duplicated (the Strava
-row of each linked pair is kept, so totals count each run once); junk activities
-below `--min-distance` are dropped; implausible paces and physiologically
-impossible health readings are filtered; intraday health metrics are shown as
-daily means with a rolling trend; and passive off-workout data (resting HR / HRV
-/ VO2max) is kept in a separate `recovery/` folder, never mixed into training
-totals. Cadence is derived from total steps ÷ duration, consistent across
-Strava (`Total Steps`) and Apple (`StepCount`).
+row of each linked pair is kept, so totals count each run once, while Apple-only
+running dynamics are coalesced onto it); junk activities below `--min-distance`
+are dropped; implausible paces (including corrupted-stream glitches) and
+physiologically impossible health readings are filtered; intraday health metrics
+are shown as daily means with a rolling trend; and passive off-workout data is
+kept in a separate `recovery/` folder, never mixed into training totals.
 
 ### Planning (`plan`)
 
@@ -199,16 +257,26 @@ of calling the API. Paste it into Claude Code or claude.ai (covered by a Pro/Max
 subscription) to get the plan for free — the Console API is billed separately
 from chat subscriptions.
 
+### Following up (`plan-review`)
+
+Point `plan-review` at the plan markdown plus its start date. It builds a
+deterministic **progress report** from your DB — per-plan-week volume vs. plan,
+a per-workout log (date, kind, distance, pace, HR, zone split, GAP) reconstructed
+from the streams, fitness trajectory (CTL then vs. now), ACWR, and readiness
+flags — and asks Claude to compare each performed session to the planned one and
+advise. The plan markdown is passed **verbatim** (never re-parsed), so it works
+with any plan you've generated. Same `--dry-run` free path as `plan`.
+
 ---
 
 ## Data model (SQLite)
 
 | Table | Contents |
 |-------|----------|
-| `activities` | one row per run/workout per source (summary metrics) |
-| `laps` | splits / interval repeats |
-| `stream_points` | tidy per-point time series (HR, GPS, pace, cadence, altitude, power) |
-| `health_metrics` | non-workout Apple metrics (resting HR, HRV, VO2max, ...) |
+| `activities` | one row per run/workout per source (summary + Strava extras + Apple running dynamics) |
+| `laps` | splits / interval repeats / workout phases (warm-up, work, cool-down) |
+| `stream_points` | tidy per-point time series (HR, GPS, altitude, velocity) |
+| `health_metrics` | non-workout Apple metrics (resting HR, HRV, VO2max, SpO2, sleep, ...) |
 | `activity_links` | matched Strava↔Apple activity pairs with a confidence score |
 | `raw_files` | manifest of archived raw payloads |
 

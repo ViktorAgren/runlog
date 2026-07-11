@@ -9,6 +9,9 @@ Commands:
     apple import PATH           import an Apple Health export ZIP
     link [--window S]           match Strava<->Apple activities by start time
     status                      print row counts per table
+    sync [--apple PATH] [--report]
+                                refresh all sources in order (Strava -> Apple ->
+                                link) then print status
     report [--out DIR] [--weeks N] [--since DATE] [--min-distance KM]
                                 render trend charts (PNG) + a terminal summary
     plan --goal G --date D --days mon,wed,sat [--target-time T]
@@ -105,6 +108,48 @@ def _cmd_status(_args: argparse.Namespace) -> int:
     width = max(len(name) for name in counts)
     for name in sorted(counts):
         print(f"{name:<{width}}  {counts[name]}")
+    return 0
+
+
+def _cmd_sync(args: argparse.Namespace) -> int:
+    """Refresh all sources in the correct order: Strava -> Apple -> link.
+
+    Apple is imported after Strava so per-second HR and running dynamics are
+    backfilled onto any new Strava-logged runs (they only exist Apple-side).
+    """
+    paths = resolve_paths()
+    conn = _open_db()
+
+    try:
+        creds = load_strava_credentials()
+    except RuntimeError:
+        print("Strava: no credentials configured, skipping API sync.")
+    else:
+        stored = strava_ingest.sync_api(conn, paths, creds)
+        print(f"Strava: synced {stored} activities from the API.")
+
+    apple_path = (
+        Path(args.apple) if args.apple else paths.raw_dir("apple_health") / "export.zip"
+    )
+    if apple_path.exists():
+        workouts, metrics = apple_ingest.import_export(conn, paths, apple_path)
+        print(f"Apple: imported {workouts} workouts and {metrics} health metrics.")
+    else:
+        print(f"Apple: no export at {apple_path}, skipping.")
+
+    linked = link.link_activities(conn)
+    print(f"Linked {linked} Strava/Apple activity pairs.\n")
+
+    counts = store.table_counts(conn)
+    width = max(len(name) for name in counts)
+    for name in sorted(counts):
+        print(f"{name:<{width}}  {counts[name]}")
+
+    if args.report:
+        from runlog.analyze import report
+
+        result = report.run(paths.db_path, paths.data_dir / "reports")
+        print(f"\nReport written; HTML at {result.report_html}")
     return 0
 
 
@@ -271,6 +316,17 @@ def _build_parser() -> argparse.ArgumentParser:
     link_cmd.set_defaults(func=_cmd_link)
 
     sub.add_parser("status", help="print row counts").set_defaults(func=_cmd_status)
+
+    sync_all = sub.add_parser(
+        "sync", help="refresh all sources: Strava -> Apple -> link (+ status)"
+    )
+    sync_all.add_argument(
+        "--apple", help="Apple export ZIP (default: the archived export)"
+    )
+    sync_all.add_argument(
+        "--report", action="store_true", help="also render the report afterwards"
+    )
+    sync_all.set_defaults(func=_cmd_sync)
 
     report_cmd = sub.add_parser("report", help="generate trend charts + summary")
     report_cmd.add_argument("--out", help="output directory (default data/reports)")
