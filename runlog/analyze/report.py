@@ -368,6 +368,9 @@ def run(
     text += "\n" + summary.analytics_section(pmc, acwr, ef_trend, best_efforts)
     text += "\n" + summary.anomaly_section(anomalies)
     text += "\n" + summary.physiology_section(intensity, median_drift)
+    quarantined = metrics.quarantined_count(conn)
+    if quarantined:
+        text += f"\n\n{quarantined} run(s) quarantined (data errors, excluded)."
 
     span = f"{overall.first_run} to {overall.last_run}"
     model = ReportModel(
