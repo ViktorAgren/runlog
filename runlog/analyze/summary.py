@@ -184,17 +184,24 @@ def anomaly_section(report: AnomalyReport, recent: int = 8) -> str:
     return "\n".join(lines)
 
 
+def _intensity_line(label: str, dist: IntensityDistribution) -> str:
+    return (
+        f"{label:<14} easy {dist.easy_pct:.0f}% / mod {dist.moderate_pct:.0f}% / "
+        f"hard {dist.hard_pct:.0f}%  (easy:hard {dist.easy_to_hard})"
+    )
+
+
 def physiology_section(
-    intensity: IntensityDistribution | None, median_drift: float | None
+    intensity: IntensityDistribution | None,
+    median_drift: float | None,
+    pace_intensity: IntensityDistribution | None = None,
 ) -> str:
-    """Render the stream-based physiology block (intensity split + drift)."""
+    """Render the stream-based physiology block (intensity splits + drift)."""
     lines: list[str] = ["", "Physiology (from HR/velocity streams)", "=" * 40]
     if intensity is not None:
-        lines.append(
-            f"Intensity      easy {intensity.easy_pct:.0f}% / "
-            f"mod {intensity.moderate_pct:.0f}% / hard {intensity.hard_pct:.0f}%  "
-            f"(easy:hard {intensity.easy_to_hard})"
-        )
+        lines.append(_intensity_line("Intensity (HR)", intensity))
+    if pace_intensity is not None:
+        lines.append(_intensity_line("Intensity (pace)", pace_intensity))
     if median_drift is not None:
         lines.append(f"Cardiac drift  {median_drift:+.1f}% median (>0 = drift up)")
     return "\n".join(lines)

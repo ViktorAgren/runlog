@@ -85,6 +85,59 @@ def training_intensity_distribution(
     return intensity_distribution(totals)
 
 
+def pace_zone_seconds(
+    stream: Sequence[StreamSample], easy_ceiling_s: float, hard_floor_s: float
+) -> tuple[float, float, float]:
+    """(easy, moderate, hard) seconds by pace: aerobic / marathon-threshold / fast.
+
+    Classifies each velocity sample against the athlete's own pace bands — a
+    truer read of session *intent* than %HRmax zones, which push easy aerobic
+    running into the moderate band for athletes who run at a high HR.
+    """
+    easy = moderate = hard = 0.0
+    for current, nxt in zip(stream, stream[1:], strict=False):
+        if not current.velocity_mps or current.velocity_mps <= 0:
+            continue
+        dt = nxt.offset_s - current.offset_s
+        if dt <= 0:
+            continue
+        pace = 1000 / current.velocity_mps
+        if pace > easy_ceiling_s:
+            easy += dt
+        elif pace < hard_floor_s:
+            hard += dt
+        else:
+            moderate += dt
+    return easy, moderate, hard
+
+
+def pace_intensity_distribution(
+    conn: sqlite3.Connection,
+    runs: Sequence[Run],
+    easy_ceiling_s: float,
+    hard_floor_s: float,
+) -> IntensityDistribution | None:
+    """Pace-based intensity split across all runs (paces slower than marathon =
+    easy; faster than threshold = hard; in between = moderate)."""
+    easy = moderate = hard = 0.0
+    for run in runs:
+        run_easy, run_mod, run_hard = pace_zone_seconds(
+            full_stream(conn, run.activity_id), easy_ceiling_s, hard_floor_s
+        )
+        easy += run_easy
+        moderate += run_mod
+        hard += run_hard
+    total = easy + moderate + hard
+    if total <= 0:
+        return None
+    return IntensityDistribution(
+        easy_pct=round(easy / total * 100, 1),
+        moderate_pct=round(moderate / total * 100, 1),
+        hard_pct=round(hard / total * 100, 1),
+        easy_to_hard=round(easy / hard, 1) if hard > 0 else float("inf"),
+    )
+
+
 def stream_trimp(
     stream: Sequence[StreamSample], hr_max: float, hr_rest: float
 ) -> float | None:
