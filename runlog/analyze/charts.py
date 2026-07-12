@@ -823,12 +823,23 @@ def load_response_chart(responses: Sequence[MarkerResponse], out_dir: Path) -> P
                 xs.append(i + (offset - 1) * width)
                 ys.append(stat.mean_z)
         bars = ax.bar(xs, ys, width=width, color=color, label=label.capitalize())
-        style.bar_value_labels(ax, bars, "{:+.2f}")
+        for bar in bars:
+            height = bar.get_height()
+            ax.annotate(
+                f"{height:+.2f}",
+                xy=(bar.get_x() + bar.get_width() / 2, height),
+                xytext=(0, 3 if height >= 0 else -3),
+                textcoords="offset points",
+                ha="center",
+                va="bottom" if height >= 0 else "top",
+                fontsize=8,
+                color=SUBTLE,
+            )
     ax.axhline(0, color=SUBTLE, lw=1)
     ax.set_xticks(range(len(responses)))
     ax.set_xticklabels([_RESPONSE_LABELS.get(r.metric, r.metric) for r in responses])
     if responses:
-        ax.legend(ncol=3, loc="upper center", bbox_to_anchor=(0.5, 1.14))
+        ax.legend(ncol=3, loc="best")
         ns = [r.n_pairs for r in responses]
         style.footnote(
             fig, f"n = {min(ns)}-{max(ns)} paired days; load = all-sport TRIMP"
