@@ -125,6 +125,31 @@ def test_parse_export_periodic_daily_and_sleep_metrics() -> None:
     assert by_type["sleep_hours"] == 7.0  # 2h + 5h asleep; InBed ignored
 
 
+# The same night recorded by two devices (a sleep app and the watch): their
+# intervals overlap, so per-night totals must come from one source, not the sum.
+_TWO_SOURCE_SLEEP_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
+<HealthData locale="en_GB">
+ <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Sleep Cycle"
+   value="HKCategoryValueSleepAnalysisAsleepUnspecified"
+   startDate="2026-07-08 23:00:00 +0000" endDate="2026-07-09 06:00:00 +0000"/>
+ <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Watch"
+   value="HKCategoryValueSleepAnalysisAsleepCore"
+   startDate="2026-07-08 23:10:00 +0000" endDate="2026-07-09 03:10:00 +0000"/>
+ <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Watch"
+   value="HKCategoryValueSleepAnalysisAsleepDeep"
+   startDate="2026-07-09 03:10:00 +0000" endDate="2026-07-09 06:40:00 +0000"/>
+</HealthData>
+"""
+
+
+def test_sleep_hours_takes_largest_source_not_the_sum_across_devices() -> None:
+    metrics = parse_export(io.BytesIO(_TWO_SOURCE_SLEEP_XML)).metrics
+    sleep = [m.value for m in metrics if m.metric_type == "sleep_hours"]
+    # Sleep Cycle logged 7.0 h, the watch 7.5 h across two stages; summing
+    # sources would give a bogus 14.5 h night.
+    assert sleep == [7.5]
+
+
 _DYNAMICS_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
 <HealthData locale="en_GB">
  <Record type="HKQuantityTypeIdentifierRunningPower" unit="W"
