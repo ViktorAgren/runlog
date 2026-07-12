@@ -354,6 +354,89 @@ def active_week_streak(weekly: Sequence[WeeklyVolume]) -> tuple[int, int]:
     return current, longest
 
 
+# --- All-sport training mix ---------------------------------------------------
+#
+# These consume activities of every sport (loaded via canonical_run_activities
+# with ALL_SPORT_TYPES and min_distance_km=0.0) and feed only the explicitly
+# labelled all-sport views. The running analysis keeps its _RUN_SPORTS filter.
+
+
+@dataclass(frozen=True)
+class WeeklySportHours:
+    week_start: date
+    hours_by_sport: dict[str, float]  # display label -> hours
+
+
+def weekly_sport_hours(activities: Sequence[Run]) -> list[WeeklySportHours]:
+    """Hours per ISO week per sport label, weeks gap-filled with empty dicts."""
+    by_week: dict[date, dict[str, float]] = {}
+    for activity in activities:
+        week = _week_start(activity.start)
+        label = SPORT_LABELS.get(activity.sport_type, activity.sport_type)
+        hours = (activity.moving_s or 0) / 3600
+        sports = by_week.setdefault(week, {})
+        sports[label] = sports.get(label, 0.0) + hours
+    if not by_week:
+        return []
+    first, last = min(by_week), max(by_week)
+    result: list[WeeklySportHours] = []
+    cursor = first
+    while cursor <= last:
+        sports = by_week.get(cursor, {})
+        result.append(
+            WeeklySportHours(
+                week_start=cursor,
+                hours_by_sport={k: round(v, 2) for k, v in sports.items() if v > 0},
+            )
+        )
+        cursor += timedelta(weeks=1)
+    return result
+
+
+@dataclass(frozen=True)
+class SportMix:
+    label: str
+    sessions: int
+    total_hours: float
+    recent_hours: float  # trailing `recent_weeks` window
+
+
+def sport_mix(
+    activities: Sequence[Run], recent_weeks: int = 12, today: date | None = None
+) -> list[SportMix]:
+    """Session count and hours per sport label, sorted by total hours."""
+    today = today or date.today()
+    window_start = today - timedelta(weeks=recent_weeks)
+    sessions: dict[str, int] = defaultdict(int)
+    total: dict[str, float] = defaultdict(float)
+    recent: dict[str, float] = defaultdict(float)
+    for activity in activities:
+        label = SPORT_LABELS.get(activity.sport_type, activity.sport_type)
+        hours = (activity.moving_s or 0) / 3600
+        sessions[label] += 1
+        total[label] += hours
+        if activity.start.date() >= window_start:
+            recent[label] += hours
+    return [
+        SportMix(
+            label=label,
+            sessions=sessions[label],
+            total_hours=round(total[label], 1),
+            recent_hours=round(recent[label], 1),
+        )
+        for label in sorted(total, key=lambda lbl: total[lbl], reverse=True)
+    ]
+
+
+def strength_week_count(
+    weekly: Sequence[WeeklySportHours], recent_weeks: int = 12, label: str = "Strength"
+) -> tuple[int, int]:
+    """(weeks with any strength time, weeks considered) over the trailing window."""
+    window = list(weekly)[-recent_weeks:]
+    active = sum(1 for week in window if week.hours_by_sport.get(label, 0.0) > 0)
+    return active, len(window)
+
+
 # --- Pace -------------------------------------------------------------------
 
 

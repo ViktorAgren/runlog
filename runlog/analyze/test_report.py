@@ -29,6 +29,8 @@ def _add_run(
     stream = tuple(
         StreamPoint(offset_s=i, hr=hr) for i, hr in enumerate(hr_stream or [])
     )
+    # Moving time follows distance at 5:00/km so fixtures stay plausible and
+    # never trip the ingest-time pace quarantine.
     store.store_record(
         conn,
         ActivityRecord(
@@ -38,7 +40,7 @@ def _add_run(
                 sport_type="Run" if source == "strava" else "Running",
                 start_time_utc=when,
                 distance_m=distance_m,
-                moving_s=1500,
+                moving_s=int(distance_m / 1000 * 300),
                 avg_pace_s_per_km=300.0,
                 avg_hr=150.0,
             ),
@@ -96,6 +98,19 @@ def test_report_run_writes_charts_and_summary(tmp_path: Path) -> None:
     store.init_db(conn)
     _add_run(conn, datetime(2026, 6, 1, 7, tzinfo=UTC), hr_stream=[140.0, 160.0])
     _add_run(conn, datetime(2026, 6, 8, 7, tzinfo=UTC), distance_m=12000.0)
+    store.store_record(
+        conn,
+        ActivityRecord(
+            activity=Activity(
+                source="apple_health",
+                source_id=SourceId("apple:strength-1"),
+                sport_type="TraditionalStrengthTraining",
+                start_time_utc=datetime(2026, 6, 2, 17, tzinfo=UTC),
+                moving_s=3600,
+                avg_hr=110.0,
+            )
+        ),
+    )
     store.insert_health_metrics(
         conn,
         [
@@ -120,3 +135,9 @@ def test_report_run_writes_charts_and_summary(tmp_path: Path) -> None:
     assert "Running summary" in result.summary_text
     assert "Walking HR" in result.summary_text
     assert "Resp rate" in result.summary_text
+    # All-sport mix appears, and the strength session must NOT leak into the
+    # running totals (5 km + 12 km runs only).
+    assert "sport_hours.png" in names
+    assert "Training mix (all sports)" in result.summary_text
+    assert "Strength" in result.summary_text
+    assert "Total distance 17.0 km" in result.summary_text

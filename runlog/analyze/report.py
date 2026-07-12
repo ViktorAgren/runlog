@@ -111,6 +111,12 @@ _SECTION_SPEC: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         ),
     ),
     (
+        "All-sport training mix",
+        "Every recorded workout — not just running. "
+        "Running-only analysis is unaffected.",
+        ("sport_hours",),
+    ),
+    (
         "Pace & racing",
         "Pace trends, elevation-adjusted pace, best efforts, and race projections.",
         (
@@ -176,6 +182,7 @@ _TITLE_OVERRIDES = {
     "body_mass": "Body mass",
     "walking_hr_avg": "Walking HR (passive)",
     "respiratory_rate": "Respiratory rate",
+    "sport_hours": "Weekly hours by sport",
 }
 
 
@@ -267,6 +274,15 @@ def run(
                 charts.marker_chart(daily, title, ylabel, f"{metric}.png", recovery_dir)
             )
 
+    # All-sport training mix: every recorded workout (strength, walks, rides),
+    # kept strictly out of the running-only charts and totals above.
+    all_activities = metrics.canonical_run_activities(
+        conn, metrics.ALL_SPORT_TYPES, since=since, min_distance_km=0.0
+    )
+    sport_weeks = metrics.weekly_sport_hours(all_activities)
+    if sport_weeks:
+        produced.append(charts.sport_hours_chart(sport_weeks, training_dir))
+
     # High-level analytics: TRIMP-based Fitness/Fatigue/Form, ACWR, efficiency
     # trend, decoupling, and true best efforts from the streams. Resting HR is
     # used only as a scalar constant in the TRIMP formula (not plotted here).
@@ -327,6 +343,11 @@ def run(
         consistency=metrics.consistency_summary(runs),
         recent_weeks=recent_weeks,
     )
+    mix_text = summary.training_mix_section(
+        metrics.sport_mix(all_activities), metrics.strength_week_count(sport_weeks)
+    )
+    if mix_text:
+        text += "\n" + mix_text
     text += "\n" + summary.analytics_section(pmc, acwr, ef_trend, best_efforts)
     text += "\n" + summary.anomaly_section(anomalies)
     text += "\n" + summary.physiology_section(intensity, median_drift, pace_intensity)

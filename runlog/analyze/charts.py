@@ -43,6 +43,7 @@ if TYPE_CHECKING:
         PacePoint,
         RacePrediction,
         WeeklyLoad,
+        WeeklySportHours,
         WeeklyVolume,
     )
     from runlog.analyze.physiology import IntensityDistribution
@@ -516,6 +517,38 @@ def marker_chart(
         ax.legend(loc="lower left")
     style.date_axis(ax)
     return style.save(fig, out_dir, filename)
+
+
+def sport_hours_chart(weekly: Sequence[WeeklySportHours], out_dir: Path) -> Path:
+    """Weekly training hours stacked by sport (the all-sport view)."""
+    fig, ax = style.figure(
+        "Weekly training hours by sport",
+        "All recorded workouts — running, strength, walking, cycling, rowing",
+        "Week",
+        "Hours",
+    )
+    totals: dict[str, float] = {}
+    for week in weekly:
+        for label, hours in week.hours_by_sport.items():
+            totals[label] = totals.get(label, 0.0) + hours
+    labels = sorted(totals, key=lambda lbl: totals[lbl], reverse=True)
+    weeks = [w.week_start for w in weekly]
+    bottoms = [0.0] * len(weekly)
+    for i, label in enumerate(labels):
+        heights = [w.hours_by_sport.get(label, 0.0) for w in weekly]
+        ax.bar(
+            weeks,
+            heights,
+            width=6,
+            bottom=bottoms,
+            color=style.PALETTE[i % len(style.PALETTE)],
+            label=label,
+        )
+        bottoms = [b + h for b, h in zip(bottoms, heights, strict=True)]
+    if labels:
+        ax.legend(title="Sport")
+    style.date_axis(ax)
+    return style.save(fig, out_dir, "sport_hours.png")
 
 
 # --- High-level analytics ---------------------------------------------------

@@ -16,6 +16,7 @@ if TYPE_CHECKING:
         BucketPace,
         ConsistencySummary,
         RacePrediction,
+        SportMix,
         Summary,
         WeeklyVolume,
     )
@@ -122,6 +123,29 @@ def build_summary_text(
             when, value = latest
             lines.append(f"{label:<12} {value:.1f}  ({when})")
 
+    return "\n".join(lines)
+
+
+def training_mix_section(
+    mix: Sequence[SportMix], strength_weeks: tuple[int, int], recent_weeks: int = 12
+) -> str:
+    """Render hours/sessions per sport plus strength consistency and balance."""
+    if not mix:
+        return ""
+    lines: list[str] = ["", "Training mix (all sports)", "=" * 40]
+    for sport in mix:
+        lines.append(
+            f"{sport.label:<9} {sport.total_hours:6.1f} h all-time / "
+            f"{sport.recent_hours:5.1f} h last {recent_weeks}w  "
+            f"({sport.sessions} sessions)"
+        )
+    active, considered = strength_weeks
+    if considered:
+        lines.append(f"Strength weeks {active} of last {considered}")
+    hours = {sport.label: sport.recent_hours for sport in mix}
+    run_h, strength_h = hours.get("Run", 0.0), hours.get("Strength", 0.0)
+    ratio = f"{run_h / strength_h:.1f} : 1" if strength_h > 0 else "-"
+    lines.append(f"Run:strength   {ratio} (hours, last {recent_weeks}w)")
     return "\n".join(lines)
 
 
