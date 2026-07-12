@@ -61,6 +61,31 @@ def _add_run(
     )
 
 
+def test_canonical_carries_sport_type(conn: sqlite3.Connection) -> None:
+    _add_run(conn, datetime(2026, 6, 1, 7, tzinfo=UTC), source="strava")
+    store.store_record(
+        conn,
+        ActivityRecord(
+            activity=Activity(
+                source="apple_health",
+                source_id=SourceId("apple:strength-1"),
+                sport_type="TraditionalStrengthTraining",
+                start_time_utc=datetime(2026, 6, 2, 17, tzinfo=UTC),
+                moving_s=3600,
+                avg_hr=110.0,
+            )
+        ),
+    )
+
+    activities = metrics.canonical_run_activities(
+        conn, metrics.ALL_SPORT_TYPES, min_distance_km=0.0
+    )
+    assert [(a.sport_type, a.distance_m) for a in activities] == [
+        ("Run", 5000.0),
+        ("TraditionalStrengthTraining", None),
+    ]
+
+
 def test_canonical_drops_linked_apple_twin(conn: sqlite3.Connection) -> None:
     strava = _add_run(conn, datetime(2026, 6, 1, 7, tzinfo=UTC), source="strava")
     apple = _add_run(conn, datetime(2026, 6, 1, 7, tzinfo=UTC), source="apple_health")

@@ -75,6 +75,20 @@ def test_best_effort_seconds_rejects_stream_glitch() -> None:
     ) == (None, 250.0)
 
 
+def test_fill_daily_zero_fills_rest_days() -> None:
+    daily = [(date(2026, 1, 1), 10.0), (date(2026, 1, 3), 30.0)]
+    assert analytics.fill_daily(daily) == [
+        (date(2026, 1, 1), 10.0),
+        (date(2026, 1, 2), 0.0),
+        (date(2026, 1, 3), 30.0),
+    ]
+
+
+def test_pearson_perfect_and_flat() -> None:
+    assert analytics.pearson([1.0, 2.0, 3.0], [2.0, 4.0, 6.0]) == 1.0
+    assert analytics.pearson([1.0, 2.0, 3.0], [5.0, 5.0, 5.0]) is None
+
+
 def test_efficiency_factor_speed_per_hr() -> None:
     run = _run(datetime(2026, 6, 1), avg_hr=150.0, moving_s=1500)
     # 5000 m / 25 min = 200 m/min; /150 bpm = 1.333.

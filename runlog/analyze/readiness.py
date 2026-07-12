@@ -13,7 +13,6 @@ residuals tells you how much readiness actually explains off-days.
 
 from __future__ import annotations
 
-import math
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -78,19 +77,6 @@ def readiness_series(
     return days
 
 
-def _pearson(xs: Sequence[float], ys: Sequence[float]) -> float | None:
-    """Pearson correlation, or None when it is undefined (flat input)."""
-    n = len(xs)
-    mean_x = sum(xs) / n
-    mean_y = sum(ys) / n
-    sxx = sum((x - mean_x) ** 2 for x in xs)
-    syy = sum((y - mean_y) ** 2 for y in ys)
-    if sxx == 0 or syy == 0:
-        return None
-    sxy = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys, strict=True))
-    return sxy / math.sqrt(sxx * syy)
-
-
 def performance_correlation(
     readiness: Sequence[ReadinessDay], runs: Sequence[Run]
 ) -> float | None:
@@ -111,5 +97,5 @@ def performance_correlation(
     ]
     if len(paired) < _MIN_PAIRS:
         return None
-    r = _pearson([p[0] for p in paired], [p[1] for p in paired])
+    r = analytics.pearson([p[0] for p in paired], [p[1] for p in paired])
     return round(r, 2) if r is not None else None

@@ -26,6 +26,19 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
 _RUN_SPORTS = ("Run", "Running")
+
+# Display label per raw sport_type; Strava "Run" and Apple "Running" collapse
+# to one label. Used by the all-sport training-mix view only — the running
+# analysis keeps its own _RUN_SPORTS filter.
+SPORT_LABELS: dict[str, str] = {
+    "Run": "Run",
+    "Running": "Run",
+    "TraditionalStrengthTraining": "Strength",
+    "Walking": "Walk",
+    "Cycling": "Cycle",
+    "Rowing": "Row",
+}
+ALL_SPORT_TYPES: tuple[str, ...] = tuple(SPORT_LABELS)
 _ROLLING_WEEKS = 4
 _DISTANCE_BUCKETS: tuple[tuple[str, float, float], ...] = (
     ("<3k", 0.0, 3.0),
@@ -86,6 +99,7 @@ class Run:
     avg_vertical_oscillation_cm: float | None = None
     avg_ground_contact_ms: float | None = None
     quality_flags: str | None = None
+    sport_type: str = "Run"
 
     @property
     def distance_km(self) -> float | None:
@@ -126,7 +140,7 @@ def canonical_run_activities(
     runs: list[Run] = []
     for row in conn.execute(
         f"""
-        SELECT id, source, start_time_utc, tz, distance_m, moving_s,
+        SELECT id, source, sport_type, start_time_utc, tz, distance_m, moving_s,
                avg_pace_s_per_km, avg_hr, max_hr, avg_cadence, elevation_gain_m,
                relative_effort, grade_adj_distance_m, avg_power_w,
                avg_stride_length_m, avg_vertical_oscillation_cm,
@@ -167,6 +181,7 @@ def canonical_run_activities(
                 ),
                 avg_ground_contact_ms=_coalesce(row, twin, "avg_ground_contact_ms"),
                 quality_flags=row["quality_flags"],
+                sport_type=row["sport_type"],
             )
         )
     return runs
