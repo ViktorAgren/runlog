@@ -117,6 +117,10 @@ def test_report_run_writes_charts_and_summary(tmp_path: Path) -> None:
             HealthMetric("vo2max", datetime(2026, 6, 1, tzinfo=UTC), 52.0),
             HealthMetric("walking_hr_avg", datetime(2026, 6, 1, tzinfo=UTC), 82.0),
             HealthMetric("respiratory_rate", datetime(2026, 6, 1, tzinfo=UTC), 14.5),
+            HealthMetric("steps", datetime(2026, 6, 1, tzinfo=UTC), 9500.0),
+            HealthMetric("steps", datetime(2026, 6, 2, tzinfo=UTC), 7000.0),
+            # A rest day, so the training-vs-rest steps contrast has both sides.
+            HealthMetric("steps", datetime(2026, 6, 3, tzinfo=UTC), 5000.0),
         ],
     )
     conn.close()
@@ -141,3 +145,8 @@ def test_report_run_writes_charts_and_summary(tmp_path: Path) -> None:
     assert "Training mix (all sports)" in result.summary_text
     assert "Strength" in result.summary_text
     assert "Total distance 17.0 km" in result.summary_text
+    # Lifestyle: steps chart lands in its own folder + summary block appears.
+    assert any(
+        p.name == "steps.png" and p.parent.name == "lifestyle" for p in result.charts
+    )
+    assert "Lifestyle (passive daily patterns)" in result.summary_text

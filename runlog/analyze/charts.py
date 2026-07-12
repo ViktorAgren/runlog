@@ -35,6 +35,7 @@ if TYPE_CHECKING:
     from runlog.analyze.analytics import BestEffortProgression, PmcPoint, Trend
     from runlog.analyze.anomaly import AnomalyReport
     from runlog.analyze.cs import CsModel
+    from runlog.analyze.lifestyle import WeekdayProfile
     from runlog.analyze.metrics import (
         BucketPace,
         Heatmap,
@@ -754,6 +755,44 @@ def anomaly_timeline_chart(report: AnomalyReport, out_dir: Path) -> Path:
             ax.scatter(anomaly.day, row, s=44, color=BAD, alpha=0.75, zorder=3)
     style.date_axis(ax)
     return style.save(fig, out_dir, "anomaly_timeline.png")
+
+
+def weekday_profile_chart(profile: WeekdayProfile, out_dir: Path) -> Path:
+    """Mean daily steps (bars) and sleep (dots, right axis) by weekday."""
+    fig, ax = style.figure(
+        "Weekday rhythm",
+        "Mean daily steps (bars, left) and sleep (dots, right) by weekday",
+        "Weekday",
+        "Steps",
+    )
+    xs = range(7)
+    steps = [(i, v) for i, v in zip(xs, profile.steps, strict=True) if v is not None]
+    bars = ax.bar(
+        [i for i, _ in steps],
+        [v for _, v in steps],
+        color=PRIMARY,
+        alpha=0.7,
+        label="Steps",
+    )
+    style.bar_value_labels(ax, bars)
+    ax2 = ax.twinx()
+    ax2.grid(visible=False)
+    sleep = [
+        (i, v) for i, v in zip(xs, profile.sleep_hours, strict=True) if v is not None
+    ]
+    if sleep:
+        ax2.plot(
+            [i for i, _ in sleep],
+            [v for _, v in sleep],
+            color=ACCENT,
+            marker="o",
+            lw=1.6,
+            label="Sleep",
+        )
+        ax2.set_ylabel("Sleep (h)")
+    ax.set_xticks(list(xs))
+    ax.set_xticklabels(_WEEKDAYS)
+    return style.save(fig, out_dir, "weekday_profile.png")
 
 
 # Display labels for the dose-response chart / summary, keyed by metric type.

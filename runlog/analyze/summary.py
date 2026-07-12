@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from runlog.analyze.analytics import BestEffortProgression, PmcPoint, Trend
     from runlog.analyze.anomaly import AnomalyReport
     from runlog.analyze.cs import CsModel
+    from runlog.analyze.lifestyle import LifestyleSummary
     from runlog.analyze.metrics import (
         BestEffort,
         BucketPace,
@@ -238,6 +239,40 @@ def response_section(responses: Sequence[MarkerResponse]) -> str:
             f"hard {_bucket_z(response, 'hard')} vs rest "
             f"{_bucket_z(response, 'rest')} sigma  "
             f"(r={r}, n={response.n_pairs})"
+        )
+    return "\n".join(lines)
+
+
+def lifestyle_section(lifestyle: LifestyleSummary) -> str:
+    """Render passive daily patterns; empty when nothing is populated."""
+    fields = (
+        lifestyle.steps_30d,
+        lifestyle.sleep_30d,
+        lifestyle.weekend_sleep_shift_h,
+        lifestyle.steps_contrast,
+    )
+    if all(field is None for field in fields):
+        return ""
+    lines: list[str] = ["", "Lifestyle (passive daily patterns)", "=" * 40]
+    if lifestyle.steps_30d is not None:
+        lines.append(f"Steps (30d)    {lifestyle.steps_30d:,.0f} /day")
+    if lifestyle.sleep_30d is not None:
+        sd = (
+            f" (±{lifestyle.sleep_sd_30d:.1f} h night-to-night)"
+            if lifestyle.sleep_sd_30d is not None
+            else ""
+        )
+        lines.append(f"Sleep (30d)    {lifestyle.sleep_30d:.1f} h{sd}")
+    if lifestyle.weekend_sleep_shift_h is not None:
+        lines.append(
+            f"Weekend sleep  {lifestyle.weekend_sleep_shift_h:+.1f} h vs weekdays"
+        )
+    if lifestyle.steps_contrast is not None:
+        contrast = lifestyle.steps_contrast
+        lines.append(
+            f"Steps          {contrast.training_mean:,.0f} training days vs "
+            f"{contrast.rest_mean:,.0f} rest "
+            f"(n={contrast.training_n}/{contrast.rest_n})"
         )
     return "\n".join(lines)
 

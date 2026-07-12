@@ -151,6 +151,16 @@ def test_sport_hours_chart_writes_png(tmp_path: Path) -> None:
     assert _wrote_png(charts.sport_hours_chart(weekly, tmp_path))
 
 
+def test_weekday_profile_chart_writes_png(tmp_path: Path) -> None:
+    from runlog.analyze.lifestyle import WeekdayProfile
+
+    profile = WeekdayProfile(
+        steps=(9000.0, 7000.0, None, 8000.0, 7500.0, 11000.0, 10000.0),
+        sleep_hours=(7.0, 6.5, 7.2, None, 6.8, 8.1, 8.4),
+    )
+    assert _wrote_png(charts.weekday_profile_chart(profile, tmp_path))
+
+
 def test_load_response_chart_writes_png(tmp_path: Path) -> None:
     from runlog.analyze.anomaly import Direction
     from runlog.analyze.response import BucketStat, MarkerResponse

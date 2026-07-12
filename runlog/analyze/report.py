@@ -20,6 +20,7 @@ from runlog.analyze import (
     charts,
     cs,
     html_report,
+    lifestyle,
     metrics,
     physiology,
     readiness,
@@ -163,6 +164,12 @@ _SECTION_SPEC: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         "training load moves next-day recovery.",
         ("anomaly_timeline", "readiness", "load_response"),
     ),
+    (
+        "Lifestyle & daily patterns",
+        "Passive daily-life signals — steps, energy, and sleep rhythm — "
+        "separate from training analysis.",
+        ("steps", "exercise_minutes", "active_energy", "weekday_profile"),
+    ),
 )
 
 _TITLE_OVERRIDES = {
@@ -186,6 +193,10 @@ _TITLE_OVERRIDES = {
     "respiratory_rate": "Respiratory rate",
     "sport_hours": "Weekly hours by sport",
     "load_response": "Load and next-day recovery",
+    "steps": "Daily steps",
+    "exercise_minutes": "Exercise minutes",
+    "active_energy": "Active energy",
+    "weekday_profile": "Weekday rhythm",
 }
 
 
@@ -286,6 +297,33 @@ def run(
     if sport_weeks:
         produced.append(charts.sport_hours_chart(sport_weeks, training_dir))
 
+    # Lifestyle: passive daily-life signals in their own folder/section.
+    lifestyle_dir = out_dir / "lifestyle"
+    lifestyle_dir.mkdir(parents=True, exist_ok=True)
+    training_days = frozenset(a.start.date() for a in all_activities)
+    life = lifestyle.build_lifestyle(conn, training_days, since=since)
+    daily_series: dict[str, list[tuple[date, float]]] = {}
+    for metric, title, ylabel in (
+        ("steps", "Daily steps", "steps"),
+        ("exercise_minutes", "Daily exercise minutes", "minutes"),
+        ("active_energy", "Daily active energy", "kcal"),
+    ):
+        daily_series[metric] = metrics.daily_means(
+            metrics.metric_series(conn, metric, since=since)
+        )
+        if daily_series[metric]:
+            produced.append(
+                charts.marker_chart(
+                    daily_series[metric], title, ylabel, f"{metric}.png", lifestyle_dir
+                )
+            )
+    sleep_daily = metrics.daily_means(
+        metrics.metric_series(conn, "sleep_hours", since=since)
+    )
+    profile = lifestyle.weekday_profile(daily_series["steps"], sleep_daily)
+    if profile is not None:
+        produced.append(charts.weekday_profile_chart(profile, lifestyle_dir))
+
     # High-level analytics: TRIMP-based Fitness/Fatigue/Form, ACWR, efficiency
     # trend, decoupling, and true best efforts from the streams. Resting HR is
     # used only as a scalar constant in the TRIMP formula (not plotted here).
@@ -361,6 +399,9 @@ def run(
     response_text = summary.response_section(responses)
     if response_text:
         text += "\n" + response_text
+    lifestyle_text = summary.lifestyle_section(life)
+    if lifestyle_text:
+        text += "\n" + lifestyle_text
     text += "\n" + summary.physiology_section(intensity, median_drift, pace_intensity)
     readiness_latest = readiness_days[-1] if readiness_days else None
     advanced = summary.advanced_section(cs_model, readiness_latest, readiness_r)
@@ -384,6 +425,7 @@ def run(
             latest_markers,
             cs_model,
             readiness_latest,
+            life,
         ),
         sections=_build_sections(produced, out_dir),
     )
@@ -400,6 +442,7 @@ def _build_kpis(
     latest_markers: dict[str, tuple[date, float] | None],
     cs_model: cs.CsModel | None,
     readiness_latest: readiness.ReadinessDay | None,
+    life: lifestyle.LifestyleSummary | None = None,
 ) -> list[Kpi]:
     kpis = [
         Kpi(
@@ -480,6 +523,15 @@ def _build_kpis(
         marker = latest_markers.get(key)
         if marker is not None:
             kpis.append(Kpi(label, f"{marker[1]:.0f}", unit, f"latest {marker[0]}"))
+    if life is not None and life.steps_30d is not None:
+        kpis.append(Kpi("Steps/day", f"{life.steps_30d:,.0f}", "", "30-day mean"))
+    if life is not None and life.sleep_30d is not None:
+        context = (
+            f"±{life.sleep_sd_30d:.1f} h night-to-night"
+            if life.sleep_sd_30d is not None
+            else "30-day mean"
+        )
+        kpis.append(Kpi("Sleep", f"{life.sleep_30d:.1f}", "h", context))
     return kpis
 
 
