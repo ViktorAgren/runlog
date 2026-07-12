@@ -69,6 +69,8 @@ _METRIC_RANGES: dict[str, tuple[float, float]] = {
     "exercise_minutes": (0.0, 600.0),
     "steps": (0.0, 100000.0),
     "flights_climbed": (0.0, 500.0),
+    "walking_hr_avg": (40.0, 160.0),
+    "respiratory_rate": (5.0, 40.0),
 }
 
 

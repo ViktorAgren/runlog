@@ -50,6 +50,8 @@ _RECOVERY_MARKERS = {
     "hr_recovery_1min": ("1-minute HR recovery", "bpm drop"),
     "body_mass": ("Body mass", "kg"),
     "walking_asymmetry": ("Walking asymmetry", "fraction"),
+    "walking_hr_avg": ("Walking heart rate (passive cardio)", "bpm"),
+    "respiratory_rate": ("Respiratory rate (nightly mean)", "breaths/min"),
 }
 # Markers tracked for the summary + anomaly detection but too flat to chart.
 _UNCHARTED_MARKERS = frozenset({"spo2", "walking_asymmetry"})
@@ -172,6 +174,8 @@ _TITLE_OVERRIDES = {
     "sleep_hours": "Sleep hours",
     "hr_recovery_1min": "HR recovery (1 min)",
     "body_mass": "Body mass",
+    "walking_hr_avg": "Walking HR (passive)",
+    "respiratory_rate": "Respiratory rate",
 }
 
 

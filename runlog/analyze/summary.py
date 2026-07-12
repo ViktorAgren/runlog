@@ -31,6 +31,8 @@ _MARKER_LABELS = {
     "hr_recovery_1min": "HR rec 1min",
     "body_mass": "Body mass",
     "walking_asymmetry": "Walk asym",
+    "walking_hr_avg": "Walking HR",
+    "respiratory_rate": "Resp rate",
 }
 
 

@@ -97,13 +97,26 @@ def test_report_run_writes_charts_and_summary(tmp_path: Path) -> None:
     _add_run(conn, datetime(2026, 6, 1, 7, tzinfo=UTC), hr_stream=[140.0, 160.0])
     _add_run(conn, datetime(2026, 6, 8, 7, tzinfo=UTC), distance_m=12000.0)
     store.insert_health_metrics(
-        conn, [HealthMetric("vo2max", datetime(2026, 6, 1, tzinfo=UTC), 52.0)]
+        conn,
+        [
+            HealthMetric("vo2max", datetime(2026, 6, 1, tzinfo=UTC), 52.0),
+            HealthMetric("walking_hr_avg", datetime(2026, 6, 1, tzinfo=UTC), 82.0),
+            HealthMetric("respiratory_rate", datetime(2026, 6, 1, tzinfo=UTC), 14.5),
+        ],
     )
     conn.close()
 
     result = report.run(db_path, tmp_path / "out")
 
     names = {p.name for p in result.charts}
-    assert {"weekly_volume.png", "vo2max.png", "hr_histogram.png"} <= names
+    assert {
+        "weekly_volume.png",
+        "vo2max.png",
+        "hr_histogram.png",
+        "walking_hr_avg.png",
+        "respiratory_rate.png",
+    } <= names
     assert all(p.exists() for p in result.charts)
     assert "Running summary" in result.summary_text
+    assert "Walking HR" in result.summary_text
+    assert "Resp rate" in result.summary_text

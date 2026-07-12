@@ -250,6 +250,28 @@ def test_metric_series_drops_out_of_range_values(conn: sqlite3.Connection) -> No
     assert [v for _, v in metrics.metric_series(conn, "hrv_sdnn")] == [65.0]
 
 
+def test_metric_series_filters_walking_hr_and_respiratory_rate(
+    conn: sqlite3.Connection,
+) -> None:
+    store.insert_health_metrics(
+        conn,
+        [
+            HealthMetric("walking_hr_avg", datetime(2026, 6, 1, tzinfo=UTC), 82.0),
+            HealthMetric(
+                "walking_hr_avg", datetime(2026, 6, 2, tzinfo=UTC), 250.0
+            ),  # artifact
+            HealthMetric("respiratory_rate", datetime(2026, 6, 1, tzinfo=UTC), 14.5),
+            HealthMetric(
+                "respiratory_rate", datetime(2026, 6, 2, tzinfo=UTC), 90.0
+            ),  # artifact
+        ],
+    )
+    assert (
+        [v for _, v in metrics.metric_series(conn, "walking_hr_avg")],
+        [v for _, v in metrics.metric_series(conn, "respiratory_rate")],
+    ) == ([82.0], [14.5])
+
+
 def test_metric_series_is_time_ordered(conn: sqlite3.Connection) -> None:
     store.insert_health_metrics(
         conn,
