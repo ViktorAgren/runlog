@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     )
     from runlog.analyze.physiology import IntensityDistribution
     from runlog.analyze.readiness import ReadinessDay
+    from runlog.analyze.response import MarkerResponse
 
 _MARKER_LABELS = {
     "vo2max": "VO2max",
@@ -209,6 +210,35 @@ def anomaly_section(report: AnomalyReport, recent: int = 8) -> str:
                 f"{anomaly.day}  efficiency {anomaly.value:.2f} "
                 f"vs {anomaly.baseline:.2f} ({anomaly.deviation:+.1f} sigma)"
             )
+    return "\n".join(lines)
+
+
+_RESPONSE_LABELS = {
+    "hrv_sdnn": "HRV",
+    "resting_hr": "Resting HR",
+    "sleep_hours": "Sleep",
+    "hr_recovery_1min": "HR recovery",
+}
+
+
+def _bucket_z(response: MarkerResponse, label: str) -> str:
+    stat = next(b for b in response.buckets if b.label == label)
+    return f"{stat.mean_z:+.2f}" if stat.mean_z is not None else "-"
+
+
+def response_section(responses: Sequence[MarkerResponse]) -> str:
+    """Render next-day recovery response to training load; empty if unscored."""
+    if not responses:
+        return ""
+    lines: list[str] = ["", "Load -> recovery (next-day, all-sport TRIMP)", "=" * 40]
+    for response in responses:
+        r = f"{response.pearson_r:+.2f}" if response.pearson_r is not None else "-"
+        lines.append(
+            f"{_RESPONSE_LABELS.get(response.metric, response.metric):<12} "
+            f"hard {_bucket_z(response, 'hard')} vs rest "
+            f"{_bucket_z(response, 'rest')} sigma  "
+            f"(r={r}, n={response.n_pairs})"
+        )
     return "\n".join(lines)
 
 

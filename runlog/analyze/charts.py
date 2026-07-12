@@ -48,6 +48,7 @@ if TYPE_CHECKING:
     )
     from runlog.analyze.physiology import IntensityDistribution
     from runlog.analyze.readiness import ReadinessDay
+    from runlog.analyze.response import MarkerResponse
 
 # Y-axis rows (bottom to top) for the anomaly timeline, with display labels.
 _ANOMALY_ROWS = (
@@ -753,6 +754,47 @@ def anomaly_timeline_chart(report: AnomalyReport, out_dir: Path) -> Path:
             ax.scatter(anomaly.day, row, s=44, color=BAD, alpha=0.75, zorder=3)
     style.date_axis(ax)
     return style.save(fig, out_dir, "anomaly_timeline.png")
+
+
+# Display labels for the dose-response chart / summary, keyed by metric type.
+_RESPONSE_LABELS = {
+    "hrv_sdnn": "HRV",
+    "resting_hr": "Resting HR",
+    "sleep_hours": "Sleep",
+    "hr_recovery_1min": "HR recovery",
+}
+
+
+def load_response_chart(responses: Sequence[MarkerResponse], out_dir: Path) -> Path:
+    """Mean next-day marker deviation after rest / moderate / hard days."""
+    fig, ax = style.figure(
+        "Load and next-day recovery",
+        "Mean next-day deviation (robust sigma vs own baseline) after rest / "
+        "moderate / hard training days",
+        "",
+        "Next-day deviation (sigma)",
+    )
+    bucket_colors = {"rest": GOOD, "moderate": WARN, "hard": BAD}
+    width = 0.25
+    for offset, (label, color) in enumerate(bucket_colors.items()):
+        xs, ys = [], []
+        for i, resp in enumerate(responses):
+            stat = next(b for b in resp.buckets if b.label == label)
+            if stat.mean_z is not None:
+                xs.append(i + (offset - 1) * width)
+                ys.append(stat.mean_z)
+        bars = ax.bar(xs, ys, width=width, color=color, label=label.capitalize())
+        style.bar_value_labels(ax, bars, "{:+.2f}")
+    ax.axhline(0, color=SUBTLE, lw=1)
+    ax.set_xticks(range(len(responses)))
+    ax.set_xticklabels([_RESPONSE_LABELS.get(r.metric, r.metric) for r in responses])
+    if responses:
+        ax.legend(ncol=3, loc="upper center", bbox_to_anchor=(0.5, 1.14))
+        ns = [r.n_pairs for r in responses]
+        style.footnote(
+            fig, f"n = {min(ns)}-{max(ns)} paired days; load = all-sport TRIMP"
+        )
+    return style.save(fig, out_dir, "load_response.png")
 
 
 def critical_speed_chart(model: CsModel | None, out_dir: Path) -> Path:

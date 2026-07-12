@@ -151,6 +151,37 @@ def test_sport_hours_chart_writes_png(tmp_path: Path) -> None:
     assert _wrote_png(charts.sport_hours_chart(weekly, tmp_path))
 
 
+def test_load_response_chart_writes_png(tmp_path: Path) -> None:
+    from runlog.analyze.anomaly import Direction
+    from runlog.analyze.response import BucketStat, MarkerResponse
+
+    responses = [
+        MarkerResponse(
+            metric="hrv_sdnn",
+            direction=Direction.LOW,
+            buckets=(
+                BucketStat("rest", 0.1, 40),
+                BucketStat("moderate", -0.2, 30),
+                BucketStat("hard", None, 0),  # empty bucket must not break
+            ),
+            pearson_r=-0.21,
+            n_pairs=70,
+        ),
+        MarkerResponse(
+            metric="sleep_hours",
+            direction=Direction.LOW,
+            buckets=(
+                BucketStat("rest", 0.0, 40),
+                BucketStat("moderate", -0.1, 30),
+                BucketStat("hard", -0.5, 10),
+            ),
+            pearson_r=-0.3,
+            n_pairs=80,
+        ),
+    ]
+    assert _wrote_png(charts.load_response_chart(responses, tmp_path))
+
+
 def test_critical_speed_and_readiness_charts_write_png(tmp_path: Path) -> None:
     from runlog.analyze.cs import CsModel, CsPoint
     from runlog.analyze.readiness import ReadinessDay

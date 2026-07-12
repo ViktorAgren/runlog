@@ -24,6 +24,7 @@ from runlog.analyze import (
     physiology,
     readiness,
     report_model,
+    response,
     streams,
     summary,
 )
@@ -158,8 +159,9 @@ _SECTION_SPEC: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ),
     (
         "Anomalies & readiness",
-        "Days and runs that deviate from your own rolling baseline.",
-        ("anomaly_timeline", "readiness"),
+        "Days and runs that deviate from your own rolling baseline, and how "
+        "training load moves next-day recovery.",
+        ("anomaly_timeline", "readiness", "load_response"),
     ),
 )
 
@@ -183,6 +185,7 @@ _TITLE_OVERRIDES = {
     "walking_hr_avg": "Walking HR (passive)",
     "respiratory_rate": "Respiratory rate",
     "sport_hours": "Weekly hours by sport",
+    "load_response": "Load and next-day recovery",
 }
 
 
@@ -318,6 +321,11 @@ def run(
     if readiness_days:
         produced.append(charts.readiness_chart(readiness_days, analytics_dir))
 
+    # Dose-response: how all-sport training load moves next-day recovery.
+    responses = response.load_response(conn, hr_max_value, hr_rest, since=since)
+    if responses:
+        produced.append(charts.load_response_chart(responses, analytics_dir))
+
     # Stream-based physiology: intensity distribution (polarization) and
     # regression cardiac drift, both from each run's own HR/velocity stream.
     intensity = physiology.training_intensity_distribution(conn, runs, hr_max_value)
@@ -350,6 +358,9 @@ def run(
         text += "\n" + mix_text
     text += "\n" + summary.analytics_section(pmc, acwr, ef_trend, best_efforts)
     text += "\n" + summary.anomaly_section(anomalies)
+    response_text = summary.response_section(responses)
+    if response_text:
+        text += "\n" + response_text
     text += "\n" + summary.physiology_section(intensity, median_drift, pace_intensity)
     readiness_latest = readiness_days[-1] if readiness_days else None
     advanced = summary.advanced_section(cs_model, readiness_latest, readiness_r)
