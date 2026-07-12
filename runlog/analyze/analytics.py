@@ -44,6 +44,19 @@ _BEST_EFFORT_DISTANCES_M: tuple[tuple[str, float], ...] = (
 # --- Linear trend -----------------------------------------------------------
 
 
+def pearson(xs: Sequence[float], ys: Sequence[float]) -> float | None:
+    """Pearson correlation, or None when it is undefined (flat input)."""
+    n = len(xs)
+    mean_x = sum(xs) / n
+    mean_y = sum(ys) / n
+    sxx = sum((x - mean_x) ** 2 for x in xs)
+    syy = sum((y - mean_y) ** 2 for y in ys)
+    if sxx == 0 or syy == 0:
+        return None
+    sxy = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys, strict=True))
+    return sxy / math.sqrt(sxx * syy)
+
+
 @dataclass(frozen=True)
 class Trend:
     slope_per_day: float
@@ -100,7 +113,7 @@ def daily_trimp(
     return sorted(totals.items())
 
 
-def _fill_daily(daily: Sequence[tuple[date, float]]) -> list[tuple[date, float]]:
+def fill_daily(daily: Sequence[tuple[date, float]]) -> list[tuple[date, float]]:
     """Expand a sparse daily series to every calendar day (0 on rest days)."""
     if not daily:
         return []
@@ -127,7 +140,7 @@ def performance_management(
     """Fitness/Fatigue/Form via exponentially weighted TRIMP (the PMC)."""
     ctl = atl = 0.0
     points: list[PmcPoint] = []
-    for day, load in _fill_daily(daily):
+    for day, load in fill_daily(daily):
         form = ctl - atl  # form reflects balance *before* today's load
         ctl += (load - ctl) / _CTL_DAYS
         atl += (load - atl) / _ATL_DAYS
@@ -139,7 +152,7 @@ def acwr_series(
     daily: Sequence[tuple[date, float]],
 ) -> list[tuple[date, float]]:
     """Acute:chronic workload ratio (7-day vs 28-day mean daily TRIMP)."""
-    filled = _fill_daily(daily)
+    filled = fill_daily(daily)
     loads = [load for _, load in filled]
     series: list[tuple[date, float]] = []
     for i, (day, _load) in enumerate(filled):

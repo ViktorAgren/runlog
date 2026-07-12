@@ -129,7 +129,9 @@ backfilled onto new Strava-logged runs (those metrics only exist Apple-side).
 ### `report`
 
 Compute analytics, render PNG charts, and write a single-file `report.html` plus
-a terminal summary. Running only; runs de-duplicated across sources.
+a terminal summary. Training analysis is running-only (runs de-duplicated
+across sources); separate sections cover the all-sport training mix, passive
+recovery markers, lifestyle patterns, and load-vs-recovery response.
 
 | Flag | Default | Description |
 | --- | --- | --- |
@@ -194,17 +196,21 @@ Same dry-run/API model as `plan`. Writes markdown to `data/plans/`.
 ### Analyzing (`report`)
 
 Prints a text summary (total distance, streaks, consistency, records, Riegel
-race predictions, training status, intensity split, latest markers, anomalies),
-writes `report.html` (KPI cards + every figure embedded as base64, so it's one
-file), and saves ~35 charts under three folders:
+race predictions, training mix, training status, intensity split, latest
+markers, anomalies, load-response, lifestyle), writes `report.html` (KPI cards
++ every figure embedded as base64, so it's one file), and saves ~40 charts
+under four folders:
 
 - **`training/`** — weekly/monthly volume, runs-per-week, cumulative distance,
   distance histogram, training heatmap, pace over time, grade-adjusted pace,
   fastest by distance, race predictions, HR over time, HR zones, HR histogram,
-  training load, cadence, elevation, and running-form dynamics (power, stride
-  length, vertical oscillation, ground contact, running economy).
+  training load, cadence, elevation, running-form dynamics (power, stride
+  length, vertical oscillation, ground contact, running economy), and weekly
+  hours stacked by sport (running, strength, walking, cycling).
 - **`recovery/`** — off-workout markers: VO2max, resting HR, HRV, sleep,
-  HR-recovery, body mass.
+  HR-recovery, body mass, walking HR, respiratory rate.
+- **`lifestyle/`** — passive daily patterns: steps, exercise minutes, active
+  energy, and a weekday rhythm profile (steps + sleep by weekday).
 - **`analytics/`** — derived models:
   - **Performance Management Chart** — Fitness (CTL) / Fatigue (ATL) / Form (TSB)
     from Banister TRIMP.
@@ -215,6 +221,8 @@ file), and saves ~35 charts under three folders:
   - **Critical speed** — the CS/D' model fit to your best efforts.
   - **Intensity distribution** — % time easy / moderate / hard.
   - **Anomaly timeline** and **daily readiness** vs. your rolling baseline.
+  - **Load-response** — mean next-day HRV / resting HR / sleep / HR-recovery
+    deviation after rest, moderate, and hard days (all-sport TRIMP).
 
 The per-second streams (GPS, elevation, velocity, reconstructed HR) drive the
 stream metrics: elevation-adjusted pace (Minetti cost model), per-run HR-zone

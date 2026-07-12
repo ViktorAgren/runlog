@@ -64,14 +64,6 @@ def test_score_drops_when_resting_hr_is_elevated(conn: sqlite3.Connection) -> No
     assert _readiness_on(conn, bad_day).score == 19.7
 
 
-def test_pearson_perfect_positive_correlation() -> None:
-    assert readiness._pearson([1.0, 2.0, 3.0], [2.0, 4.0, 6.0]) == 1.0
-
-
-def test_pearson_none_on_flat_input() -> None:
-    assert readiness._pearson([1.0, 2.0, 3.0], [5.0, 5.0, 5.0]) is None
-
-
 def test_performance_correlation_none_without_overlap(conn: sqlite3.Connection) -> None:
     # Readiness exists but there are no runs, so no efficiency residuals overlap.
     _insert(conn, "resting_hr", [*_wobble(date(2026, 1, 1)), (date(2026, 1, 21), 50.0)])

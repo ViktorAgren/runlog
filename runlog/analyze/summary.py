@@ -11,16 +11,19 @@ if TYPE_CHECKING:
     from runlog.analyze.analytics import BestEffortProgression, PmcPoint, Trend
     from runlog.analyze.anomaly import AnomalyReport
     from runlog.analyze.cs import CsModel
+    from runlog.analyze.lifestyle import LifestyleSummary
     from runlog.analyze.metrics import (
         BestEffort,
         BucketPace,
         ConsistencySummary,
         RacePrediction,
+        SportMix,
         Summary,
         WeeklyVolume,
     )
     from runlog.analyze.physiology import IntensityDistribution
     from runlog.analyze.readiness import ReadinessDay
+    from runlog.analyze.response import MarkerResponse
 
 _MARKER_LABELS = {
     "vo2max": "VO2max",
@@ -31,6 +34,8 @@ _MARKER_LABELS = {
     "hr_recovery_1min": "HR rec 1min",
     "body_mass": "Body mass",
     "walking_asymmetry": "Walk asym",
+    "walking_hr_avg": "Walking HR",
+    "respiratory_rate": "Resp rate",
 }
 
 
@@ -123,6 +128,29 @@ def build_summary_text(
     return "\n".join(lines)
 
 
+def training_mix_section(
+    mix: Sequence[SportMix], strength_weeks: tuple[int, int], recent_weeks: int = 12
+) -> str:
+    """Render hours/sessions per sport plus strength consistency and balance."""
+    if not mix:
+        return ""
+    lines: list[str] = ["", "Training mix (all sports)", "=" * 40]
+    for sport in mix:
+        lines.append(
+            f"{sport.label:<9} {sport.total_hours:6.1f} h all-time / "
+            f"{sport.recent_hours:5.1f} h last {recent_weeks}w  "
+            f"({sport.sessions} sessions)"
+        )
+    active, considered = strength_weeks
+    if considered:
+        lines.append(f"Strength weeks {active} of last {considered}")
+    hours = {sport.label: sport.recent_hours for sport in mix}
+    run_h, strength_h = hours.get("Run", 0.0), hours.get("Strength", 0.0)
+    ratio = f"{run_h / strength_h:.1f} : 1" if strength_h > 0 else "-"
+    lines.append(f"Run:strength   {ratio} (hours, last {recent_weeks}w)")
+    return "\n".join(lines)
+
+
 def analytics_section(
     pmc: Sequence[PmcPoint],
     acwr: Sequence[tuple[date, float]],
@@ -183,6 +211,69 @@ def anomaly_section(report: AnomalyReport, recent: int = 8) -> str:
                 f"{anomaly.day}  efficiency {anomaly.value:.2f} "
                 f"vs {anomaly.baseline:.2f} ({anomaly.deviation:+.1f} sigma)"
             )
+    return "\n".join(lines)
+
+
+_RESPONSE_LABELS = {
+    "hrv_sdnn": "HRV",
+    "resting_hr": "Resting HR",
+    "sleep_hours": "Sleep",
+    "hr_recovery_1min": "HR recovery",
+}
+
+
+def _bucket_z(response: MarkerResponse, label: str) -> str:
+    stat = next(b for b in response.buckets if b.label == label)
+    return f"{stat.mean_z:+.2f}" if stat.mean_z is not None else "-"
+
+
+def response_section(responses: Sequence[MarkerResponse]) -> str:
+    """Render next-day recovery response to training load; empty if unscored."""
+    if not responses:
+        return ""
+    lines: list[str] = ["", "Load -> recovery (next-day, all-sport TRIMP)", "=" * 40]
+    for response in responses:
+        r = f"{response.pearson_r:+.2f}" if response.pearson_r is not None else "-"
+        lines.append(
+            f"{_RESPONSE_LABELS.get(response.metric, response.metric):<12} "
+            f"hard {_bucket_z(response, 'hard')} vs rest "
+            f"{_bucket_z(response, 'rest')} sigma  "
+            f"(r={r}, n={response.n_pairs})"
+        )
+    return "\n".join(lines)
+
+
+def lifestyle_section(lifestyle: LifestyleSummary) -> str:
+    """Render passive daily patterns; empty when nothing is populated."""
+    fields = (
+        lifestyle.steps_30d,
+        lifestyle.sleep_30d,
+        lifestyle.weekend_sleep_shift_h,
+        lifestyle.steps_contrast,
+    )
+    if all(field is None for field in fields):
+        return ""
+    lines: list[str] = ["", "Lifestyle (passive daily patterns)", "=" * 40]
+    if lifestyle.steps_30d is not None:
+        lines.append(f"Steps (30d)    {lifestyle.steps_30d:,.0f} /day")
+    if lifestyle.sleep_30d is not None:
+        sd = (
+            f" (±{lifestyle.sleep_sd_30d:.1f} h night-to-night)"
+            if lifestyle.sleep_sd_30d is not None
+            else ""
+        )
+        lines.append(f"Sleep (30d)    {lifestyle.sleep_30d:.1f} h{sd}")
+    if lifestyle.weekend_sleep_shift_h is not None:
+        lines.append(
+            f"Weekend sleep  {lifestyle.weekend_sleep_shift_h:+.1f} h vs weekdays"
+        )
+    if lifestyle.steps_contrast is not None:
+        contrast = lifestyle.steps_contrast
+        lines.append(
+            f"Steps          {contrast.training_mean:,.0f} training days vs "
+            f"{contrast.rest_mean:,.0f} rest "
+            f"(n={contrast.training_n}/{contrast.rest_n})"
+        )
     return "\n".join(lines)
 
 

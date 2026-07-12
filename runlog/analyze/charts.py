@@ -35,6 +35,7 @@ if TYPE_CHECKING:
     from runlog.analyze.analytics import BestEffortProgression, PmcPoint, Trend
     from runlog.analyze.anomaly import AnomalyReport
     from runlog.analyze.cs import CsModel
+    from runlog.analyze.lifestyle import WeekdayProfile
     from runlog.analyze.metrics import (
         BucketPace,
         Heatmap,
@@ -43,10 +44,12 @@ if TYPE_CHECKING:
         PacePoint,
         RacePrediction,
         WeeklyLoad,
+        WeeklySportHours,
         WeeklyVolume,
     )
     from runlog.analyze.physiology import IntensityDistribution
     from runlog.analyze.readiness import ReadinessDay
+    from runlog.analyze.response import MarkerResponse
 
 # Y-axis rows (bottom to top) for the anomaly timeline, with display labels.
 _ANOMALY_ROWS = (
@@ -518,6 +521,38 @@ def marker_chart(
     return style.save(fig, out_dir, filename)
 
 
+def sport_hours_chart(weekly: Sequence[WeeklySportHours], out_dir: Path) -> Path:
+    """Weekly training hours stacked by sport (the all-sport view)."""
+    fig, ax = style.figure(
+        "Weekly training hours by sport",
+        "All recorded workouts — running, strength, walking, cycling, rowing",
+        "Week",
+        "Hours",
+    )
+    totals: dict[str, float] = {}
+    for week in weekly:
+        for label, hours in week.hours_by_sport.items():
+            totals[label] = totals.get(label, 0.0) + hours
+    labels = sorted(totals, key=lambda lbl: totals[lbl], reverse=True)
+    weeks = [w.week_start for w in weekly]
+    bottoms = [0.0] * len(weekly)
+    for i, label in enumerate(labels):
+        heights = [w.hours_by_sport.get(label, 0.0) for w in weekly]
+        ax.bar(
+            weeks,
+            heights,
+            width=6,
+            bottom=bottoms,
+            color=style.PALETTE[i % len(style.PALETTE)],
+            label=label,
+        )
+        bottoms = [b + h for b, h in zip(bottoms, heights, strict=True)]
+    if labels:
+        ax.legend(title="Sport")
+    style.date_axis(ax)
+    return style.save(fig, out_dir, "sport_hours.png")
+
+
 # --- High-level analytics ---------------------------------------------------
 
 
@@ -720,6 +755,96 @@ def anomaly_timeline_chart(report: AnomalyReport, out_dir: Path) -> Path:
             ax.scatter(anomaly.day, row, s=44, color=BAD, alpha=0.75, zorder=3)
     style.date_axis(ax)
     return style.save(fig, out_dir, "anomaly_timeline.png")
+
+
+def weekday_profile_chart(profile: WeekdayProfile, out_dir: Path) -> Path:
+    """Mean daily steps (bars) and sleep (dots, right axis) by weekday."""
+    fig, ax = style.figure(
+        "Weekday rhythm",
+        "Mean daily steps (bars, left) and sleep (dots, right) by weekday",
+        "Weekday",
+        "Steps",
+    )
+    xs = range(7)
+    steps = [(i, v) for i, v in zip(xs, profile.steps, strict=True) if v is not None]
+    bars = ax.bar(
+        [i for i, _ in steps],
+        [v for _, v in steps],
+        color=PRIMARY,
+        alpha=0.7,
+        label="Steps",
+    )
+    style.bar_value_labels(ax, bars)
+    ax2 = ax.twinx()
+    ax2.grid(visible=False)
+    sleep = [
+        (i, v) for i, v in zip(xs, profile.sleep_hours, strict=True) if v is not None
+    ]
+    if sleep:
+        ax2.plot(
+            [i for i, _ in sleep],
+            [v for _, v in sleep],
+            color=ACCENT,
+            marker="o",
+            lw=1.6,
+            label="Sleep",
+        )
+        ax2.set_ylabel("Sleep (h)")
+    ax.set_xticks(list(xs))
+    ax.set_xticklabels(_WEEKDAYS)
+    return style.save(fig, out_dir, "weekday_profile.png")
+
+
+# Display labels for the dose-response chart / summary, keyed by metric type.
+_RESPONSE_LABELS = {
+    "hrv_sdnn": "HRV",
+    "resting_hr": "Resting HR",
+    "sleep_hours": "Sleep",
+    "hr_recovery_1min": "HR recovery",
+}
+
+
+def load_response_chart(responses: Sequence[MarkerResponse], out_dir: Path) -> Path:
+    """Mean next-day marker deviation after rest / moderate / hard days."""
+    fig, ax = style.figure(
+        "Load and next-day recovery",
+        "Mean next-day deviation (robust sigma vs own baseline) after rest / "
+        "moderate / hard training days",
+        "",
+        "Next-day deviation (sigma)",
+    )
+    bucket_colors = {"rest": GOOD, "moderate": WARN, "hard": BAD}
+    width = 0.25
+    for offset, (label, color) in enumerate(bucket_colors.items()):
+        xs, ys = [], []
+        for i, resp in enumerate(responses):
+            stat = next(b for b in resp.buckets if b.label == label)
+            if stat.mean_z is not None:
+                xs.append(i + (offset - 1) * width)
+                ys.append(stat.mean_z)
+        bars = ax.bar(xs, ys, width=width, color=color, label=label.capitalize())
+        for bar in bars:
+            height = bar.get_height()
+            ax.annotate(
+                f"{height:+.2f}",
+                xy=(bar.get_x() + bar.get_width() / 2, height),
+                xytext=(0, 3 if height >= 0 else -3),
+                textcoords="offset points",
+                ha="center",
+                va="bottom" if height >= 0 else "top",
+                fontsize=8,
+                color=SUBTLE,
+            )
+    ax.axhline(0, color=SUBTLE, lw=1)
+    ax.set_xticks(range(len(responses)))
+    ax.set_xticklabels([_RESPONSE_LABELS.get(r.metric, r.metric) for r in responses])
+    if responses:
+        ax.legend(ncol=3, loc="best")
+        ns = [r.n_pairs for r in responses]
+        style.footnote(
+            fig, f"n = {min(ns)}-{max(ns)} paired days; load = all-sport TRIMP"
+        )
+    return style.save(fig, out_dir, "load_response.png")
 
 
 def critical_speed_chart(model: CsModel | None, out_dir: Path) -> Path:

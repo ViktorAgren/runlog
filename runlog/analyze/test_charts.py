@@ -140,6 +140,58 @@ def test_gap_broken_inserts_nan_across_long_gaps() -> None:
     assert ys[:2] == [1.0, 2.0] and math.isnan(ys[2]) and ys[3:] == [3.0, 4.0]
 
 
+def test_sport_hours_chart_writes_png(tmp_path: Path) -> None:
+    from runlog.analyze.metrics import WeeklySportHours
+
+    weekly = [
+        WeeklySportHours(date(2026, 6, 1), {"Run": 3.5, "Strength": 1.0}),
+        WeeklySportHours(date(2026, 6, 8), {}),
+        WeeklySportHours(date(2026, 6, 15), {"Run": 2.0}),
+    ]
+    assert _wrote_png(charts.sport_hours_chart(weekly, tmp_path))
+
+
+def test_weekday_profile_chart_writes_png(tmp_path: Path) -> None:
+    from runlog.analyze.lifestyle import WeekdayProfile
+
+    profile = WeekdayProfile(
+        steps=(9000.0, 7000.0, None, 8000.0, 7500.0, 11000.0, 10000.0),
+        sleep_hours=(7.0, 6.5, 7.2, None, 6.8, 8.1, 8.4),
+    )
+    assert _wrote_png(charts.weekday_profile_chart(profile, tmp_path))
+
+
+def test_load_response_chart_writes_png(tmp_path: Path) -> None:
+    from runlog.analyze.anomaly import Direction
+    from runlog.analyze.response import BucketStat, MarkerResponse
+
+    responses = [
+        MarkerResponse(
+            metric="hrv_sdnn",
+            direction=Direction.LOW,
+            buckets=(
+                BucketStat("rest", 0.1, 40),
+                BucketStat("moderate", -0.2, 30),
+                BucketStat("hard", None, 0),  # empty bucket must not break
+            ),
+            pearson_r=-0.21,
+            n_pairs=70,
+        ),
+        MarkerResponse(
+            metric="sleep_hours",
+            direction=Direction.LOW,
+            buckets=(
+                BucketStat("rest", 0.0, 40),
+                BucketStat("moderate", -0.1, 30),
+                BucketStat("hard", -0.5, 10),
+            ),
+            pearson_r=-0.3,
+            n_pairs=80,
+        ),
+    ]
+    assert _wrote_png(charts.load_response_chart(responses, tmp_path))
+
+
 def test_critical_speed_and_readiness_charts_write_png(tmp_path: Path) -> None:
     from runlog.analyze.cs import CsModel, CsPoint
     from runlog.analyze.readiness import ReadinessDay

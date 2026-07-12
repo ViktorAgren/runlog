@@ -61,6 +61,31 @@ def _add_run(
     )
 
 
+def test_canonical_carries_sport_type(conn: sqlite3.Connection) -> None:
+    _add_run(conn, datetime(2026, 6, 1, 7, tzinfo=UTC), source="strava")
+    store.store_record(
+        conn,
+        ActivityRecord(
+            activity=Activity(
+                source="apple_health",
+                source_id=SourceId("apple:strength-1"),
+                sport_type="TraditionalStrengthTraining",
+                start_time_utc=datetime(2026, 6, 2, 17, tzinfo=UTC),
+                moving_s=3600,
+                avg_hr=110.0,
+            )
+        ),
+    )
+
+    activities = metrics.canonical_run_activities(
+        conn, metrics.ALL_SPORT_TYPES, min_distance_km=0.0
+    )
+    assert [(a.sport_type, a.distance_m) for a in activities] == [
+        ("Run", 5000.0),
+        ("TraditionalStrengthTraining", None),
+    ]
+
+
 def test_canonical_drops_linked_apple_twin(conn: sqlite3.Connection) -> None:
     strava = _add_run(conn, datetime(2026, 6, 1, 7, tzinfo=UTC), source="strava")
     apple = _add_run(conn, datetime(2026, 6, 1, 7, tzinfo=UTC), source="apple_health")
@@ -223,6 +248,107 @@ def test_metric_series_drops_out_of_range_values(conn: sqlite3.Connection) -> No
         ],
     )
     assert [v for _, v in metrics.metric_series(conn, "hrv_sdnn")] == [65.0]
+
+
+def _activity(
+    when: datetime, sport_type: str, moving_s: int | None = 3600
+) -> metrics.Run:
+    return metrics.Run(
+        activity_id=ActivityId(1),
+        source="apple_health",
+        start=when,
+        distance_m=None,
+        moving_s=moving_s,
+        avg_pace_s_per_km=None,
+        avg_hr=110.0,
+        max_hr=None,
+        sport_type=sport_type,
+    )
+
+
+class TestWeeklySportHours:
+    def test_stacks_and_gap_fills(self) -> None:
+        week_a = datetime(2026, 6, 1, 7, tzinfo=UTC)  # a Monday
+        week_c = datetime(2026, 6, 15, 7, tzinfo=UTC)
+        activities = [
+            _activity(week_a, "Run", moving_s=1800),
+            _activity(week_a, "TraditionalStrengthTraining", moving_s=3600),
+            _activity(week_c, "Walking", moving_s=7200),
+        ]
+        assert [
+            (w.week_start, w.hours_by_sport)
+            for w in metrics.weekly_sport_hours(activities)
+        ] == [
+            (date(2026, 6, 1), {"Run": 0.5, "Strength": 1.0}),
+            (date(2026, 6, 8), {}),
+            (date(2026, 6, 15), {"Walk": 2.0}),
+        ]
+
+    def test_collapses_run_and_running_labels(self) -> None:
+        when = datetime(2026, 6, 1, 7, tzinfo=UTC)
+        activities = [
+            _activity(when, "Run", moving_s=1800),
+            _activity(when, "Running", moving_s=1800),
+        ]
+        assert [w.hours_by_sport for w in metrics.weekly_sport_hours(activities)] == [
+            {"Run": 1.0}
+        ]
+
+
+class TestSportMix:
+    def test_totals_and_recent_window(self) -> None:
+        old = datetime(2026, 1, 5, 7, tzinfo=UTC)  # outside 12-week window
+        recent = datetime(2026, 6, 1, 7, tzinfo=UTC)
+        activities = [
+            _activity(old, "Run", moving_s=7200),
+            _activity(recent, "Run", moving_s=3600),
+            _activity(recent, "TraditionalStrengthTraining", moving_s=3600),
+        ]
+        mix = metrics.sport_mix(activities, recent_weeks=12, today=date(2026, 6, 7))
+        assert [(m.label, m.sessions, m.total_hours, m.recent_hours) for m in mix] == [
+            ("Run", 2, 3.0, 1.0),
+            ("Strength", 1, 1.0, 1.0),
+        ]
+
+    def test_counts_session_without_moving_time(self) -> None:
+        when = datetime(2026, 6, 1, 7, tzinfo=UTC)
+        mix = metrics.sport_mix(
+            [_activity(when, "Run", moving_s=None)], today=date(2026, 6, 7)
+        )
+        assert [(m.label, m.sessions, m.total_hours) for m in mix] == [("Run", 1, 0.0)]
+
+
+def test_strength_week_count_over_trailing_window() -> None:
+    week_a = datetime(2026, 6, 1, 7, tzinfo=UTC)
+    week_b = datetime(2026, 6, 8, 7, tzinfo=UTC)
+    activities = [
+        _activity(week_a, "TraditionalStrengthTraining"),
+        _activity(week_b, "Run"),
+    ]
+    weekly = metrics.weekly_sport_hours(activities)
+    assert metrics.strength_week_count(weekly, recent_weeks=12) == (1, 2)
+
+
+def test_metric_series_filters_walking_hr_and_respiratory_rate(
+    conn: sqlite3.Connection,
+) -> None:
+    store.insert_health_metrics(
+        conn,
+        [
+            HealthMetric("walking_hr_avg", datetime(2026, 6, 1, tzinfo=UTC), 82.0),
+            HealthMetric(
+                "walking_hr_avg", datetime(2026, 6, 2, tzinfo=UTC), 250.0
+            ),  # artifact
+            HealthMetric("respiratory_rate", datetime(2026, 6, 1, tzinfo=UTC), 14.5),
+            HealthMetric(
+                "respiratory_rate", datetime(2026, 6, 2, tzinfo=UTC), 90.0
+            ),  # artifact
+        ],
+    )
+    assert (
+        [v for _, v in metrics.metric_series(conn, "walking_hr_avg")],
+        [v for _, v in metrics.metric_series(conn, "respiratory_rate")],
+    ) == ([82.0], [14.5])
 
 
 def test_metric_series_is_time_ordered(conn: sqlite3.Connection) -> None:
