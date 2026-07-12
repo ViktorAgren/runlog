@@ -336,7 +336,7 @@ def _consume_record(
     elem: Element,
     metrics: list[HealthMetric],
     daily: dict[tuple[str, date], float],
-    sleep_seconds: dict[date, float],
+    sleep_seconds: dict[tuple[date, str], float],
     hr_samples: list[tuple[datetime, float]],
     dynamics: dict[str, list[tuple[datetime, float]]],
 ) -> None:
@@ -367,7 +367,8 @@ def _consume_record(
             start, end = elem.get("startDate"), elem.get("endDate")
             if start and end:
                 begin, finish = _parse_dt(start), _parse_dt(end)
-                sleep_seconds[finish.date()] += (finish - begin).total_seconds()
+                key = (finish.date(), elem.get("sourceName", ""))
+                sleep_seconds[key] += (finish - begin).total_seconds()
 
 
 def parse_export(source: IO[bytes]) -> AppleExport:
@@ -375,7 +376,7 @@ def parse_export(source: IO[bytes]) -> AppleExport:
     workouts: list[AppleWorkout] = []
     metrics: list[HealthMetric] = []
     daily: dict[tuple[str, date], float] = defaultdict(float)
-    sleep_seconds: dict[date, float] = defaultdict(float)
+    sleep_seconds: dict[tuple[date, str], float] = defaultdict(float)
     hr_samples: list[tuple[datetime, float]] = []
     dynamics: dict[str, list[tuple[datetime, float]]] = defaultdict(list)
     for _event, elem in iterparse(source, events=("end",)):
@@ -389,7 +390,13 @@ def parse_export(source: IO[bytes]) -> AppleExport:
         metrics.append(
             HealthMetric(metric_type, _midnight(day), round(total, 1), source="apple")
         )
-    for day, seconds in sleep_seconds.items():
+    # Several devices can record the same night (a sleep app and the watch)
+    # with overlapping intervals, so a night's hours come from the single
+    # source that captured the most sleep, never the sum across sources.
+    nightly: dict[date, float] = defaultdict(float)
+    for (day, _source), seconds in sleep_seconds.items():
+        nightly[day] = max(nightly[day], seconds)
+    for day, seconds in nightly.items():
         metrics.append(
             HealthMetric(
                 "sleep_hours",
