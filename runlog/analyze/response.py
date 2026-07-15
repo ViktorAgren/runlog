@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
-from runlog.analyze import analytics, anomaly, metrics
+from runlog.analyze import analytics, anomaly, metrics, stats
 from runlog.analyze.anomaly import Direction
 
 if TYPE_CHECKING:
@@ -57,6 +57,10 @@ class MarkerResponse:
     buckets: tuple[BucketStat, ...]  # always (rest, moderate, hard)
     pearson_r: float | None  # load day N vs marker z day N+1, over all pairs
     n_pairs: int
+    # Inference: hard-day vs rest-day next-day z (Welch + Hedges' g), and the
+    # load-vs-response correlation with Fisher CI and exact-t p.
+    rest_vs_hard: stats.GroupTest | None = None
+    load_corr: stats.CorrTest | None = None
 
 
 def marker_response(
@@ -104,6 +108,8 @@ def marker_response(
         buckets=buckets,
         pearson_r=round(r, 2) if r is not None else None,
         n_pairs=len(pairs),
+        rest_vs_hard=stats.group_test(grouped["hard"], grouped["rest"]),
+        load_corr=stats.corr_test([load for load, _ in pairs], [z for _, z in pairs]),
     )
 
 

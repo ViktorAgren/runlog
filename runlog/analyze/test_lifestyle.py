@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import math
 import sqlite3
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
@@ -32,16 +33,25 @@ def test_weekday_means_buckets_mon_to_sun() -> None:
 
 
 def test_training_rest_contrast_splits_by_day_set() -> None:
+    # Training days [1..5], rest days [3..7]: the reference dataset from
+    # test_stats (diff -2.0, p=.0805, g=-1.14).
     daily = [
-        (date(2026, 6, 1), 10000.0),
-        (date(2026, 6, 2), 6000.0),
-        (date(2026, 6, 3), 12000.0),
-        (date(2026, 6, 4), 8000.0),
+        (date(2026, 6, 1) + timedelta(days=i), float(v))
+        for i, v in enumerate([1, 2, 3, 4, 5, 3, 4, 5, 6, 7])
     ]
-    training_days = frozenset({date(2026, 6, 1), date(2026, 6, 3)})
-    assert lifestyle.training_rest_contrast(daily, training_days) == DayContrast(
-        training_mean=11000.0, rest_mean=7000.0, training_n=2, rest_n=2
-    )
+    training_days = frozenset(day for day, _ in daily[:5])
+
+    contrast = lifestyle.training_rest_contrast(daily, training_days)
+    assert contrast is not None
+    assert (
+        contrast.training_mean,
+        contrast.rest_mean,
+        contrast.training_n,
+        contrast.rest_n,
+    ) == (3.0, 5.0, 5, 5)
+    assert contrast.test is not None
+    assert math.isclose(contrast.test.p, 0.080516, abs_tol=1e-5)
+    assert math.isclose(contrast.test.hedges_g, -1.14250, abs_tol=1e-4)
 
 
 def test_training_rest_contrast_none_when_one_side_empty() -> None:
@@ -112,12 +122,16 @@ def test_build_lifestyle_from_db(conn: sqlite3.Connection) -> None:
     summary = lifestyle.build_lifestyle(
         conn, frozenset({date(2026, 6, 1)}), today=today
     )
+    # One day per side -> Welch test is None (needs >=2 per group).
     assert summary == LifestyleSummary(
         steps_30d=8000.0,
         sleep_30d=8.0,
         sleep_sd_30d=1.0,
         weekend_sleep_shift_h=None,  # both nights are weekdays
         steps_contrast=DayContrast(
-            training_mean=10000.0, rest_mean=6000.0, training_n=1, rest_n=1
+            training_mean=10000.0, rest_mean=6000.0, training_n=1, rest_n=1, test=None
+        ),
+        sleep_contrast=DayContrast(
+            training_mean=7.0, rest_mean=9.0, training_n=1, rest_n=1, test=None
         ),
     )

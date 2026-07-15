@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from runlog.analyze import stats
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from datetime import date
@@ -24,6 +26,7 @@ if TYPE_CHECKING:
     from runlog.analyze.physiology import IntensityDistribution
     from runlog.analyze.readiness import ReadinessDay
     from runlog.analyze.response import MarkerResponse
+    from runlog.analyze.stats import CorrTest
 
 _MARKER_LABELS = {
     "vo2max": "VO2max",
@@ -234,11 +237,18 @@ def response_section(responses: Sequence[MarkerResponse]) -> str:
     lines: list[str] = ["", "Load -> recovery (next-day, all-sport TRIMP)", "=" * 40]
     for response in responses:
         r = f"{response.pearson_r:+.2f}" if response.pearson_r is not None else "-"
+        inference = ""
+        if response.rest_vs_hard is not None:
+            test = response.rest_vs_hard
+            inference = (
+                f"  g={test.hedges_g:+.2f} [{test.ci_low:+.2f},{test.ci_high:+.2f}] "
+                f"{stats.format_p(test.p)}"
+            )
         lines.append(
             f"{_RESPONSE_LABELS.get(response.metric, response.metric):<12} "
             f"hard {_bucket_z(response, 'hard')} vs rest "
-            f"{_bucket_z(response, 'rest')} sigma  "
-            f"(r={r}, n={response.n_pairs})"
+            f"{_bucket_z(response, 'rest')} sigma"
+            f"{inference}  (r={r}, n={response.n_pairs})"
         )
     return "\n".join(lines)
 
@@ -269,10 +279,15 @@ def lifestyle_section(lifestyle: LifestyleSummary) -> str:
         )
     if lifestyle.steps_contrast is not None:
         contrast = lifestyle.steps_contrast
+        inference = (
+            f", g={contrast.test.hedges_g:+.2f} {stats.format_p(contrast.test.p)}"
+            if contrast.test is not None
+            else ""
+        )
         lines.append(
             f"Steps          {contrast.training_mean:,.0f} training days vs "
             f"{contrast.rest_mean:,.0f} rest "
-            f"(n={contrast.training_n}/{contrast.rest_n})"
+            f"(n={contrast.training_n}/{contrast.rest_n}{inference})"
         )
     return "\n".join(lines)
 
@@ -287,7 +302,7 @@ _CS_PREDICTIONS: tuple[tuple[str, float], ...] = (
 def advanced_section(
     cs_model: CsModel | None,
     readiness_latest: ReadinessDay | None,
-    readiness_r: float | None,
+    readiness_corr: CorrTest | None,
 ) -> str:
     """Render the Critical Speed model and readiness score (empty if neither)."""
     if cs_model is None and readiness_latest is None:
@@ -307,10 +322,12 @@ def advanced_section(
             f"Readiness      {readiness_latest.score:.0f}/100  "
             f"({readiness_latest.day}, 40-60 normal)"
         )
-    if readiness_r is not None:
+    if readiness_corr is not None:
         lines.append(
-            f"Readiness vs performance  r={readiness_r:+.2f} "
-            f"(explains ~{round(readiness_r**2 * 100)}% of off-day variance)"
+            f"Readiness vs performance  r={readiness_corr.r:+.2f} "
+            f"[{readiness_corr.ci_low:+.2f}, {readiness_corr.ci_high:+.2f}] "
+            f"{stats.format_p(readiness_corr.p)}, n={readiness_corr.n} "
+            f"(explains ~{round(readiness_corr.r**2 * 100)}% of off-day variance)"
         )
     return "\n".join(lines)
 

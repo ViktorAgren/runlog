@@ -17,7 +17,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from runlog.analyze import analytics, anomaly, metrics
+from runlog.analyze import analytics, anomaly, metrics, stats
 from runlog.analyze.anomaly import Direction
 
 if TYPE_CHECKING:
@@ -39,8 +39,6 @@ _READINESS_MARKERS: tuple[tuple[str, Direction], ...] = (
 # 40-60 "normal" band, +/-3.3 sigma saturates at 0 / 100.
 _MIDPOINT = 50.0
 _SCORE_SCALE = 15.0
-# Correlation needs a few paired days to mean anything.
-_MIN_PAIRS = 3
 
 
 @dataclass(frozen=True)
@@ -79,7 +77,7 @@ def readiness_series(
 
 def performance_correlation(
     readiness: Sequence[ReadinessDay], runs: Sequence[Run]
-) -> float | None:
+) -> stats.CorrTest | None:
     """Correlate daily readiness with same-day efficiency-factor residuals.
 
     A positive r means higher-readiness days tend to run better than baseline
@@ -95,7 +93,4 @@ def performance_correlation(
         for day, residual in ef_residual.items()
         if day in score_by_day
     ]
-    if len(paired) < _MIN_PAIRS:
-        return None
-    r = analytics.pearson([p[0] for p in paired], [p[1] for p in paired])
-    return round(r, 2) if r is not None else None
+    return stats.corr_test([p[0] for p in paired], [p[1] for p in paired])

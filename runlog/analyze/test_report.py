@@ -74,18 +74,23 @@ def test_build_summary_text_includes_key_sections() -> None:
 def test_advanced_section_renders_cs_and_readiness() -> None:
     from runlog.analyze.cs import CsModel, CsPoint
     from runlog.analyze.readiness import ReadinessDay
+    from runlog.analyze.stats import CorrTest
 
     model = CsModel(
         cs_mps=5.0, d_prime_m=200.0, r=1.0, points=[CsPoint(5000.0, 1160.0)]
     )
     latest = ReadinessDay(date(2026, 6, 20), 72.0, {})
-    text = summary.advanced_section(model, latest, readiness_r=0.3)
+    corr = CorrTest(r=0.3, ci_low=0.04, ci_high=0.52, p=0.024, n=52)
+    text = summary.advanced_section(model, latest, corr)
 
     # CS 3k time = (3000 - 200) / 5 = 560 s = 9:20; r=0.3 -> ~9% of variance.
     assert "Critical speed 5.00 m/s  (D' 200 m, r=1.00)" in text
     assert "CS 3k   9:20" in text
     assert "Readiness      72/100  (2026-06-20, 40-60 normal)" in text
-    assert "r=+0.30 (explains ~9% of off-day variance)" in text
+    assert (
+        "r=+0.30 [+0.04, +0.52] p=.024, n=52 "
+        "(explains ~9% of off-day variance)" in text
+    )
 
 
 def test_advanced_section_empty_without_models() -> None:
