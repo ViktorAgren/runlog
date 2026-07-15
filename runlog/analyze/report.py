@@ -201,6 +201,8 @@ _TITLE_OVERRIDES = {
     "body_mass": "Body mass",
     "walking_hr_avg": "Walking HR (passive)",
     "respiratory_rate": "Respiratory rate",
+    "spo2": "SpO2",
+    "walking_asymmetry": "Walking asymmetry",
     "sport_hours": "Weekly hours by sport",
     "load_response": "Load and next-day recovery",
     "steps": "Daily steps",
