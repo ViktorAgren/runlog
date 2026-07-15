@@ -169,7 +169,15 @@ _SECTION_SPEC: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         "Lifestyle & daily patterns",
         "Passive daily-life signals — steps, energy, and sleep rhythm — "
         "separate from training analysis.",
-        ("steps", "exercise_minutes", "active_energy", "weekday_profile"),
+        (
+            "steps",
+            "exercise_minutes",
+            "active_energy",
+            "physical_effort",
+            "walking_speed",
+            "flights_climbed",
+            "weekday_profile",
+        ),
     ),
 )
 
@@ -197,6 +205,9 @@ _TITLE_OVERRIDES = {
     "steps": "Daily steps",
     "exercise_minutes": "Exercise minutes",
     "active_energy": "Active energy",
+    "physical_effort": "Physical effort (MET)",
+    "walking_speed": "Walking speed",
+    "flights_climbed": "Flights climbed",
     "weekday_profile": "Weekday rhythm",
 }
 
@@ -308,6 +319,9 @@ def run(
         ("steps", "Daily steps", "steps"),
         ("exercise_minutes", "Daily exercise minutes", "minutes"),
         ("active_energy", "Daily active energy", "kcal"),
+        ("physical_effort", "Daily physical effort", "MET (daily mean)"),
+        ("walking_speed", "Walking speed", "m/s (daily mean)"),
+        ("flights_climbed", "Flights climbed", "flights/day"),
     ):
         daily_series[metric] = metrics.daily_means(
             metrics.metric_series(conn, metric, since=since)

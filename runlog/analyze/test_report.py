@@ -126,6 +126,9 @@ def test_report_run_writes_charts_and_summary(tmp_path: Path) -> None:
             HealthMetric("steps", datetime(2026, 6, 2, tzinfo=UTC), 7000.0),
             # A rest day, so the training-vs-rest steps contrast has both sides.
             HealthMetric("steps", datetime(2026, 6, 3, tzinfo=UTC), 5000.0),
+            HealthMetric("physical_effort", datetime(2026, 6, 1, tzinfo=UTC), 3.2),
+            HealthMetric("walking_speed", datetime(2026, 6, 1, tzinfo=UTC), 1.4),
+            HealthMetric("flights_climbed", datetime(2026, 6, 1, tzinfo=UTC), 12.0),
         ],
     )
     conn.close()
@@ -155,3 +158,11 @@ def test_report_run_writes_charts_and_summary(tmp_path: Path) -> None:
         p.name == "steps.png" and p.parent.name == "lifestyle" for p in result.charts
     )
     assert "Lifestyle (passive daily patterns)" in result.summary_text
+    # Full-coverage series chart into lifestyle/ as well.
+    assert {
+        "physical_effort.png",
+        "walking_speed.png",
+        "flights_climbed.png",
+    } <= names
+    # Uncharted markers still produce no figure.
+    assert "spo2.png" not in names and "walking_asymmetry.png" not in names
