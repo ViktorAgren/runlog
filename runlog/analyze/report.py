@@ -20,6 +20,7 @@ from runlog.analyze import (
     charts,
     cs,
     html_report,
+    importance,
     lifestyle,
     metrics,
     physiology,
@@ -281,11 +282,16 @@ def run(
     grade_pace = metrics.grade_adjusted_pace_points(runs)
     if grade_pace:
         produced.append(charts.grade_adjusted_pace_chart(grade_pace, training_dir))
+    # Trend candidates for the what-matters panel: (label, lane, unit, series).
+    trend_series: list[tuple[str, str, str, list[tuple[date, float]]]] = []
     for title, ylabel, filename, accessor in _FORM_TRENDS:
         trend = metrics.run_trend(runs, accessor)
         if trend:
             produced.append(
                 charts.marker_chart(trend, title, ylabel, filename, training_dir)
+            )
+            trend_series.append(
+                (f"{_pretty(filename[:-4])} trend", "training", f"{ylabel}/30d", trend)
             )
 
     latest_markers: dict[str, tuple[date, float] | None] = {}
@@ -295,6 +301,10 @@ def run(
             (series[-1][0].date(), series[-1][1]) if series else None
         )
         daily = metrics.daily_means(series)
+        if daily:
+            trend_series.append(
+                (f"{_pretty(metric)} trend", "recovery", f"{ylabel}/30d", daily)
+            )
         if daily and metric not in _UNCHARTED_MARKERS:
             produced.append(
                 charts.marker_chart(daily, title, ylabel, f"{metric}.png", recovery_dir)
@@ -330,6 +340,14 @@ def run(
             produced.append(
                 charts.marker_chart(
                     daily_series[metric], title, ylabel, f"{metric}.png", lifestyle_dir
+                )
+            )
+            trend_series.append(
+                (
+                    f"{_pretty(metric)} trend",
+                    "lifestyle",
+                    f"{ylabel}/30d",
+                    daily_series[metric],
                 )
             )
     sleep_daily = metrics.daily_means(
@@ -393,6 +411,21 @@ def run(
     # using the athlete's own VDOT pace bands derived from their best 5k.
     pace_intensity = _pace_intensity(conn, runs, best_efforts)
 
+    # The full test family, BH-FDR-corrected once: every trend the report
+    # draws, plus the cross-lane correlations and contrasts.
+    trend_series.append(("Efficiency factor trend", "training", "EF/30d", efficiency))
+    trend_series.append(
+        (
+            "Weekly running volume trend",
+            "training",
+            "km-wk/30d",
+            [(w.week_start, w.distance_km) for w in weekly],
+        )
+    )
+    table = importance.build_table(
+        _collect_candidates(trend_series, responses, readiness_r, life)
+    )
+
     overall = metrics.overall_summary(runs)
     text = summary.build_summary_text(
         summary=overall,
@@ -405,6 +438,9 @@ def run(
         consistency=metrics.consistency_summary(runs),
         recent_weeks=recent_weeks,
     )
+    importance_text = summary.importance_section(table)
+    if importance_text:
+        text += "\n" + importance_text
     mix_text = summary.training_mix_section(
         metrics.sport_mix(all_activities), metrics.strength_week_count(sport_weeks)
     )
@@ -445,6 +481,7 @@ def run(
             ef_test,
         ),
         sections=_build_sections(produced, out_dir),
+        stats=_stats_table(table),
     )
     report_html = html_report.render(model, out_dir)
     return ReportResult(charts=produced, summary_text=text, report_html=report_html)
@@ -610,6 +647,103 @@ def _pace_intensity(
         runs,
         easy_ceiling_s=paces["Marathon"][1],
         hard_floor_s=paces["Threshold"][0],
+    )
+
+
+# Short display labels for the cross-lane response candidates.
+_RESPONSE_LABELS = {
+    "hrv_sdnn": "HRV",
+    "resting_hr": "resting HR",
+    "sleep_hours": "sleep",
+    "hr_recovery_1min": "HR recovery",
+}
+
+
+def _collect_candidates(
+    trend_series: Sequence[tuple[str, str, str, list[tuple[date, float]]]],
+    responses: Sequence[response.MarkerResponse],
+    readiness_corr: stats.CorrTest | None,
+    life: lifestyle.LifestyleSummary,
+) -> list[importance.Candidate]:
+    """Assemble the full what-matters test family from computed results."""
+    candidates: list[importance.Candidate] = []
+    for label, lane, unit, series in trend_series:
+        values = [v for _, v in series]
+        candidates.append(
+            importance.Candidate(
+                kind="trend",
+                label=label,
+                lane=lane,
+                unit=unit,
+                trend=stats.trend_test(series),
+                sd=statistics.pstdev(values) if len(values) > 1 else None,
+            )
+        )
+    for resp in responses:
+        name = _RESPONSE_LABELS.get(resp.metric, resp.metric)
+        candidates.append(
+            importance.Candidate(
+                kind="correlation",
+                label=f"Load -> next-day {name}",
+                lane="cross",
+                unit="",
+                corr=resp.load_corr,
+            )
+        )
+        candidates.append(
+            importance.Candidate(
+                kind="contrast",
+                label=f"Hard vs rest: next-day {name}",
+                lane="cross",
+                unit="",
+                group=resp.rest_vs_hard,
+            )
+        )
+    candidates.append(
+        importance.Candidate(
+            kind="correlation",
+            label="Readiness <-> run efficiency",
+            lane="cross",
+            unit="",
+            corr=readiness_corr,
+        )
+    )
+    for name, contrast in (
+        ("Steps", life.steps_contrast),
+        ("Sleep", life.sleep_contrast),
+    ):
+        if contrast is not None:
+            candidates.append(
+                importance.Candidate(
+                    kind="contrast",
+                    label=f"{name}: training vs rest days",
+                    lane="cross",
+                    unit="",
+                    group=contrast.test,
+                )
+            )
+    return candidates
+
+
+def _stats_table(table: importance.SignificanceTable) -> report_model.StatsTable | None:
+    """Preformatted view-model rows for the HTML what-matters table."""
+    if not table.findings:
+        return None
+    return report_model.StatsTable(
+        caption=f"{table.n_tests} tests, Benjamini-Hochberg FDR at q<{table.alpha:g}",
+        rows=[
+            report_model.StatsRow(
+                label=finding.label,
+                lane=finding.lane,
+                effect=finding.effect,
+                ci=finding.ci,
+                p=stats.format_p(finding.p),
+                q=f"{finding.q:.3f}",
+                n=str(finding.n),
+                significant=finding.significant,
+            )
+            for finding in table.findings
+        ],
     )
 
 

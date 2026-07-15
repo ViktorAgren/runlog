@@ -39,12 +39,33 @@ class Section:
 
 
 @dataclass(frozen=True)
+class StatsRow:
+    """One preformatted finding row for the what-matters table."""
+
+    label: str
+    lane: str
+    effect: str
+    ci: str
+    p: str
+    q: str
+    n: str
+    significant: bool
+
+
+@dataclass(frozen=True)
+class StatsTable:
+    caption: str  # e.g. "28 tests, BH-FDR at q<0.05"
+    rows: list[StatsRow] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
 class ReportModel:
     title: str
     subtitle: str  # e.g. the date range
     generated_at: str
     kpis: list[Kpi]
     sections: list[Section]
+    stats: StatsTable | None = None
 
 
 def acwr_tone(acwr: float) -> Tone:

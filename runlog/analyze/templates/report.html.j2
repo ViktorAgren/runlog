@@ -48,6 +48,17 @@
   figcaption { color: var(--subtle); font-size: 12.5px; margin-top: 8px; }
   footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line);
     color: var(--muted); font-size: 12px; }
+  table.stats { border-collapse: collapse; width: 100%; font-size: 13px;
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
+  table.stats th { text-align: left; color: var(--subtle); font-size: 11.5px;
+    text-transform: uppercase; letter-spacing: 0.04em; padding: 10px 12px;
+    border-bottom: 1px solid var(--line); }
+  table.stats td { padding: 8px 12px; border-bottom: 1px solid var(--line); }
+  table.stats td.num { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12.5px; white-space: nowrap; }
+  table.stats tr.sig td:first-child { border-left: 3px solid var(--good); }
+  table.stats tr:last-child td { border-bottom: none; }
+  .stats-caption { color: var(--subtle); font-size: 12.5px; margin: 6px 0 14px; }
 </style>
 </head>
 <body>
@@ -68,6 +79,25 @@
     </div>
     {% endfor %}
   </div>
+  {% endif %}
+
+  {% if model.stats %}
+  <section>
+    <h2>What matters (FDR-corrected)</h2>
+    <p class="stats-caption">{{ model.stats.caption }}</p>
+    <table class="stats">
+      <tr><th>Finding</th><th>Lane</th><th>Effect</th><th>95% CI</th>
+          <th>p</th><th>q</th><th>n</th></tr>
+      {% for row in model.stats.rows %}
+      <tr{% if row.significant %} class="sig"{% endif %}>
+        <td>{{ row.label }}</td><td>{{ row.lane }}</td>
+        <td class="num">{{ row.effect }}</td><td class="num">{{ row.ci }}</td>
+        <td class="num">{{ row.p }}</td><td class="num">{{ row.q }}</td>
+        <td class="num">{{ row.n }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </section>
   {% endif %}
 
   {% for section in sections %}

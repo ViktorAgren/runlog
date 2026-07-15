@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from runlog.analyze.analytics import BestEffortProgression, PmcPoint, Trend
     from runlog.analyze.anomaly import AnomalyReport
     from runlog.analyze.cs import CsModel
+    from runlog.analyze.importance import SignificanceTable
     from runlog.analyze.lifestyle import LifestyleSummary
     from runlog.analyze.metrics import (
         BestEffort,
@@ -128,6 +129,30 @@ def build_summary_text(
             when, value = latest
             lines.append(f"{label:<12} {value:.1f}  ({when})")
 
+    return "\n".join(lines)
+
+
+def importance_section(table: SignificanceTable, top: int = 12) -> str:
+    """Render the ranked what-matters findings; empty when nothing scored."""
+    if not table.findings:
+        return ""
+    lines: list[str] = [
+        "",
+        "What matters (FDR-corrected)",
+        "=" * 40,
+        f"{table.n_tests} tests, BH-FDR at q<{table.alpha:g}",
+        "-" * 40,
+    ]
+    for finding in table.findings[:top]:
+        star = "*" if finding.significant else " "
+        lines.append(
+            f"{star} {finding.label:<24} {finding.lane:<9} "
+            f"{finding.effect} {finding.ci}  "
+            f"{stats.format_p(finding.p)} q={finding.q:.3f} n={finding.n}"
+        )
+    remaining = len(table.findings) - top
+    if remaining > 0:
+        lines.append(f"  ... {remaining} more below threshold")
     return "\n".join(lines)
 
 
