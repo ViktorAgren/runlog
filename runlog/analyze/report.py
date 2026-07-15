@@ -26,6 +26,7 @@ from runlog.analyze import (
     readiness,
     report_model,
     response,
+    stats,
     streams,
     summary,
 )
@@ -335,12 +336,13 @@ def run(
     acwr = analytics.acwr_series(daily)
     efficiency = analytics.efficiency_factor(runs)
     ef_trend = analytics.linear_trend(efficiency)
+    ef_test = stats.trend_test(efficiency)
     best_efforts = analytics.best_effort_progressions(conn, runs)
     anomalies = anomaly.analyze(conn, runs, since=since)
     produced += [
         charts.pmc_chart(pmc, analytics_dir),
         charts.acwr_chart(acwr, analytics_dir),
-        charts.efficiency_trend_chart(efficiency, ef_trend, analytics_dir),
+        charts.efficiency_trend_chart(efficiency, ef_trend, analytics_dir, ef_test),
         charts.decoupling_chart(
             analytics.aerobic_decoupling(conn, runs), analytics_dir
         ),
@@ -426,6 +428,7 @@ def run(
             cs_model,
             readiness_latest,
             life,
+            ef_test,
         ),
         sections=_build_sections(produced, out_dir),
     )
@@ -443,6 +446,7 @@ def _build_kpis(
     cs_model: cs.CsModel | None,
     readiness_latest: readiness.ReadinessDay | None,
     life: lifestyle.LifestyleSummary | None = None,
+    ef_test: stats.TrendTest | None = None,
 ) -> list[Kpi]:
     kpis = [
         Kpi(
@@ -490,12 +494,17 @@ def _build_kpis(
         )
     if ef_trend is not None:
         tone = "good" if ef_trend.per_30_days >= 0 else "warn"
+        if ef_test is not None:
+            low, high = ef_test.ci_30d
+            context = f"[{low:+.3f}, {high:+.3f}]/mo, {stats.format_p(ef_test.p)}"
+        else:
+            context = f"r={ef_trend.r:.2f}"
         kpis.append(
             Kpi(
                 "Efficiency",
                 f"{ef_trend.per_30_days:+.3f}",
                 "/mo",
-                f"r={ef_trend.r:.2f}",
+                context,
                 tone,
             )
         )

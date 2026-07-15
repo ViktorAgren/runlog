@@ -44,6 +44,27 @@ def test_trend_annotation_none_for_single_point() -> None:
     assert style.trend_annotation(ax, [(date(2026, 6, 1), 5.0)]) is None
 
 
+def test_trend_annotation_box_shows_ci_and_p() -> None:
+    # Reference dataset from test_stats: slope 0.6/day -> +18/30d, p=.124.
+    ys = [2.0, 4.0, 5.0, 4.0, 5.0]
+    points = [(date(2026, 1, 1 + i), y) for i, y in enumerate(ys)]
+    _fig, ax = style.figure("t")
+    style.trend_annotation(ax, points)
+    box_text = next(t.get_text() for t in ax.texts if "trend" in t.get_text())
+    assert "18" in box_text
+    assert "p=.124" in box_text
+    assert "n=5" in box_text
+
+
+def test_trend_annotation_two_points_falls_back_to_slope_only() -> None:
+    points = [(date(2026, 6, 1), 5.0), (date(2026, 6, 2), 7.0)]
+    _fig, ax = style.figure("t")
+    trend = style.trend_annotation(ax, points)
+    assert trend is not None  # renders the old single-line format, no crash
+    box_text = next(t.get_text() for t in ax.texts if "trend" in t.get_text())
+    assert "r=" in box_text and "p=" not in box_text
+
+
 def test_save_writes_png(tmp_path: Path) -> None:
     fig, _ax = style.figure("t")
     path = style.save(fig, tmp_path, "t.png")

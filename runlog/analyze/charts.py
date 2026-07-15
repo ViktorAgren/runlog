@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from matplotlib.ticker import FuncFormatter
 
-from runlog.analyze import style
+from runlog.analyze import stats, style
 from runlog.analyze.style import (
     ACCENT,
     BAD,
@@ -50,6 +50,7 @@ if TYPE_CHECKING:
     from runlog.analyze.physiology import IntensityDistribution
     from runlog.analyze.readiness import ReadinessDay
     from runlog.analyze.response import MarkerResponse
+    from runlog.analyze.stats import TrendTest
 
 # Y-axis rows (bottom to top) for the anomaly timeline, with display labels.
 _ANOMALY_ROWS = (
@@ -615,7 +616,10 @@ def acwr_chart(series: Sequence[tuple[date, float]], out_dir: Path) -> Path:
 
 
 def efficiency_trend_chart(
-    points: Sequence[tuple[date, float]], trend: Trend | None, out_dir: Path
+    points: Sequence[tuple[date, float]],
+    trend: Trend | None,
+    out_dir: Path,
+    test: TrendTest | None = None,
 ) -> Path:
     fig, ax = style.figure(
         "Aerobic efficiency factor",
@@ -634,10 +638,18 @@ def efficiency_trend_chart(
             color=ACCENT,
             lw=2.2,
         )
+        if test is not None:
+            low, high = test.ci_30d
+            label = (
+                f"trend {test.per_30_days:+.3f}/month  [{low:+.3f}, {high:+.3f}]\n"
+                f"{stats.format_p(test.p)}  n={test.n}"
+            )
+        else:
+            label = f"trend {trend.per_30_days:+.3f}/month   r={trend.r:.2f}"
         ax.text(
             0.02,
             0.96,
-            f"trend {trend.per_30_days:+.3f}/month   r={trend.r:.2f}",
+            label,
             transform=ax.transAxes,
             va="top",
             fontsize=9,
