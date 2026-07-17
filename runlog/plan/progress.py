@@ -22,7 +22,6 @@ if TYPE_CHECKING:
 
     from runlog.analyze.metrics import Run
 
-_DEFAULT_HR_REST = 50.0
 # A run is "Quality" when this share of time sits in Z4-5, "Easy" when most time
 # is in Z1-2, else "Moderate" (mostly Z3 — often easy running under %HRmax zones).
 _QUALITY_HARD_FRACTION = 30.0
@@ -100,11 +99,6 @@ class ProgressReport:
     plan_weeks: list[PlanWeek] = field(default_factory=list)
 
 
-def _resting_hr(conn: sqlite3.Connection) -> float:
-    daily = metrics.daily_means(metrics.metric_series(conn, "resting_hr"))
-    return statistics.median(v for _, v in daily) if daily else _DEFAULT_HR_REST
-
-
 def _ctl_at(points: list[analytics.PmcPoint], start: date) -> float | None:
     """Fitness (CTL) on the last modelled day at or before ``start``."""
     before = [p.fitness for p in points if p.day <= start]
@@ -176,7 +170,7 @@ def _laps(conn: sqlite3.Connection, run: Run) -> tuple[LapSplit, ...]:
     )
 
 
-def _workout_detail(conn: sqlite3.Connection, run: Run, hr_max: float) -> WorkoutDetail:
+def workout_detail(conn: sqlite3.Connection, run: Run, hr_max: float) -> WorkoutDetail:
     stream = streams.full_stream(conn, run.activity_id)
     zones = _zone_pcts(stream, hr_max) if stream else None
     pacing = streams.pacing_stats(stream) if stream else None
@@ -244,7 +238,7 @@ def build_progress(
 
     hr_samples = metrics.hr_samples(conn, [r.activity_id for r in all_runs])
     hr_max_value = hr_max if hr_max else metrics.estimated_hr_max(hr_samples)
-    hr_rest = _resting_hr(conn)
+    hr_rest = metrics.resting_hr_median(conn)
     daily_load = analytics.daily_trimp(all_runs, hr_max_value, hr_rest)
     pmc = analytics.performance_management(daily_load)
     acwr = analytics.acwr_series(daily_load)
@@ -252,7 +246,7 @@ def build_progress(
     intensity = physiology.training_intensity_distribution(conn, window, hr_max_value)
     flags = anomaly.analyze(conn, window, since=start)
     best = _plausible_best_efforts(analytics.best_effort_progressions(conn, window))
-    workouts = [_workout_detail(conn, run, hr_max_value) for run in window]
+    workouts = [workout_detail(conn, run, hr_max_value) for run in window]
 
     return ProgressReport(
         start=start,

@@ -250,6 +250,22 @@ def test_metric_series_drops_out_of_range_values(conn: sqlite3.Connection) -> No
     assert [v for _, v in metrics.metric_series(conn, "hrv_sdnn")] == [65.0]
 
 
+def test_resting_hr_median_from_daily_means(conn: sqlite3.Connection) -> None:
+    store.insert_health_metrics(
+        conn,
+        [
+            HealthMetric("resting_hr", datetime(2026, 6, 1, tzinfo=UTC), 50.0),
+            HealthMetric("resting_hr", datetime(2026, 6, 2, tzinfo=UTC), 54.0),
+            HealthMetric("resting_hr", datetime(2026, 6, 3, tzinfo=UTC), 58.0),
+        ],
+    )
+    assert metrics.resting_hr_median(conn) == 54.0
+
+
+def test_resting_hr_median_defaults_without_data(conn: sqlite3.Connection) -> None:
+    assert metrics.resting_hr_median(conn) == metrics.DEFAULT_HR_REST
+
+
 def _activity(
     when: datetime, sport_type: str, moving_s: int | None = 3600
 ) -> metrics.Run:

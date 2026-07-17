@@ -251,6 +251,31 @@ def best_effort_progressions(
     return results
 
 
+def run_effort_series(
+    conn: sqlite3.Connection,
+    runs: Sequence[Run],
+    target_m: float,
+    since: date | None = None,
+) -> list[tuple[date, float]]:
+    """Per-run best effort at ``target_m`` (one point per qualifying run).
+
+    Unlike :func:`best_effort_progressions`, this is NOT the monotone all-time
+    staircase: it reports each run's own fastest ``target_m``, so a slower run
+    yields a larger value. That makes the series usable for regression (a
+    fitness *trend*, not a censored record).
+    """
+    points: list[tuple[date, float]] = []
+    for run in sorted(runs, key=lambda r: r.start):
+        day = run.start.date()
+        if since is not None and day < since:
+            continue
+        stream = [(o, d) for o, d, _hr, _v in _stream(conn, run.activity_id)]
+        effort = best_effort_seconds(stream, target_m)
+        if effort is not None:
+            points.append((day, effort))
+    return points
+
+
 def aerobic_decoupling(
     conn: sqlite3.Connection,
     runs: Sequence[Run],

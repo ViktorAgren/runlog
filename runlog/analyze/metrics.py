@@ -681,6 +681,20 @@ def daily_means(
     return [(day, statistics.mean(values)) for day, values in sorted(by_day.items())]
 
 
+# Fallback resting HR (bpm) when no passive resting-HR data has been ingested.
+DEFAULT_HR_REST = 50.0
+
+
+def resting_hr_median(conn: sqlite3.Connection) -> float:
+    """Median daily resting HR (a scalar constant for TRIMP), else a default.
+
+    A single number the load model needs; shared by the report, plan progress,
+    and the daily coach so they all use the same baseline.
+    """
+    daily = daily_means(metric_series(conn, "resting_hr"))
+    return statistics.median(v for _, v in daily) if daily else DEFAULT_HR_REST
+
+
 # --- Overall summary --------------------------------------------------------
 
 

@@ -34,8 +34,6 @@ from runlog.analyze import (
 from runlog.analyze.report_model import FigureRef, Kpi, ReportModel, Section
 from runlog.db import store
 
-_DEFAULT_HR_REST = 50.0
-
 if TYPE_CHECKING:
     import sqlite3
     from collections.abc import Sequence
@@ -364,7 +362,7 @@ def run(
     # used only as a scalar constant in the TRIMP formula (not plotted here).
     analytics_dir = out_dir / "analytics"
     analytics_dir.mkdir(parents=True, exist_ok=True)
-    hr_rest = _resolve_hr_rest(conn)
+    hr_rest = metrics.resting_hr_median(conn)
     daily = analytics.daily_trimp(runs, hr_max_value, hr_rest)
     pmc = analytics.performance_management(daily)
     acwr = analytics.acwr_series(daily)
@@ -747,12 +745,3 @@ def _stats_table(table: importance.SignificanceTable) -> report_model.StatsTable
             for finding in table.findings
         ],
     )
-
-
-def _resolve_hr_rest(conn: sqlite3.Connection) -> float:
-    """Median resting HR (a scalar constant for TRIMP), else a default."""
-    daily = metrics.daily_means(metrics.metric_series(conn, "resting_hr"))
-    if not daily:
-        return _DEFAULT_HR_REST
-    values = sorted(v for _, v in daily)
-    return values[len(values) // 2]
