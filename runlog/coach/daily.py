@@ -59,6 +59,7 @@ class TodayCard:
     guidance: Guidance
     forecast: RaceForecast | None
     fresh_records: tuple[RecordEvent, ...]
+    standing_records: tuple[RecordEvent, ...]  # current all-time bests
 
 
 @dataclass(frozen=True)
@@ -69,11 +70,21 @@ class SessionComparison:
 
 
 @dataclass(frozen=True)
+class EffortLine:
+    """This run's best effort at a distance, against the standing PB."""
+
+    kind: str  # "1k" | "5k" | "10k"
+    seconds: float
+    pb_seconds: float | None
+    is_pb: bool
+
+
+@dataclass(frozen=True)
 class LastCard:
     detail: WorkoutDetail
     km_splits: tuple[float, ...]
     comparison: SessionComparison | None
-    fresh_records: tuple[RecordEvent, ...]
+    efforts: tuple[EffortLine, ...]
 
 
 def guidance_for(
@@ -196,6 +207,7 @@ def build_today(
 
     timeline = records.records_timeline(conn, runs)
     fresh = records.new_records(timeline, today - timedelta(days=_FRESH_RECORD_DAYS))
+    standing = records.current_records(timeline, "all_time")
 
     return TodayCard(
         day=today,
@@ -208,6 +220,9 @@ def build_today(
         guidance=guidance,
         forecast=race_forecast,
         fresh_records=tuple(fresh),
+        standing_records=tuple(
+            standing[k] for k in ("1k", "5k", "10k") if k in standing
+        ),
     )
 
 
@@ -270,10 +285,30 @@ def build_last(
             comparison = compare_session(detail, session)
 
     timeline = records.records_timeline(conn, runs)
-    fresh = tuple(records.new_records(timeline, run.start.date()))
+    fresh_kinds = {e.kind for e in records.new_records(timeline, run.start.date())}
+    standing = records.current_records(timeline, "all_time")
+    stream_pts = [
+        (s.offset_s, s.distance_m) for s in streams.full_stream(conn, run.activity_id)
+    ]
+    efforts: list[EffortLine] = []
+    for kind, target in (("1k", 1000.0), ("5k", 5000.0), ("10k", 10000.0)):
+        if run.distance_m is None or run.distance_m < target:
+            continue
+        seconds = analytics.best_effort_seconds(stream_pts, target)
+        if seconds is None:
+            continue
+        pb = standing.get(kind)
+        efforts.append(
+            EffortLine(
+                kind=kind,
+                seconds=seconds,
+                pb_seconds=pb.value if pb else None,
+                is_pb=kind in fresh_kinds,
+            )
+        )
     return LastCard(
         detail=detail,
         km_splits=km_splits,
         comparison=comparison,
-        fresh_records=fresh,
+        efforts=tuple(efforts),
     )

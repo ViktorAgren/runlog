@@ -89,11 +89,12 @@ def render_today(card: TodayCard) -> str:
 
     if card.fresh_records:
         recs = " · ".join(
-            f"{r.scope.replace('_', '-')} {r.label}" for r in card.fresh_records
+            f"NEW {r.scope.replace('_', '-')} {r.label}" for r in card.fresh_records
         )
         lines.append(_row("Records", recs))
-    else:
-        lines.append(_row("Records", "none in the last 7 days"))
+    elif card.standing_records:
+        pbs = " · ".join(r.label for r in card.standing_records)
+        lines.append(_row("PBs", pbs))
     return "\n".join(lines)
 
 
@@ -141,9 +142,16 @@ def render_last(card: LastCard) -> str:
         hr_verdict = card.comparison.hr_verdict or "by feel — no band"
         lines.append(_row("  hr", f"{session.hr_text} → avg {avg_hr}  {hr_verdict}"))
 
-    if card.fresh_records:
-        recs = " · ".join(
-            f"{r.scope.replace('_', '-')} {r.label}" for r in card.fresh_records
-        )
-        lines.append(_row("Records", recs))
+    if card.efforts:
+        parts = []
+        for e in card.efforts:
+            if e.is_pb:
+                parts.append(f"{e.kind} {_clock(e.seconds)} PB!")
+            elif e.pb_seconds is not None:
+                parts.append(
+                    f"{e.kind} {_clock(e.seconds)} (PB {_clock(e.pb_seconds)})"
+                )
+            else:
+                parts.append(f"{e.kind} {_clock(e.seconds)}")
+        lines.append(_row("Efforts", " · ".join(parts)))
     return "\n".join(lines)
