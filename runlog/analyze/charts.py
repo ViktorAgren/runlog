@@ -32,12 +32,16 @@ if TYPE_CHECKING:
     from datetime import date, datetime
     from pathlib import Path
 
-    from runlog.analyze.analytics import BestEffortProgression, PmcPoint, Trend
+    from runlog.analyze.analytics import (
+        BestEffortProgression,
+        EffortRecord,
+        PmcPoint,
+        Trend,
+    )
     from runlog.analyze.anomaly import AnomalyReport
     from runlog.analyze.cs import CsModel
     from runlog.analyze.lifestyle import WeekdayProfile
     from runlog.analyze.metrics import (
-        BucketPace,
         Heatmap,
         HrPoint,
         HrZone,
@@ -308,34 +312,32 @@ def grade_adjusted_pace_chart(points: Sequence[PacePoint], out_dir: Path) -> Pat
     return style.save(fig, out_dir, "grade_adjusted_pace.png")
 
 
-def fastest_by_bucket_chart(buckets: Sequence[BucketPace], out_dir: Path) -> Path:
+def best_effort_pace_chart(efforts: Sequence[EffortRecord], out_dir: Path) -> Path:
     fig, ax = style.figure(
         "Fastest pace by distance",
-        "Best average pace achieved in each distance band",
-        "Distance bucket",
+        "Fastest continuous effort at each distance, from the GPS streams",
+        "Distance",
         "Pace (min/km)",
     )
-    values = [b.fastest_pace_s_per_km or 0.0 for b in buckets]
-    bars = ax.bar([b.label for b in buckets], values, color=PRIMARY, alpha=0.8)
-    for bucket, bar in zip(buckets, bars, strict=False):
-        if bucket.fastest_pace_s_per_km:
-            ax.annotate(
-                _format_pace(bucket.fastest_pace_s_per_km),
-                xy=(bar.get_x() + bar.get_width() / 2, bucket.fastest_pace_s_per_km),
-                xytext=(0, 3),
-                textcoords="offset points",
-                ha="center",
-                fontsize=9,
-                fontweight="bold",
-                color=SUBTLE,
-            )
+    values = [e.pace_s_per_km for e in efforts]
+    bars = ax.bar([e.label for e in efforts], values, color=PRIMARY, alpha=0.8)
+    for effort, bar in zip(efforts, bars, strict=False):
+        ax.annotate(
+            _format_pace(effort.pace_s_per_km),
+            xy=(bar.get_x() + bar.get_width() / 2, effort.pace_s_per_km),
+            xytext=(0, 3),
+            textcoords="offset points",
+            ha="center",
+            fontsize=9,
+            fontweight="bold",
+            color=SUBTLE,
+        )
     # Format as M:SS but do NOT invert: on an inverted axis the bars hang from
-    # the top and the fastest bucket reads as the longest bar.
+    # the top and the fastest distance reads as the longest bar.
     ax.yaxis.set_major_formatter(FuncFormatter(_format_pace))
-    positive = [v for v in values if v]
-    if positive:
-        ax.set_ylim(min(positive) * 0.85, max(positive) * 1.08)
-    return style.save(fig, out_dir, "fastest_by_bucket.png")
+    if values:
+        ax.set_ylim(min(values) * 0.85, max(values) * 1.08)
+    return style.save(fig, out_dir, "best_effort_pace.png")
 
 
 def race_prediction_chart(predictions: Sequence[RacePrediction], out_dir: Path) -> Path:

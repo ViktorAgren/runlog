@@ -115,6 +115,24 @@ def test_run_effort_series_per_run_values() -> None:
     assert series == [(date(2026, 6, 1), 200.0), (date(2026, 6, 8), 250.0)]
 
 
+def test_best_effort_records_uses_continuous_segments() -> None:
+    # A single 2 km run at a constant 5 m/s: 1k in 200 s and 2k in 400 s, both
+    # at 200 s/km (3:20/km) — continuous efforts pulled from the stream, dated.
+    conn = store.connect(":memory:")  # type: ignore[arg-type]
+    store.init_db(conn)
+    _add_run_with_stream(conn, datetime(2026, 6, 1, 7, tzinfo=UTC), 5.0, "fast")
+    runs = metrics.canonical_run_activities(conn)
+
+    records = {
+        e.label: (e.seconds, e.pace_s_per_km, e.when)
+        for e in analytics.best_effort_records(
+            conn, runs, [("1k", 1000.0), ("2k", 2000.0)]
+        )
+    }
+    assert records["1k"] == (200.0, 200.0, date(2026, 6, 1))
+    assert records["2k"] == (400.0, 200.0, date(2026, 6, 1))
+
+
 def test_fill_daily_zero_fills_rest_days() -> None:
     daily = [(date(2026, 1, 1), 10.0), (date(2026, 1, 3), 30.0)]
     assert analytics.fill_daily(daily) == [

@@ -6,7 +6,7 @@ import sqlite3
 from datetime import UTC, date, datetime
 from pathlib import Path
 
-from runlog.analyze import metrics, report, summary
+from runlog.analyze import analytics, metrics, report, summary
 from runlog.db import store
 from runlog.domain import (
     Activity,
@@ -61,13 +61,16 @@ def test_build_summary_text_includes_key_sections() -> None:
             this_month_km=17.0,
         ),
         weekly=[metrics.WeeklyVolume(date(2026, 6, 1), 5.0, 1, 5.0)],
-        buckets=[metrics.BucketPace("3-5k", 290.0, 2)],
+        efforts=[
+            analytics.EffortRecord("5k", 5000.0, 1450.0, date(2026, 6, 10)),
+        ],
         latest_markers={"vo2max": (date(2026, 6, 1), 52.0), "resting_hr": None},
         streak=(2, 3),
     )
     assert "Total distance 17.0 km" in text
     assert "2 current / 3 longest" in text
-    assert "4:50/km" in text  # 290s formatted
+    assert "Fastest pace by distance (continuous best)" in text
+    assert "5k     4:50/km" in text  # 1450s / 5km = 290s/km
     assert "VO2max       52.0  (2026-06-01)" in text
 
 

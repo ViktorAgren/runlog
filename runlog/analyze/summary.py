@@ -10,15 +10,18 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
     from datetime import date
 
-    from runlog.analyze.analytics import BestEffortProgression, PmcPoint, Trend
+    from runlog.analyze.analytics import (
+        BestEffortProgression,
+        EffortRecord,
+        PmcPoint,
+        Trend,
+    )
     from runlog.analyze.anomaly import AnomalyReport
     from runlog.analyze.cs import CsModel
     from runlog.analyze.forecast import RaceForecast
     from runlog.analyze.importance import SignificanceTable
     from runlog.analyze.lifestyle import LifestyleSummary
     from runlog.analyze.metrics import (
-        BestEffort,
-        BucketPace,
         ConsistencySummary,
         RacePrediction,
         SportMix,
@@ -62,10 +65,9 @@ def _clock(seconds: float) -> str:
 def build_summary_text(
     summary: Summary,
     weekly: Sequence[WeeklyVolume],
-    buckets: Sequence[BucketPace],
+    efforts: Sequence[EffortRecord],
     latest_markers: dict[str, tuple[date, float] | None],
     streak: tuple[int, int],
-    records: Sequence[BestEffort] = (),
     predictions: Sequence[RacePrediction] = (),
     consistency: ConsistencySummary | None = None,
     recent_weeks: int = 6,
@@ -103,18 +105,12 @@ def build_summary_text(
             f"({week.run_count} runs)  {bar}"
         )
 
-    lines += ["", "Fastest pace by distance", "-" * 40]
-    for bucket in buckets:
-        lines.append(
-            f"{bucket.label:<6} {_pace(bucket.fastest_pace_s_per_km):<9} "
-            f"({bucket.count} runs)"
-        )
-
-    if records:
-        lines += ["", "Records (best pace)", "-" * 40]
-        for record in records:
+    if efforts:
+        lines += ["", "Fastest pace by distance (continuous best)", "-" * 40]
+        for effort in efforts:
             lines.append(
-                f"{record.label:<6} {_pace(record.pace_s_per_km):<9} ({record.when})"
+                f"{effort.label:<6} {_pace(effort.pace_s_per_km):<9} "
+                f"({_clock(effort.seconds)}, {effort.when})"
             )
 
     if predictions:

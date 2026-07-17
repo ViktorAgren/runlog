@@ -220,6 +220,57 @@ def best_effort_seconds(
     return best
 
 
+# Standard distances for the best-effort pace record (fastest continuous
+# segment at each), from a short sprint to 10k.
+_EFFORT_RECORD_DISTANCES: tuple[tuple[str, float], ...] = (
+    ("400m", 400.0),
+    ("1k", 1000.0),
+    ("2k", 2000.0),
+    ("5k", 5000.0),
+    ("10k", 10000.0),
+)
+
+
+@dataclass(frozen=True)
+class EffortRecord:
+    """Fastest *continuous* effort at a distance (from GPS streams)."""
+
+    label: str
+    distance_m: float
+    seconds: float
+    when: date
+
+    @property
+    def pace_s_per_km(self) -> float:
+        return self.seconds / (self.distance_m / 1000)
+
+
+def best_effort_records(
+    conn: sqlite3.Connection,
+    runs: Sequence[Run],
+    distances: Sequence[tuple[str, float]] = _EFFORT_RECORD_DISTANCES,
+) -> list[EffortRecord]:
+    """All-time fastest continuous effort at each distance, with its date.
+
+    Unlike a whole-run average bucketed by total distance (which conflates run
+    length with effort), this pulls the fastest continuous segment at each
+    distance out of the per-point streams — so a hard 1k inside a long run
+    still counts, and shorter distances are correctly faster.
+    """
+    best: dict[str, tuple[float, date]] = {}
+    for run in sorted(runs, key=lambda r: r.start):
+        stream = [(o, d) for o, d, _hr, _v in _stream(conn, run.activity_id)]
+        for label, target in distances:
+            seconds = best_effort_seconds(stream, target)
+            if seconds is not None and (label not in best or seconds < best[label][0]):
+                best[label] = (seconds, run.start.date())
+    return [
+        EffortRecord(label, target, best[label][0], best[label][1])
+        for label, target in distances
+        if label in best
+    ]
+
+
 @dataclass(frozen=True)
 class BestEffortProgression:
     label: str

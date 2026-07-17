@@ -126,7 +126,7 @@ _SECTION_SPEC: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         (
             "pace_over_time",
             "grade_adjusted_pace",
-            "fastest_by_bucket",
+            "best_effort_pace",
             "best_effort_progression",
             "race_predictions",
             "records",
@@ -236,7 +236,7 @@ def run(
         conn, sports, since=since, min_distance_km=min_distance_km
     )
     weekly = metrics.weekly_volume(runs)
-    buckets = metrics.fastest_by_bucket(runs)
+    efforts = analytics.best_effort_records(conn, runs)
     pace = metrics.pace_points(runs)
     predictions = metrics.predict_races(runs)
 
@@ -264,7 +264,7 @@ def run(
         charts.distance_histogram(metrics.distance_distribution(runs), training_dir),
         charts.training_heatmap_chart(metrics.training_heatmap(runs), training_dir),
         charts.pace_over_time_chart(pace, training_dir),
-        charts.fastest_by_bucket_chart(buckets, training_dir),
+        charts.best_effort_pace_chart(efforts, training_dir),
         charts.race_prediction_chart(predictions, training_dir),
         charts.hr_over_time_chart(metrics.hr_over_time(runs), training_dir),
         charts.hr_histogram(hr, training_dir, zones),
@@ -441,10 +441,9 @@ def run(
     text = summary.build_summary_text(
         summary=overall,
         weekly=weekly,
-        buckets=buckets,
+        efforts=efforts,
         latest_markers=latest_markers,
         streak=metrics.active_week_streak(weekly),
-        records=metrics.best_efforts(runs),
         predictions=predictions,
         consistency=metrics.consistency_summary(runs),
         recent_weeks=recent_weeks,

@@ -9,7 +9,6 @@ from pathlib import Path
 from runlog.analyze import charts
 from runlog.analyze.anomaly import Anomaly, AnomalyReport, Direction, RedFlagDay
 from runlog.analyze.metrics import (
-    BucketPace,
     Heatmap,
     HrPoint,
     HrZone,
@@ -53,13 +52,15 @@ def test_grade_adjusted_pace_chart_writes_png(tmp_path: Path) -> None:
     assert _wrote_png(charts.grade_adjusted_pace_chart(points, tmp_path))
 
 
-def test_fastest_by_bucket_chart_writes_png(tmp_path: Path) -> None:
-    buckets = [
-        BucketPace("<3k", 280.0, 3),
-        BucketPace("3-5k", 300.0, 5),
-        BucketPace("10k+", None, 0),
+def test_best_effort_pace_chart_writes_png(tmp_path: Path) -> None:
+    from runlog.analyze.analytics import EffortRecord
+
+    efforts = [
+        EffortRecord("1k", 1000.0, 221.0, date(2026, 5, 10)),
+        EffortRecord("5k", 5000.0, 1392.0, date(2026, 7, 9)),
+        EffortRecord("10k", 10000.0, 3270.0, date(2026, 5, 31)),
     ]
-    assert _wrote_png(charts.fastest_by_bucket_chart(buckets, tmp_path))
+    assert _wrote_png(charts.best_effort_pace_chart(efforts, tmp_path))
 
 
 def test_hr_charts_write_png(tmp_path: Path) -> None:

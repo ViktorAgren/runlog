@@ -181,24 +181,6 @@ def test_active_week_streak_counts_trailing_run(conn: sqlite3.Connection) -> Non
     assert metrics.active_week_streak(weekly) == (2, 2)
 
 
-def test_fastest_by_bucket_picks_minimum_pace(conn: sqlite3.Connection) -> None:
-    _add_run(conn, datetime(2026, 6, 1, 7, tzinfo=UTC), distance_m=4000.0, pace=320.0)
-    _add_run(conn, datetime(2026, 6, 2, 7, tzinfo=UTC), distance_m=4500.0, pace=290.0)
-    _add_run(conn, datetime(2026, 6, 3, 7, tzinfo=UTC), distance_m=8000.0, pace=310.0)
-    runs = metrics.canonical_run_activities(conn)
-
-    result = {
-        b.label: (b.fastest_pace_s_per_km, b.count)
-        for b in metrics.fastest_by_bucket(runs)
-    }
-    assert result == {
-        "<3k": (None, 0),
-        "3-5k": (290.0, 2),
-        "5-10k": (310.0, 1),
-        "10k+": (None, 0),
-    }
-
-
 def test_hr_drift_splits_run_in_halves(conn: sqlite3.Connection) -> None:
     _add_run(
         conn,
@@ -389,15 +371,6 @@ def test_daily_means_averages_within_day() -> None:
         (date(2026, 6, 1), 65.0),
         (date(2026, 6, 2), 50.0),
     ]
-
-
-def test_best_efforts_records_pace_and_date(conn: sqlite3.Connection) -> None:
-    _add_run(conn, datetime(2026, 6, 1, 7, tzinfo=UTC), distance_m=5000.0, pace=310.0)
-    _add_run(conn, datetime(2026, 6, 5, 7, tzinfo=UTC), distance_m=5000.0, pace=290.0)
-    runs = metrics.canonical_run_activities(conn)
-
-    efforts = {e.label: (e.pace_s_per_km, e.when) for e in metrics.best_efforts(runs)}
-    assert efforts["5-10k"] == (290.0, date(2026, 6, 5))
 
 
 def test_predict_races_uses_riegel_from_fastest(conn: sqlite3.Connection) -> None:
