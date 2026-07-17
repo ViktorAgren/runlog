@@ -97,6 +97,36 @@ def test_advanced_section_empty_without_models() -> None:
     assert summary.advanced_section(None, None, None) == ""
 
 
+def test_records_section_with_forecast() -> None:
+    from runlog.analyze.forecast import RaceForecast
+    from runlog.analyze.records import RecordEvent
+
+    events = [
+        RecordEvent(date(2026, 5, 10), "1k", "all_time", 221.0, "1k 3:41"),
+        RecordEvent(date(2026, 7, 9), "5k", "all_time", 1392.0, "5k 23:12"),
+        RecordEvent(
+            date(2025, 8, 31), "longest_run", "all_time", 17.0, "Longest run 17.0 km"
+        ),
+    ]
+    fc = RaceForecast(
+        date(2026, 8, 30), 3000.0, 761.0, 742.0, 785.0, "trend", 11, 740.0
+    )
+    text = summary.records_section(events, fc)
+
+    assert "Records & racing" in text
+    assert "1k            3:41  (2026-05-10)" in text
+    assert "5k            23:12  (2026-07-09)" in text
+    assert "Longest run   17.0 km  (2025-08-31)" in text
+    assert (
+        "Race forecast  3 km on 2026-08-30: 12:41  (95% CI 12:22-13:05, trend n=11)"
+        in text
+    )
+
+
+def test_records_section_empty_without_events() -> None:
+    assert summary.records_section([], None) == ""
+
+
 def test_report_run_writes_charts_and_summary(tmp_path: Path) -> None:
     db_path = tmp_path / "runlog.db"
     conn = store.connect(db_path)

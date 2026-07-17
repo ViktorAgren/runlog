@@ -161,6 +161,21 @@ def test_weekday_profile_chart_writes_png(tmp_path: Path) -> None:
     assert _wrote_png(charts.weekday_profile_chart(profile, tmp_path))
 
 
+def test_records_chart_writes_png(tmp_path: Path) -> None:
+    from runlog.analyze.records import RecordEvent
+
+    events = [
+        RecordEvent(date(2025, 8, 1), "5k", "all_time", 1500.0, "5k 25:00"),
+        RecordEvent(date(2026, 6, 1), "5k", "all_time", 1400.0, "5k 23:20"),
+        RecordEvent(date(2026, 3, 1), "1k", "year", 230.0, "1k 3:50"),
+        RecordEvent(
+            date(2025, 7, 27), "biggest_week", "all_time", 90.0, "Biggest week 90.0 km"
+        ),
+    ]
+    assert _wrote_png(charts.records_chart(events, tmp_path))
+    assert _wrote_png(charts.records_chart([], tmp_path))  # empty is safe
+
+
 def test_load_response_chart_writes_png(tmp_path: Path) -> None:
     from runlog.analyze.anomaly import Direction
     from runlog.analyze.response import BucketStat, MarkerResponse

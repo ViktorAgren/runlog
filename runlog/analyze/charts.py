@@ -49,6 +49,7 @@ if TYPE_CHECKING:
     )
     from runlog.analyze.physiology import IntensityDistribution
     from runlog.analyze.readiness import ReadinessDay
+    from runlog.analyze.records import RecordEvent
     from runlog.analyze.response import MarkerResponse
     from runlog.analyze.stats import TrendTest
 
@@ -767,6 +768,59 @@ def anomaly_timeline_chart(report: AnomalyReport, out_dir: Path) -> Path:
             ax.scatter(anomaly.day, row, s=44, color=BAD, alpha=0.75, zorder=3)
     style.date_axis(ax)
     return style.save(fig, out_dir, "anomaly_timeline.png")
+
+
+# Record lanes bottom-to-top with display labels.
+_RECORD_ROWS = (
+    ("biggest_week", "Biggest week"),
+    ("longest_run", "Longest run"),
+    ("10k", "10k"),
+    ("5k", "5k"),
+    ("1k", "1k"),
+)
+
+
+def records_chart(events: Sequence[RecordEvent], out_dir: Path) -> Path:
+    """Timeline of personal records: all-time filled, yearly hollow."""
+    fig, ax = style.figure(
+        "Personal records",
+        "Every all-time (filled) and yearly (hollow) best over time",
+        "Date",
+        "",
+    )
+    rows = {kind: i for i, (kind, _) in enumerate(_RECORD_ROWS)}
+    ax.set_yticks(range(len(_RECORD_ROWS)))
+    ax.set_yticklabels([label for _, label in _RECORD_ROWS])
+    ax.set_ylim(-0.5, len(_RECORD_ROWS) - 0.5)
+    ax.grid(axis="y", visible=False)
+    for event in events:
+        row = rows.get(event.kind)
+        if row is None:
+            continue
+        all_time = event.scope == "all_time"
+        ax.scatter(
+            event.day,
+            row,
+            s=54 if all_time else 40,
+            color=PRIMARY if all_time else "none",
+            edgecolor=PRIMARY,
+            linewidth=1.4,
+            zorder=3,
+        )
+    for kind, _ in _RECORD_ROWS:
+        latest = [e for e in events if e.kind == kind and e.scope == "all_time"]
+        if latest:
+            best = latest[-1]
+            ax.annotate(
+                best.label.split(" ", 1)[-1],
+                xy=(best.day, rows[kind]),
+                xytext=(6, 4),
+                textcoords="offset points",
+                fontsize=8,
+                color=SUBTLE,
+            )
+    style.date_axis(ax)
+    return style.save(fig, out_dir, "records.png")
 
 
 def weekday_profile_chart(profile: WeekdayProfile, out_dir: Path) -> Path:

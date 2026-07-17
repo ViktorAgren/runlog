@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from runlog.analyze.analytics import BestEffortProgression, PmcPoint, Trend
     from runlog.analyze.anomaly import AnomalyReport
     from runlog.analyze.cs import CsModel
+    from runlog.analyze.forecast import RaceForecast
     from runlog.analyze.importance import SignificanceTable
     from runlog.analyze.lifestyle import LifestyleSummary
     from runlog.analyze.metrics import (
@@ -26,6 +27,7 @@ if TYPE_CHECKING:
     )
     from runlog.analyze.physiology import IntensityDistribution
     from runlog.analyze.readiness import ReadinessDay
+    from runlog.analyze.records import RecordEvent
     from runlog.analyze.response import MarkerResponse
     from runlog.analyze.stats import CorrTest
 
@@ -129,6 +131,53 @@ def build_summary_text(
             when, value = latest
             lines.append(f"{label:<12} {value:.1f}  ({when})")
 
+    return "\n".join(lines)
+
+
+_RECORD_ORDER = ("1k", "5k", "10k", "longest_run", "biggest_week")
+_RECORD_LABELS = {
+    "1k": "1k",
+    "5k": "5k",
+    "10k": "10k",
+    "longest_run": "Longest run",
+    "biggest_week": "Biggest week",
+}
+
+
+def records_section(
+    events: Sequence[RecordEvent], forecast: RaceForecast | None
+) -> str:
+    """Standing records, recent PRs, and the race forecast line."""
+    from runlog.analyze import records as records_mod
+    from runlog.analyze.forecast import format_race_time
+
+    if not events:
+        return ""
+    lines: list[str] = ["", "Records & racing", "=" * 40]
+    current = records_mod.current_records(events, "all_time")
+    for kind in _RECORD_ORDER:
+        event = current.get(kind)
+        if event is not None:
+            value = (
+                event.label.split(" ", 1)[-1]
+                if kind in ("1k", "5k", "10k")
+                else f"{event.value:.1f} km"
+            )
+            lines.append(f"{_RECORD_LABELS[kind]:<13} {value}  ({event.day})")
+    if forecast is not None:
+        km = forecast.distance_m / 1000
+        if forecast.ci_low_s is not None and forecast.ci_high_s is not None:
+            band = (
+                f"  (95% CI {format_race_time(forecast.ci_low_s)}-"
+                f"{format_race_time(forecast.ci_high_s)}, {forecast.method} "
+                f"n={forecast.n_weeks})"
+            )
+        else:
+            band = f"  ({forecast.method})"
+        lines.append(
+            f"\nRace forecast  {km:.0f} km on {forecast.race_day}: "
+            f"{format_race_time(forecast.predicted_s)}{band}"
+        )
     return "\n".join(lines)
 
 

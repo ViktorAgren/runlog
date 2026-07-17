@@ -19,12 +19,14 @@ from runlog.analyze import (
     anomaly,
     charts,
     cs,
+    forecast,
     html_report,
     importance,
     lifestyle,
     metrics,
     physiology,
     readiness,
+    records,
     report_model,
     response,
     stats,
@@ -127,6 +129,7 @@ _SECTION_SPEC: tuple[tuple[str, str, tuple[str, ...]], ...] = (
             "fastest_by_bucket",
             "best_effort_progression",
             "race_predictions",
+            "records",
         ),
     ),
     (
@@ -210,6 +213,7 @@ _TITLE_OVERRIDES = {
     "walking_speed": "Walking speed",
     "flights_climbed": "Flights climbed",
     "weekday_profile": "Weekday rhythm",
+    "records": "Personal records",
 }
 
 
@@ -382,6 +386,13 @@ def run(
         charts.anomaly_timeline_chart(anomalies, analytics_dir),
     ]
 
+    # Personal-record timeline and an updating race forecast (race from the
+    # active plan when one is present next to the DB).
+    record_events = records.records_timeline(conn, runs)
+    if record_events:
+        produced.append(charts.records_chart(record_events, analytics_dir))
+    race_forecast = _race_forecast(conn, runs, db_path)
+
     # Advanced models: Critical Speed from best efforts, and a daily readiness
     # score from the recovery markers (with its link to performance). Skip-empty
     # gated — sparse streams or health data simply omit the figure.
@@ -455,6 +466,9 @@ def run(
     if lifestyle_text:
         text += "\n" + lifestyle_text
     text += "\n" + summary.physiology_section(intensity, median_drift, pace_intensity)
+    records_text = summary.records_section(record_events, race_forecast)
+    if records_text:
+        text += "\n" + records_text
     readiness_latest = readiness_days[-1] if readiness_days else None
     advanced = summary.advanced_section(cs_model, readiness_latest, readiness_r)
     if advanced:
@@ -625,6 +639,28 @@ def _build_sections(produced: Sequence[Path], out_dir: Path) -> list[Section]:
             )
         )
     return sections
+
+
+def _race_forecast(
+    conn: sqlite3.Connection, runs: Sequence[metrics.Run], db_path: Path
+) -> forecast.RaceForecast | None:
+    """Race projection from the active plan's race row, if a plan is present."""
+    from datetime import date
+
+    from runlog.plan import schedule
+
+    plans_dir = db_path.parent / "plans"
+    if not plans_dir.exists():
+        return None
+    active = schedule.find_active_plan(plans_dir)
+    if active is None:
+        return None
+    sched = schedule.load_schedule(active)
+    if sched.race is None or sched.race_distance_m is None:
+        return None
+    return forecast.race_forecast(
+        conn, runs, sched.race.day, sched.race_distance_m, date.today()
+    )
 
 
 def _pace_intensity(
