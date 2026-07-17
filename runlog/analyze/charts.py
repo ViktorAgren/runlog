@@ -811,8 +811,13 @@ def records_chart(events: Sequence[RecordEvent], out_dir: Path) -> Path:
         latest = [e for e in events if e.kind == kind and e.scope == "all_time"]
         if latest:
             best = latest[-1]
+            value = (
+                best.label.split(" ", 1)[-1]
+                if kind in ("1k", "5k", "10k")
+                else f"{best.value:.1f} km"
+            )
             ax.annotate(
-                best.label.split(" ", 1)[-1],
+                value,
                 xy=(best.day, rows[kind]),
                 xytext=(6, 4),
                 textcoords="offset points",
