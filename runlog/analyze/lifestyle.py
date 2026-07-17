@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import TYPE_CHECKING
 
-from runlog.analyze import metrics
+from runlog.analyze import metrics, stats
 
 if TYPE_CHECKING:
     import sqlite3
@@ -28,6 +28,7 @@ class DayContrast:
     rest_mean: float
     training_n: int
     rest_n: int
+    test: stats.GroupTest | None = None  # Welch + Hedges' g, training vs rest
 
 
 @dataclass(frozen=True)
@@ -44,6 +45,7 @@ class LifestyleSummary:
     sleep_sd_30d: float | None  # night-to-night pstdev, trailing window
     weekend_sleep_shift_h: float | None  # weekend mean minus weekday mean
     steps_contrast: DayContrast | None  # training days vs rest days
+    sleep_contrast: DayContrast | None = None  # sleep after training vs rest days
 
 
 def weekday_means(
@@ -72,6 +74,7 @@ def training_rest_contrast(
         rest_mean=round(statistics.mean(rest), 1),
         training_n=len(training),
         rest_n=len(rest),
+        test=stats.group_test(training, rest),
     )
 
 
@@ -142,4 +145,5 @@ def build_lifestyle(
         sleep_sd_30d=trailing_pstdev(sleep, today=today),
         weekend_sleep_shift_h=_weekend_shift(weekday_means(sleep)),
         steps_contrast=training_rest_contrast(steps, training_days),
+        sleep_contrast=training_rest_contrast(sleep, training_days),
     )

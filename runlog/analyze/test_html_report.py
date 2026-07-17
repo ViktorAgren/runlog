@@ -5,7 +5,14 @@ from __future__ import annotations
 from pathlib import Path
 
 from runlog.analyze import html_report, style
-from runlog.analyze.report_model import FigureRef, Kpi, ReportModel, Section
+from runlog.analyze.report_model import (
+    FigureRef,
+    Kpi,
+    ReportModel,
+    Section,
+    StatsRow,
+    StatsTable,
+)
 
 
 def _write_figure(out_dir: Path, rel: str) -> None:
@@ -30,17 +37,35 @@ def test_render_embeds_figures_and_kpis(tmp_path: Path) -> None:
                 [FigureRef("Fitness · Fatigue · Form", "analytics/pmc.png")],
             )
         ],
+        stats=StatsTable(
+            caption="28 tests, Benjamini-Hochberg FDR at q<0.05",
+            rows=[
+                StatsRow(
+                    label="Walking HR trend",
+                    lane="recovery",
+                    effect="-0.31 bpm/30d",
+                    ci="[-0.52, -0.11]",
+                    p="p<.001",
+                    q="0.004",
+                    n="561",
+                    significant=True,
+                )
+            ],
+        ),
     )
 
     report = html_report.render(model, tmp_path)
     html = report.read_text(encoding="utf-8")
 
     assert report.name == "report.html"
-    # KPI, section, and figure all present; figure embedded (no external asset).
+    # KPI, section, figure, and stats table present; figure embedded.
     checks = (
         "Fitness (CTL)" in html,
         "Fitness &amp; form" in html,  # autoescaped section title
         'src="data:image/png;base64,' in html,
         "analytics/pmc.png" not in html,  # path not referenced, only embedded
+        "What matters (FDR-corrected)" in html,
+        '<table class="stats">' in html,
+        'class="sig"' in html,  # the significant row carries the accent
     )
-    assert checks == (True, True, True, True)
+    assert checks == (True, True, True, True, True, True, True)

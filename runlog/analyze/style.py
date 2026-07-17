@@ -22,6 +22,7 @@ matplotlib.use("Agg")
 from matplotlib import dates as mdates  # noqa: E402  (must follow use("Agg"))
 from matplotlib.figure import Figure  # noqa: E402
 
+from runlog.analyze import stats  # noqa: E402
 from runlog.analyze.analytics import linear_trend  # noqa: E402
 
 # matplotlib ships partial type hints; reach its (stub-less) ``cycler`` and the
@@ -159,10 +160,20 @@ def trend_annotation(
         )
     ax.plot(xs, fit, color=color, lw=2, zorder=5, label="Trend")
     sign = "+" if trend.per_30_days >= 0 else ""
+    test = stats.trend_test(points)
+    if test is not None:
+        low, high = test.ci_30d
+        label_text = (
+            f"trend {sign}{sig_value(test.per_30_days)}/30d  "
+            f"[{sig_value(low)}, {sig_value(high)}]\n"
+            f"{stats.format_p(test.p)}  n={test.n}"
+        )
+    else:
+        label_text = f"trend {sign}{sig_value(trend.per_30_days)}/30d   r={trend.r:.2f}"
     ax.text(
         0.02,
         0.96,
-        f"trend {sign}{sig_value(trend.per_30_days)}/30d   r={trend.r:.2f}",
+        label_text,
         transform=ax.transAxes,
         va="top",
         fontsize=9,

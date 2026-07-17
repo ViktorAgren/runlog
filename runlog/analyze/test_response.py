@@ -69,6 +69,31 @@ class TestMarkerResponse:
             response.marker_response(load, readings, "hrv_sdnn", Direction.LOW) is None
         )
 
+    def test_rest_vs_hard_inference_on_separated_groups(self) -> None:
+        # 10 rest days with next-day z ~ +0.5 and 10 clearly-hard days with
+        # z ~ -1.0: the Welch test must flag the separation with a negative g
+        # (hard minus rest).
+        start = date(2026, 6, 1)
+        load = [
+            (start + timedelta(days=i), 0.0 if i % 2 == 0 else 100.0 + i)
+            for i in range(20)
+        ]
+        readings = [
+            _reading(
+                day + timedelta(days=1),
+                (0.5 if value == 0 else -1.0) + 0.01 * i,
+            )
+            for i, (day, value) in enumerate(load)
+        ]
+
+        result = response.marker_response(load, readings, "hrv_sdnn", Direction.LOW)
+        assert result is not None
+        assert result.rest_vs_hard is not None
+        assert result.rest_vs_hard.hedges_g < 0
+        assert result.rest_vs_hard.p < 0.001
+        assert result.load_corr is not None
+        assert result.load_corr.r == pytest.approx(result.pearson_r, abs=0.005)
+
     def test_pearson_sign_tracks_monotone_response(self) -> None:
         start = date(2026, 6, 1)
         # Higher load -> lower next-day z, strictly monotone -> r == -1.
