@@ -34,9 +34,13 @@ _CTL_DAYS = 42  # "Fitness" time constant
 _ATL_DAYS = 7  # "Fatigue" time constant
 _ACWR_ACUTE_DAYS = 7
 _ACWR_CHRONIC_DAYS = 28
-_BEST_EFFORT_DISTANCES_M: tuple[tuple[str, float], ...] = (
+# Distances for both the best-effort pace record (bars) and the progression
+# lines, so the two charts stay consistent.
+_EFFORT_DISTANCES: tuple[tuple[str, float], ...] = (
     ("200m", 200.0),
+    ("400m", 400.0),
     ("1k", 1000.0),
+    ("2k", 2000.0),
     ("3k", 3000.0),
     ("5k", 5000.0),
     ("10k", 10000.0),
@@ -222,19 +226,6 @@ def best_effort_seconds(
     return best
 
 
-# Standard distances for the best-effort pace record (fastest continuous
-# segment at each), from a short sprint to 10k.
-_EFFORT_RECORD_DISTANCES: tuple[tuple[str, float], ...] = (
-    ("200m", 200.0),
-    ("400m", 400.0),
-    ("1k", 1000.0),
-    ("2k", 2000.0),
-    ("3k", 3000.0),
-    ("5k", 5000.0),
-    ("10k", 10000.0),
-)
-
-
 @dataclass(frozen=True)
 class EffortRecord:
     """Fastest *continuous* effort at a distance (from GPS streams)."""
@@ -252,7 +243,7 @@ class EffortRecord:
 def best_effort_records(
     conn: sqlite3.Connection,
     runs: Sequence[Run],
-    distances: Sequence[tuple[str, float]] = _EFFORT_RECORD_DISTANCES,
+    distances: Sequence[tuple[str, float]] = _EFFORT_DISTANCES,
 ) -> list[EffortRecord]:
     """All-time fastest continuous effort at each distance, with its date.
 
@@ -288,7 +279,7 @@ def best_effort_progressions(
 ) -> list[BestEffortProgression]:
     """All-time-best 1k/5k/10k over time, from per-point distance/time streams."""
     results: list[BestEffortProgression] = []
-    for label, target in _BEST_EFFORT_DISTANCES_M:
+    for label, target in _EFFORT_DISTANCES:
         best_so_far: float | None = None
         curve: list[tuple[date, float]] = []
         for run in sorted(runs, key=lambda r: r.start):

@@ -334,12 +334,12 @@ def best_effort_pace_chart(efforts: Sequence[EffortRecord], out_dir: Path) -> Pa
             fontweight="bold",
             color=SUBTLE,
         )
-        # Date the effort was set, inside the bar near its base (x in data,
-        # y in axes fraction so it sits just above the x-axis).
+        # Exact date the effort was set, inside the bar near its base (x in
+        # data, y in axes fraction so it sits just above the x-axis).
         ax.text(
             centre,
             0.03,
-            effort.when.strftime("%b %Y"),
+            effort.when.isoformat(),
             transform=ax.get_xaxis_transform(),
             ha="center",
             va="bottom",
