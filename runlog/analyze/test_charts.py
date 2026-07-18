@@ -8,6 +8,7 @@ from pathlib import Path
 
 from runlog.analyze import charts
 from runlog.analyze.anomaly import Anomaly, AnomalyReport, Direction, RedFlagDay
+from runlog.analyze.energy import EnergyDay
 from runlog.analyze.metrics import (
     Heatmap,
     HrPoint,
@@ -29,6 +30,14 @@ def test_weekly_volume_chart_writes_png(tmp_path: Path) -> None:
         WeeklyVolume(date(2026, 6, 8), 15.0, 3, 12.5),
     ]
     assert _wrote_png(charts.weekly_volume_chart(weekly, tmp_path))
+
+
+def test_energy_breakdown_chart_writes_png(tmp_path: Path) -> None:
+    days = [
+        EnergyDay(date(2026, 6, 1), 1700.0, 500.0, 2200.0, 70.0),
+        EnergyDay(date(2026, 6, 2), 1700.0, 800.0, 2500.0, 70.0),
+    ]
+    assert _wrote_png(charts.energy_breakdown_chart(days, tmp_path))
 
 
 def test_monthly_by_year_chart_writes_png(tmp_path: Path) -> None:

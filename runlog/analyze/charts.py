@@ -41,6 +41,7 @@ if TYPE_CHECKING:
     )
     from runlog.analyze.anomaly import AnomalyReport
     from runlog.analyze.cs import CsModel
+    from runlog.analyze.energy import EnergyDay
     from runlog.analyze.lifestyle import WeekdayProfile
     from runlog.analyze.metrics import (
         Heatmap,
@@ -537,6 +538,27 @@ def marker_chart(
         ax.legend(loc="lower left")
     style.date_axis(ax)
     return style.save(fig, out_dir, filename)
+
+
+def energy_breakdown_chart(days: Sequence[EnergyDay], out_dir: Path) -> Path:
+    """Daily expenditure split into resting (BMR) and active energy."""
+    fig, ax = style.figure(
+        "Daily energy expenditure",
+        "Resting (BMR) plus active energy = total daily expenditure",
+        "Date",
+        "kcal",
+    )
+    if days:
+        xs = [d.day for d in days]
+        bmr = [d.bmr for d in days]
+        tdee = [d.tdee for d in days]
+        ax.fill_between(xs, 0, bmr, color=PRIMARY, alpha=0.5, label="Resting (BMR)")
+        ax.fill_between(xs, bmr, tdee, color=ACCENT, alpha=0.5, label="Active")
+        ax.plot(xs, tdee, color=SUBTLE, lw=1.1, label="Total (TDEE)")
+        style.latest_callout(ax, xs[-1], tdee[-1], style.sig_value(tdee[-1]))
+        ax.legend(loc="upper left")
+    style.date_axis(ax)
+    return style.save(fig, out_dir, "energy_breakdown.png")
 
 
 def sport_hours_chart(weekly: Sequence[WeeklySportHours], out_dir: Path) -> Path:
