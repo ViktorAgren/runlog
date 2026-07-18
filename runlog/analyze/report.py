@@ -19,6 +19,7 @@ from runlog.analyze import (
     anomaly,
     charts,
     cs,
+    energy,
     forecast,
     html_report,
     importance,
@@ -41,6 +42,8 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
     from datetime import date
     from pathlib import Path
+
+    from runlog.config import Athlete
 
 
 # Passive, off-workout health metrics kept strictly separate from training data
@@ -168,13 +171,18 @@ _SECTION_SPEC: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         ("anomaly_timeline", "readiness", "load_response"),
     ),
     (
+        "Energy & expenditure",
+        "What the body spends: resting metabolism (BMR) plus active energy, "
+        "and the energy cost of covering a kilometre.",
+        ("energy_breakdown", "tdee", "active_energy", "energy_cost"),
+    ),
+    (
         "Lifestyle & daily patterns",
-        "Passive daily-life signals — steps, energy, and sleep rhythm — "
+        "Passive daily-life signals — steps, movement, and sleep rhythm — "
         "separate from training analysis.",
         (
             "steps",
             "exercise_minutes",
-            "active_energy",
             "physical_effort",
             "walking_speed",
             "flights_climbed",
@@ -209,6 +217,9 @@ _TITLE_OVERRIDES = {
     "steps": "Daily steps",
     "exercise_minutes": "Exercise minutes",
     "active_energy": "Active energy",
+    "energy_breakdown": "Daily expenditure (BMR + active)",
+    "tdee": "Total daily energy expenditure",
+    "energy_cost": "Energy cost per km",
     "physical_effort": "Physical effort (MET)",
     "walking_speed": "Walking speed",
     "flights_climbed": "Flights climbed",
@@ -229,6 +240,7 @@ def run(
     since: date | None = None,
     min_distance_km: float = metrics.MIN_DISTANCE_KM,
     hr_max: float | None = None,
+    athlete: Athlete | None = None,
 ) -> ReportResult:
     """Compute all metrics, render charts into ``out_dir``, return the summary."""
     conn = store.connect(db_path)
@@ -332,7 +344,6 @@ def run(
     for metric, title, ylabel in (
         ("steps", "Daily steps", "steps"),
         ("exercise_minutes", "Daily exercise minutes", "minutes"),
-        ("active_energy", "Daily active energy", "kcal"),
         ("physical_effort", "Daily physical effort", "MET (daily mean)"),
         ("walking_speed", "Walking speed", "m/s (daily mean)"),
         ("flights_climbed", "Flights climbed", "flights/day"),
@@ -360,6 +371,53 @@ def run(
     profile = lifestyle.weekday_profile(daily_series["steps"], sleep_daily)
     if profile is not None:
         produced.append(charts.weekday_profile_chart(profile, lifestyle_dir))
+
+    # Energy: resting (BMR) + active = total daily expenditure, plus the
+    # per-run energy cost. Needs athlete demographics; omitted without them.
+    energy_dir = out_dir / "energy"
+    energy_dir.mkdir(parents=True, exist_ok=True)
+    energy_days = energy.energy_series(conn, athlete, since=since)
+    energy_summary = energy.build_energy(conn, athlete, training_days, since=since)
+    if energy_days:
+        produced.append(charts.energy_breakdown_chart(energy_days, energy_dir))
+        tdee_daily = [(d.day, d.tdee) for d in energy_days]
+        produced.append(
+            charts.marker_chart(
+                tdee_daily,
+                "Total daily energy expenditure",
+                "kcal",
+                "tdee.png",
+                energy_dir,
+            )
+        )
+        trend_series.append(("TDEE trend", "energy", "kcal/30d", tdee_daily))
+    active_daily = metrics.daily_means(
+        metrics.metric_series(conn, "active_energy", since=since)
+    )
+    if active_daily:
+        produced.append(
+            charts.marker_chart(
+                active_daily,
+                "Daily active energy",
+                "kcal",
+                "active_energy.png",
+                energy_dir,
+            )
+        )
+        trend_series.append(("Active energy trend", "energy", "kcal/30d", active_daily))
+    cost_daily = energy.energy_cost_series(runs)
+    cost_trend = stats.trend_test(cost_daily) if cost_daily else None
+    if cost_daily:
+        produced.append(
+            charts.marker_chart(
+                cost_daily,
+                "Energy cost per km",
+                "kcal/km",
+                "energy_cost.png",
+                energy_dir,
+            )
+        )
+        trend_series.append(("Energy cost trend", "energy", "kcal/km/30d", cost_daily))
 
     # High-level analytics: TRIMP-based Fitness/Fatigue/Form, ACWR, efficiency
     # trend, decoupling, and true best efforts from the streams. Resting HR is
@@ -464,6 +522,9 @@ def run(
     lifestyle_text = summary.lifestyle_section(life)
     if lifestyle_text:
         text += "\n" + lifestyle_text
+    energy_text = summary.energy_section(energy_summary, cost_trend)
+    if energy_text:
+        text += "\n" + energy_text
     text += "\n" + summary.physiology_section(intensity, median_drift, pace_intensity)
     records_text = summary.records_section(record_events, race_forecast)
     if records_text:
@@ -492,6 +553,7 @@ def run(
             readiness_latest,
             life,
             ef_test,
+            energy_summary,
         ),
         sections=_build_sections(produced, out_dir),
         stats=_stats_table(table),
@@ -511,6 +573,7 @@ def _build_kpis(
     readiness_latest: readiness.ReadinessDay | None,
     life: lifestyle.LifestyleSummary | None = None,
     ef_test: stats.TrendTest | None = None,
+    energy_summary: energy.EnergySummary | None = None,
 ) -> list[Kpi]:
     kpis = [
         Kpi(
@@ -605,6 +668,26 @@ def _build_kpis(
             else "30-day mean"
         )
         kpis.append(Kpi("Sleep", f"{life.sleep_30d:.1f}", "h", context))
+    if energy_summary is not None:
+        method = (
+            "measured basal"
+            if energy_summary.method == "measured-basal"
+            else "Mifflin-St Jeor"
+        )
+        kpis.append(
+            Kpi(
+                "Resting (BMR)", f"{energy_summary.bmr_latest:,.0f}", "kcal/day", method
+            )
+        )
+        if energy_summary.tdee_30d is not None:
+            kpis.append(
+                Kpi(
+                    "Expenditure",
+                    f"{energy_summary.tdee_30d:,.0f}",
+                    "kcal/day",
+                    "30-day mean total",
+                )
+            )
     return kpis
 
 

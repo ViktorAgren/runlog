@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     )
     from runlog.analyze.anomaly import AnomalyReport
     from runlog.analyze.cs import CsModel
+    from runlog.analyze.energy import EnergySummary
     from runlog.analyze.forecast import RaceForecast
     from runlog.analyze.importance import SignificanceTable
     from runlog.analyze.lifestyle import LifestyleSummary
@@ -358,6 +359,53 @@ def lifestyle_section(lifestyle: LifestyleSummary) -> str:
             f"Steps          {contrast.training_mean:,.0f} training days vs "
             f"{contrast.rest_mean:,.0f} rest "
             f"(n={contrast.training_n}/{contrast.rest_n}{inference})"
+        )
+    return "\n".join(lines)
+
+
+_METHOD_LABELS = {
+    "mifflin": "Mifflin-St Jeor estimate",
+    "measured-basal": "measured basal energy",
+}
+
+
+def energy_section(
+    energy: EnergySummary | None, cost_trend: stats.TrendTest | None = None
+) -> str:
+    """Render daily energy expenditure; empty when it can't be estimated."""
+    if energy is None:
+        return ""
+    method = _METHOD_LABELS.get(energy.method, energy.method)
+    lines: list[str] = ["", "Energy expenditure", "=" * 40]
+    lines.append(f"Resting (BMR)  {energy.bmr_latest:,.0f} kcal/day ({method})")
+    if energy.active_30d is not None:
+        lines.append(f"Active (30d)   {energy.active_30d:,.0f} kcal/day")
+    if energy.tdee_30d is not None:
+        lines.append(f"Total (30d)    {energy.tdee_30d:,.0f} kcal/day")
+    if energy.weight_latest is not None:
+        lines.append(f"Body mass      {energy.weight_latest:.1f} kg")
+    if energy.tdee_trend is not None:
+        trend = energy.tdee_trend
+        lines.append(
+            f"Total trend    {trend.per_30_days:+,.0f} kcal/30d "
+            f"({stats.format_p(trend.p)}, n={trend.n})"
+        )
+    if energy.tdee_contrast is not None:
+        contrast = energy.tdee_contrast
+        inference = (
+            f", g={contrast.test.hedges_g:+.2f} {stats.format_p(contrast.test.p)}"
+            if contrast.test is not None
+            else ""
+        )
+        lines.append(
+            f"Total          {contrast.training_mean:,.0f} training days vs "
+            f"{contrast.rest_mean:,.0f} rest "
+            f"(n={contrast.training_n}/{contrast.rest_n}{inference})"
+        )
+    if cost_trend is not None:
+        lines.append(
+            f"Energy cost    {cost_trend.per_30_days:+.1f} kcal/km per 30d "
+            f"({stats.format_p(cost_trend.p)}, n={cost_trend.n})"
         )
     return "\n".join(lines)
 

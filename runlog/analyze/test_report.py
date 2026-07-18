@@ -100,6 +100,42 @@ def test_advanced_section_empty_without_models() -> None:
     assert summary.advanced_section(None, None, None) == ""
 
 
+def test_energy_section_renders_bmr_and_tdee() -> None:
+    from runlog.analyze.energy import EnergySummary
+    from runlog.analyze.stats import TrendTest
+
+    trend = TrendTest(
+        slope_per_day=1.0,
+        se_per_day=0.4,
+        ci_low_per_day=0.2,
+        ci_high_per_day=1.8,
+        p=0.024,
+        n=52,
+    )
+    text = summary.energy_section(
+        EnergySummary(
+            bmr_latest=1716.0,
+            active_30d=520.0,
+            tdee_30d=2236.0,
+            weight_latest=74.2,
+            active_trend=None,
+            tdee_trend=trend,
+            weight_trend=None,
+            tdee_contrast=None,
+            method="mifflin",
+        )
+    )
+
+    assert "Resting (BMR)  1,716 kcal/day (Mifflin-St Jeor estimate)" in text
+    assert "Total (30d)    2,236 kcal/day" in text
+    assert "Body mass      74.2 kg" in text
+    assert "Total trend    +30 kcal/30d (p=.024, n=52)" in text
+
+
+def test_energy_section_empty_without_estimate() -> None:
+    assert summary.energy_section(None) == ""
+
+
 def test_records_section_with_forecast() -> None:
     from runlog.analyze.forecast import RaceForecast
     from runlog.analyze.records import RecordEvent

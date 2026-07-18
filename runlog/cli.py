@@ -31,7 +31,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from runlog.config import load_strava_credentials, resolve_paths
+from runlog.config import load_athlete, load_strava_credentials, resolve_paths
 from runlog.db import store
 from runlog.ingest import apple_ingest, link, strava_ingest
 from runlog.sources.strava import auth
@@ -172,6 +172,7 @@ def _cmd_report(args: argparse.Namespace) -> int:
         since=since,
         min_distance_km=args.min_distance,
         hr_max=args.hr_max,
+        athlete=load_athlete(),
     )
     print(result.summary_text)
     print(f"\nCharts written to {out_dir}:")
