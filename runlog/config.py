@@ -8,11 +8,15 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
+from typing import Literal
 
 from dotenv import load_dotenv
 
 from runlog.domain import Source
+
+Sex = Literal["male", "female"]
 
 _RAW_SUBDIRS: dict[Source | str, str] = {
     "strava_api": "raw/strava/api",
@@ -81,3 +85,42 @@ def load_strava_credentials() -> StravaCredentials:
         client_secret=client_secret,
         refresh_token=refresh_token,
     )
+
+
+@dataclass(frozen=True)
+class Athlete:
+    """Demographics needed to estimate resting energy expenditure (BMR)."""
+
+    sex: Sex
+    height_cm: float
+    birth_date: date
+
+    def age_on(self, day: date) -> int:
+        """Whole years old on ``day`` (accounts for whether the birthday passed)."""
+        had_birthday = (day.month, day.day) >= (
+            self.birth_date.month,
+            self.birth_date.day,
+        )
+        return day.year - self.birth_date.year - (0 if had_birthday else 1)
+
+
+def load_athlete() -> Athlete | None:
+    """Load athlete demographics from the environment / ``.env``.
+
+    Returns ``None`` when any field is unset or the sex is unrecognized, so the
+    energy-expenditure feature degrades gracefully instead of raising.
+    """
+    load_dotenv()
+    sex = os.environ.get("RUNLOG_ATHLETE_SEX", "").strip().lower()
+    height = os.environ.get("RUNLOG_ATHLETE_HEIGHT_CM", "").strip()
+    birth = os.environ.get("RUNLOG_ATHLETE_BIRTH_DATE", "").strip()
+    if sex not in ("male", "female") or not height or not birth:
+        return None
+    try:
+        return Athlete(
+            sex=sex,  # type: ignore[arg-type]
+            height_cm=float(height),
+            birth_date=date.fromisoformat(birth),
+        )
+    except ValueError:
+        return None
