@@ -86,6 +86,25 @@ def test_canonical_carries_sport_type(conn: sqlite3.Connection) -> None:
     ]
 
 
+def test_canonical_surfaces_calories(conn: sqlite3.Connection) -> None:
+    store.store_record(
+        conn,
+        ActivityRecord(
+            activity=Activity(
+                source="strava",
+                source_id=SourceId("strava:cal-1"),
+                sport_type="Run",
+                start_time_utc=datetime(2026, 6, 1, 7, tzinfo=UTC),
+                distance_m=5000.0,
+                moving_s=1500,
+                avg_pace_s_per_km=300.0,
+                calories=420.0,
+            )
+        ),
+    )
+    assert [r.calories for r in metrics.canonical_run_activities(conn)] == [420.0]
+
+
 def test_canonical_drops_linked_apple_twin(conn: sqlite3.Connection) -> None:
     strava = _add_run(conn, datetime(2026, 6, 1, 7, tzinfo=UTC), source="strava")
     apple = _add_run(conn, datetime(2026, 6, 1, 7, tzinfo=UTC), source="apple_health")

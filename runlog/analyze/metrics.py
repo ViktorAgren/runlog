@@ -97,6 +97,7 @@ class Run:
     avg_ground_contact_ms: float | None = None
     quality_flags: str | None = None
     sport_type: str = "Run"
+    calories: float | None = None
 
     @property
     def distance_km(self) -> float | None:
@@ -141,7 +142,7 @@ def canonical_run_activities(
                avg_pace_s_per_km, avg_hr, max_hr, avg_cadence, elevation_gain_m,
                relative_effort, grade_adj_distance_m, avg_power_w,
                avg_stride_length_m, avg_vertical_oscillation_cm,
-               avg_ground_contact_ms, quality_flags
+               avg_ground_contact_ms, quality_flags, calories
         FROM activities
         WHERE {where}
         ORDER BY start_time_utc
@@ -179,6 +180,7 @@ def canonical_run_activities(
                 avg_ground_contact_ms=_coalesce(row, twin, "avg_ground_contact_ms"),
                 quality_flags=row["quality_flags"],
                 sport_type=row["sport_type"],
+                calories=row["calories"],
             )
         )
     return runs

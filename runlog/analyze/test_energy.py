@@ -9,11 +9,26 @@ import pytest
 
 from runlog.analyze import energy
 from runlog.analyze.energy import EnergyDay
+from runlog.analyze.metrics import Run
 from runlog.config import Athlete
 from runlog.db import store
-from runlog.domain import HealthMetric
+from runlog.domain import ActivityId, HealthMetric
 
 _ATHLETE = Athlete(sex="male", height_cm=180.0, birth_date=date(2000, 1, 1))
+
+
+def _run(when: date, distance_m: float | None, calories: float | None) -> Run:
+    return Run(
+        activity_id=ActivityId(1),
+        source="strava",
+        start=datetime(when.year, when.month, when.day, tzinfo=UTC),
+        distance_m=distance_m,
+        moving_s=1800,
+        avg_pace_s_per_km=300.0,
+        avg_hr=150.0,
+        max_hr=None,
+        calories=calories,
+    )
 
 
 @pytest.fixture
@@ -113,3 +128,12 @@ def test_build_energy_summary_scalars(conn: sqlite3.Connection) -> None:
 def test_build_energy_none_without_athlete(conn: sqlite3.Connection) -> None:
     _insert_daily(conn, "active_energy", [(date(2026, 6, 2), 500.0)])
     assert energy.build_energy(conn, None, frozenset()) is None
+
+
+def test_energy_cost_series_kcal_per_km_and_skips_nulls() -> None:
+    runs = [
+        _run(date(2026, 6, 1), 10000.0, 700.0),  # 70.0 kcal/km
+        _run(date(2026, 6, 2), 5000.0, None),  # no calories -> skipped
+        _run(date(2026, 6, 3), None, 400.0),  # no distance -> skipped
+    ]
+    assert energy.energy_cost_series(runs) == [(date(2026, 6, 1), 70.0)]

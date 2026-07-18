@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
     from datetime import date
 
+    from runlog.analyze.metrics import Run
     from runlog.config import Athlete, Sex
 
 
@@ -108,6 +109,18 @@ def energy_series(
             )
         )
     return days
+
+
+def energy_cost_series(runs: Sequence[Run]) -> list[tuple[date, float]]:
+    """Per-run energy cost (kcal per km), dropping runs without calories."""
+    series: list[tuple[date, float]] = []
+    for run in runs:
+        if run.calories is None or not run.distance_m:
+            continue
+        series.append(
+            (run.start.date(), round(run.calories / (run.distance_m / 1000), 1))
+        )
+    return series
 
 
 def build_energy(
