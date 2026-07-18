@@ -77,6 +77,19 @@ def test_best_effort_seconds_rejects_stream_glitch() -> None:
     ) == (None, 250.0)
 
 
+def test_best_effort_seconds_ignores_mid_stream_teleport() -> None:
+    # 300 s at 3 m/s (real), then a GPS teleport dumps 200 m in 1 s, then more
+    # real running. The fastest 200 m must be the clean ~66.7 s, never the
+    # teleport-inflated window that would read far too fast.
+    real = [(t, float(t) * 3) for t in range(0, 301)]
+    teleport = [(301, real[-1][1] + 200.0)]  # +200 m in 1 s
+    after = [(301 + t, teleport[0][1] + t * 3) for t in range(1, 60)]
+    seconds = analytics.best_effort_seconds([*real, *teleport, *after], 200.0)
+    assert seconds is not None
+    # 200 m at 3 m/s = 66.67 s; the sampled window lands at 67 s, never <30.
+    assert seconds >= 60.0
+
+
 def _add_run_with_stream(
     conn: sqlite3.Connection, when: datetime, speed_mps: float, key: str
 ) -> None:

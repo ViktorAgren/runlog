@@ -204,25 +204,57 @@ def _stream(
     ]
 
 
+# A single per-point step faster than this (m/s, ~2:05/km) is a GPS teleport,
+# not running: no recreational distance run sustains it for even a second.
+_MAX_STEP_SPEED_MPS = 8.0
+
+
+def _clean_segments(
+    points: Sequence[tuple[int, float]],
+) -> list[Sequence[tuple[int, float]]]:
+    """Split a stream at GPS teleports (implausible per-point distance jumps).
+
+    A best-effort window that spans a jump would credit the athlete with
+    distance they never ran, inventing fake short-distance records; keeping
+    each contiguous clean stretch separate prevents that.
+    """
+    segments: list[Sequence[tuple[int, float]]] = []
+    segment: list[tuple[int, float]] = []
+    for i, point in enumerate(points):
+        if i > 0:
+            dt = point[0] - points[i - 1][0]
+            dd = point[1] - points[i - 1][1]
+            if dt > 0 and dd / dt > _MAX_STEP_SPEED_MPS:
+                if len(segment) > 1:
+                    segments.append(segment)
+                segment = []
+        segment.append(point)
+    if len(segment) > 1:
+        segments.append(segment)
+    return segments
+
+
 def best_effort_seconds(
     points: Sequence[tuple[int, float]], target_m: float
 ) -> float | None:
     """Fastest time to cover ``target_m`` in a run via a sliding window.
 
-    ``points`` are (offset_s, cumulative_distance_m) ordered by time. Windows
-    implying an impossibly fast pace (a corrupted stream where distance jumps
-    with near-zero time) are rejected via the shared plausibility floor.
+    ``points`` are (offset_s, cumulative_distance_m) ordered by time. The
+    stream is first split at GPS teleports, then windows implying an
+    impossibly fast pace are rejected via the shared plausibility floor, so a
+    corrupted segment can't produce a fake record.
     """
     low_pace, _high = PLAUSIBLE_PACE_S_PER_KM
     min_elapsed = low_pace * target_m / 1000
     best: float | None = None
-    start = 0
-    for end in range(len(points)):
-        while points[end][1] - points[start][1] >= target_m:
-            elapsed = points[end][0] - points[start][0]
-            if elapsed >= min_elapsed and (best is None or elapsed < best):
-                best = float(elapsed)
-            start += 1
+    for segment in _clean_segments(points):
+        start = 0
+        for end in range(len(segment)):
+            while segment[end][1] - segment[start][1] >= target_m:
+                elapsed = segment[end][0] - segment[start][0]
+                if elapsed >= min_elapsed and (best is None or elapsed < best):
+                    best = float(elapsed)
+                start += 1
     return best
 
 
