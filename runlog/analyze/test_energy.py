@@ -12,15 +12,20 @@ from runlog.analyze.energy import EnergyDay
 from runlog.analyze.metrics import Run
 from runlog.config import Athlete
 from runlog.db import store
-from runlog.domain import ActivityId, HealthMetric
+from runlog.domain import ActivityId, HealthMetric, Source
 
 _ATHLETE = Athlete(sex="male", height_cm=180.0, birth_date=date(2000, 1, 1))
 
 
-def _run(when: date, distance_m: float | None, calories: float | None) -> Run:
+def _run(
+    when: date,
+    distance_m: float | None,
+    calories: float | None,
+    source: Source = "strava",
+) -> Run:
     return Run(
         activity_id=ActivityId(1),
-        source="strava",
+        source=source,
         start=datetime(when.year, when.month, when.day, tzinfo=UTC),
         distance_m=distance_m,
         moving_s=1800,
@@ -137,3 +142,31 @@ def test_energy_cost_series_kcal_per_km_and_skips_nulls() -> None:
         _run(date(2026, 6, 3), None, 400.0),  # no distance -> skipped
     ]
     assert energy.energy_cost_series(runs) == [(date(2026, 6, 1), 70.0)]
+
+
+def test_energy_cost_series_filters_to_one_source() -> None:
+    # Providers disagree on calories, so a mixed series would show a device
+    # step rather than a change in the athlete.
+    runs = [
+        _run(date(2026, 6, 1), 10000.0, 700.0, source="strava"),
+        _run(date(2026, 6, 2), 10000.0, 900.0, source="apple_health"),
+    ]
+    assert energy.energy_cost_series(runs, source="strava") == [
+        (date(2026, 6, 1), 70.0)
+    ]
+
+
+def test_dominant_calorie_source_picks_most_common() -> None:
+    runs = [
+        _run(date(2026, 6, 1), 10000.0, 700.0, source="strava"),
+        _run(date(2026, 6, 2), 10000.0, 700.0, source="strava"),
+        _run(date(2026, 6, 3), 10000.0, 900.0, source="apple_health"),
+        _run(date(2026, 6, 4), 10000.0, None, source="apple_health"),
+    ]
+    assert energy.dominant_calorie_source(runs) == "strava"
+
+
+def test_dominant_calorie_source_none_without_calories() -> None:
+    assert (
+        energy.dominant_calorie_source([_run(date(2026, 6, 1), 10000.0, None)]) is None
+    )

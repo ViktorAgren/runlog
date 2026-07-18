@@ -405,13 +405,15 @@ def run(
             )
         )
         trend_series.append(("Active energy trend", "energy", "kcal/30d", active_daily))
-    cost_daily = energy.energy_cost_series(runs)
+    # Calories are provider-specific, so pin the cost series to one source.
+    cost_source = energy.dominant_calorie_source(runs)
+    cost_daily = energy.energy_cost_series(runs, source=cost_source)
     cost_trend = stats.trend_test(cost_daily) if cost_daily else None
     if cost_daily:
         produced.append(
             charts.marker_chart(
                 cost_daily,
-                "Energy cost per km",
+                f"Energy cost per km ({cost_source} calories)",
                 "kcal/km",
                 "energy_cost.png",
                 energy_dir,

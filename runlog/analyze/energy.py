@@ -13,6 +13,7 @@ trailing means, training/rest contrast) and reuses its helpers.
 from __future__ import annotations
 
 import bisect
+from collections import Counter
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -111,11 +112,29 @@ def energy_series(
     return days
 
 
-def energy_cost_series(runs: Sequence[Run]) -> list[tuple[date, float]]:
-    """Per-run energy cost (kcal per km), dropping runs without calories."""
+def dominant_calorie_source(runs: Sequence[Run]) -> str | None:
+    """Source contributing the most calorie-bearing runs, or None.
+
+    Each provider estimates calories with its own model (Strava reads ~24%
+    higher per km than Apple on the same athlete), so a series mixing sources
+    shows steps where the device changed, not where the athlete did. Pinning the
+    energy-cost analysis to one source keeps the comparison like-for-like.
+    """
+    counts = Counter(
+        run.source for run in runs if run.calories is not None and run.distance_m
+    )
+    return counts.most_common(1)[0][0] if counts else None
+
+
+def energy_cost_series(
+    runs: Sequence[Run], source: str | None = None
+) -> list[tuple[date, float]]:
+    """Per-run energy cost (kcal per km), optionally limited to one source."""
     series: list[tuple[date, float]] = []
     for run in runs:
         if run.calories is None or not run.distance_m:
+            continue
+        if source is not None and run.source != source:
             continue
         series.append(
             (run.start.date(), round(run.calories / (run.distance_m / 1000), 1))

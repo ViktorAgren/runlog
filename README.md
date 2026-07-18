@@ -35,6 +35,10 @@ Requires Python ≥ 3.11. Run everything as `python3 -m runlog <command>` (or ju
   - `STRAVA_CLIENT_ID` / `STRAVA_CLIENT_SECRET` / `STRAVA_REFRESH_TOKEN` — for
     the Strava API (`strava auth` / `strava sync`). Not needed for bulk import.
   - `ANTHROPIC_API_KEY` — for `plan` (unless you use `--dry-run`).
+- **Athlete demographics** (optional) — `RUNLOG_ATHLETE_SEX`,
+  `RUNLOG_ATHLETE_HEIGHT_CM`, `RUNLOG_ATHLETE_BIRTH_DATE`. All three are needed
+  to estimate energy expenditure; without them the report simply omits the
+  energy section.
 
 ## Quick start
 
@@ -239,6 +243,15 @@ under four folders:
 The per-second streams (GPS, elevation, velocity, reconstructed HR) drive the
 stream metrics: elevation-adjusted pace (Minetti cost model), per-run HR-zone
 splits, stream-integrated TRIMP, and OLS cardiac drift (a summary line).
+
+Energy expenditure splits each day into resting and active kcal. Apple does not
+record a resting figure by default, so BMR is estimated with Mifflin-St Jeor
+from your body-mass series and the configured demographics (a measured
+`basal_energy` reading is preferred when an export provides one). Apple's active
+energy already excludes resting energy, so the total is additive:
+`TDEE = BMR + active`. Per-run energy cost (kcal/km) is reported for a single
+data source at a time, because Strava and Apple estimate calories with different
+models — mixing them shows a device change rather than a change in the athlete.
 
 Anomaly detection flags days where resting HR, HRV, SpO2, sleep, or HR-recovery
 deviate from their trailing ~42-day baseline (a red-flag day when ≥2 fire
