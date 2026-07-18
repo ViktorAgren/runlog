@@ -18,8 +18,6 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import TYPE_CHECKING
 
-from runlog.analyze.metrics import PLAUSIBLE_PACE_S_PER_KM
-
 if TYPE_CHECKING:
     import sqlite3
     from collections.abc import Sequence
@@ -240,19 +238,18 @@ def best_effort_seconds(
     """Fastest time to cover ``target_m`` in a run via a sliding window.
 
     ``points`` are (offset_s, cumulative_distance_m) ordered by time. The
-    stream is first split at GPS teleports, then windows implying an
-    impossibly fast pace are rejected via the shared plausibility floor, so a
-    corrupted segment can't produce a fake record.
+    stream is split at GPS teleports first; within a clean segment every step
+    is a plausible running speed, so the fastest window is genuine — no fixed
+    pace floor is applied (a real 200 m sprint is faster than any whole-run
+    floor).
     """
-    low_pace, _high = PLAUSIBLE_PACE_S_PER_KM
-    min_elapsed = low_pace * target_m / 1000
     best: float | None = None
     for segment in _clean_segments(points):
         start = 0
         for end in range(len(segment)):
             while segment[end][1] - segment[start][1] >= target_m:
                 elapsed = segment[end][0] - segment[start][0]
-                if elapsed >= min_elapsed and (best is None or elapsed < best):
+                if elapsed > 0 and (best is None or elapsed < best):
                     best = float(elapsed)
                 start += 1
     return best
