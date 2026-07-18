@@ -237,3 +237,6 @@ def test_report_run_writes_charts_and_summary(tmp_path: Path) -> None:
     assert "spo2.png" not in names and "walking_asymmetry.png" not in names
     # The what-matters panel appears once anything is scored.
     assert "What matters (FDR-corrected)" in result.summary_text
+    # Without athlete demographics the energy section is absent, but says so
+    # rather than vanishing silently.
+    assert "Energy expenditure not estimated" in result.summary_text

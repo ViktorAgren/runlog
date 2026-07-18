@@ -527,6 +527,13 @@ def run(
     energy_text = summary.energy_section(energy_summary, cost_trend)
     if energy_text:
         text += "\n" + energy_text
+    elif athlete is None:
+        # Say why the section is absent; a silent omission looks like a bug.
+        text += (
+            "\n\nEnergy expenditure not estimated. Set RUNLOG_ATHLETE_SEX, "
+            "RUNLOG_ATHLETE_HEIGHT_CM and RUNLOG_ATHLETE_BIRTH_DATE in .env "
+            "(see .env.example)."
+        )
     text += "\n" + summary.physiology_section(intensity, median_drift, pace_intensity)
     records_text = summary.records_section(record_events, race_forecast)
     if records_text:
