@@ -18,7 +18,7 @@ def test_palettes_are_valid_hex() -> None:
         all(map(hex_re.match, swatches)),
     ) == (
         5,
-        6,
+        7,
         True,
     )
 

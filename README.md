@@ -141,6 +141,18 @@ recovery markers, lifestyle patterns, and load-vs-recovery response.
 | `--min-distance KM` | `1.0` | Drop runs shorter than this (removes accidental/aborted starts) |
 | `--hr-max BPM` | highest recorded | Your true max HR, for accurate HR zones |
 
+### `today` / `last`
+
+Daily-use cards over the same data — no API needed. `runlog today` prints a
+morning card: readiness score and its contributors, yesterday's training load
+(TRIMP + percentile, TSB, ACWR), the session your active plan schedules for
+today, an updating race forecast, and a deterministic **go / easy / rest**
+recommendation. `runlog last` analyzes your most recent run — km splits, HR-zone
+split, GAP, negative split — and grades its average pace and HR against the
+planned session's bands (`IN BAND` / `FAST OF BAND` / …), flagging any new
+records. Both take `--plan PATH` (default: the newest file in `data/plans/`) and
+`--hr-max BPM`.
+
 ### `plan`
 
 Generate a personalized training plan for a goal, grounded in your data. Writes

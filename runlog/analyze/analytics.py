@@ -18,8 +18,6 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import TYPE_CHECKING
 
-from runlog.analyze.metrics import PLAUSIBLE_PACE_S_PER_KM
-
 if TYPE_CHECKING:
     import sqlite3
     from collections.abc import Sequence
@@ -34,8 +32,14 @@ _CTL_DAYS = 42  # "Fitness" time constant
 _ATL_DAYS = 7  # "Fatigue" time constant
 _ACWR_ACUTE_DAYS = 7
 _ACWR_CHRONIC_DAYS = 28
-_BEST_EFFORT_DISTANCES_M: tuple[tuple[str, float], ...] = (
+# Distances for both the best-effort pace record (bars) and the progression
+# lines, so the two charts stay consistent.
+_EFFORT_DISTANCES: tuple[tuple[str, float], ...] = (
+    ("200m", 200.0),
+    ("400m", 400.0),
     ("1k", 1000.0),
+    ("2k", 2000.0),
+    ("3k", 3000.0),
     ("5k", 5000.0),
     ("10k", 10000.0),
 )
@@ -198,26 +202,97 @@ def _stream(
     ]
 
 
+# A single per-point step faster than this (m/s, ~2:05/km) is a GPS teleport,
+# not running: no recreational distance run sustains it for even a second.
+_MAX_STEP_SPEED_MPS = 8.0
+
+
+def _clean_segments(
+    points: Sequence[tuple[int, float]],
+) -> list[Sequence[tuple[int, float]]]:
+    """Split a stream at GPS teleports (implausible per-point distance jumps).
+
+    A best-effort window that spans a jump would credit the athlete with
+    distance they never ran, inventing fake short-distance records; keeping
+    each contiguous clean stretch separate prevents that.
+    """
+    segments: list[Sequence[tuple[int, float]]] = []
+    segment: list[tuple[int, float]] = []
+    for i, point in enumerate(points):
+        if i > 0:
+            dt = point[0] - points[i - 1][0]
+            dd = point[1] - points[i - 1][1]
+            if dt > 0 and dd / dt > _MAX_STEP_SPEED_MPS:
+                if len(segment) > 1:
+                    segments.append(segment)
+                segment = []
+        segment.append(point)
+    if len(segment) > 1:
+        segments.append(segment)
+    return segments
+
+
 def best_effort_seconds(
     points: Sequence[tuple[int, float]], target_m: float
 ) -> float | None:
     """Fastest time to cover ``target_m`` in a run via a sliding window.
 
-    ``points`` are (offset_s, cumulative_distance_m) ordered by time. Windows
-    implying an impossibly fast pace (a corrupted stream where distance jumps
-    with near-zero time) are rejected via the shared plausibility floor.
+    ``points`` are (offset_s, cumulative_distance_m) ordered by time. The
+    stream is split at GPS teleports first; within a clean segment every step
+    is a plausible running speed, so the fastest window is genuine — no fixed
+    pace floor is applied (a real 200 m sprint is faster than any whole-run
+    floor).
     """
-    low_pace, _high = PLAUSIBLE_PACE_S_PER_KM
-    min_elapsed = low_pace * target_m / 1000
     best: float | None = None
-    start = 0
-    for end in range(len(points)):
-        while points[end][1] - points[start][1] >= target_m:
-            elapsed = points[end][0] - points[start][0]
-            if elapsed >= min_elapsed and (best is None or elapsed < best):
-                best = float(elapsed)
-            start += 1
+    for segment in _clean_segments(points):
+        start = 0
+        for end in range(len(segment)):
+            while segment[end][1] - segment[start][1] >= target_m:
+                elapsed = segment[end][0] - segment[start][0]
+                if elapsed > 0 and (best is None or elapsed < best):
+                    best = float(elapsed)
+                start += 1
     return best
+
+
+@dataclass(frozen=True)
+class EffortRecord:
+    """Fastest *continuous* effort at a distance (from GPS streams)."""
+
+    label: str
+    distance_m: float
+    seconds: float
+    when: date
+
+    @property
+    def pace_s_per_km(self) -> float:
+        return self.seconds / (self.distance_m / 1000)
+
+
+def best_effort_records(
+    conn: sqlite3.Connection,
+    runs: Sequence[Run],
+    distances: Sequence[tuple[str, float]] = _EFFORT_DISTANCES,
+) -> list[EffortRecord]:
+    """All-time fastest continuous effort at each distance, with its date.
+
+    Unlike a whole-run average bucketed by total distance (which conflates run
+    length with effort), this pulls the fastest continuous segment at each
+    distance out of the per-point streams — so a hard 1k inside a long run
+    still counts, and shorter distances are correctly faster.
+    """
+    best: dict[str, tuple[float, date]] = {}
+    for run in sorted(runs, key=lambda r: r.start):
+        stream = [(o, d) for o, d, _hr, _v in _stream(conn, run.activity_id)]
+        for label, target in distances:
+            seconds = best_effort_seconds(stream, target)
+            if seconds is not None and (label not in best or seconds < best[label][0]):
+                best[label] = (seconds, run.start.date())
+    return [
+        EffortRecord(label, target, best[label][0], best[label][1])
+        for label, target in distances
+        if label in best
+    ]
 
 
 @dataclass(frozen=True)
@@ -233,7 +308,7 @@ def best_effort_progressions(
 ) -> list[BestEffortProgression]:
     """All-time-best 1k/5k/10k over time, from per-point distance/time streams."""
     results: list[BestEffortProgression] = []
-    for label, target in _BEST_EFFORT_DISTANCES_M:
+    for label, target in _EFFORT_DISTANCES:
         best_so_far: float | None = None
         curve: list[tuple[date, float]] = []
         for run in sorted(runs, key=lambda r: r.start):
@@ -249,6 +324,31 @@ def best_effort_progressions(
                 BestEffortProgression(label=label, distance_m=target, progression=curve)
             )
     return results
+
+
+def run_effort_series(
+    conn: sqlite3.Connection,
+    runs: Sequence[Run],
+    target_m: float,
+    since: date | None = None,
+) -> list[tuple[date, float]]:
+    """Per-run best effort at ``target_m`` (one point per qualifying run).
+
+    Unlike :func:`best_effort_progressions`, this is NOT the monotone all-time
+    staircase: it reports each run's own fastest ``target_m``, so a slower run
+    yields a larger value. That makes the series usable for regression (a
+    fitness *trend*, not a censored record).
+    """
+    points: list[tuple[date, float]] = []
+    for run in sorted(runs, key=lambda r: r.start):
+        day = run.start.date()
+        if since is not None and day < since:
+            continue
+        stream = [(o, d) for o, d, _hr, _v in _stream(conn, run.activity_id)]
+        effort = best_effort_seconds(stream, target_m)
+        if effort is not None:
+            points.append((day, effort))
+    return points
 
 
 def aerobic_decoupling(

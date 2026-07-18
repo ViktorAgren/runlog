@@ -9,7 +9,6 @@ from pathlib import Path
 from runlog.analyze import charts
 from runlog.analyze.anomaly import Anomaly, AnomalyReport, Direction, RedFlagDay
 from runlog.analyze.metrics import (
-    BucketPace,
     Heatmap,
     HrPoint,
     HrZone,
@@ -53,13 +52,15 @@ def test_grade_adjusted_pace_chart_writes_png(tmp_path: Path) -> None:
     assert _wrote_png(charts.grade_adjusted_pace_chart(points, tmp_path))
 
 
-def test_fastest_by_bucket_chart_writes_png(tmp_path: Path) -> None:
-    buckets = [
-        BucketPace("<3k", 280.0, 3),
-        BucketPace("3-5k", 300.0, 5),
-        BucketPace("10k+", None, 0),
+def test_best_effort_pace_chart_writes_png(tmp_path: Path) -> None:
+    from runlog.analyze.analytics import EffortRecord
+
+    efforts = [
+        EffortRecord("1k", 1000.0, 221.0, date(2026, 5, 10)),
+        EffortRecord("5k", 5000.0, 1392.0, date(2026, 7, 9)),
+        EffortRecord("10k", 10000.0, 3270.0, date(2026, 5, 31)),
     ]
-    assert _wrote_png(charts.fastest_by_bucket_chart(buckets, tmp_path))
+    assert _wrote_png(charts.best_effort_pace_chart(efforts, tmp_path))
 
 
 def test_hr_charts_write_png(tmp_path: Path) -> None:
@@ -159,6 +160,21 @@ def test_weekday_profile_chart_writes_png(tmp_path: Path) -> None:
         sleep_hours=(7.0, 6.5, 7.2, None, 6.8, 8.1, 8.4),
     )
     assert _wrote_png(charts.weekday_profile_chart(profile, tmp_path))
+
+
+def test_records_chart_writes_png(tmp_path: Path) -> None:
+    from runlog.analyze.records import RecordEvent
+
+    events = [
+        RecordEvent(date(2025, 8, 1), "5k", "all_time", 1500.0, "5k 25:00"),
+        RecordEvent(date(2026, 6, 1), "5k", "all_time", 1400.0, "5k 23:20"),
+        RecordEvent(date(2026, 3, 1), "1k", "year", 230.0, "1k 3:50"),
+        RecordEvent(
+            date(2025, 7, 27), "biggest_week", "all_time", 90.0, "Biggest week 90.0 km"
+        ),
+    ]
+    assert _wrote_png(charts.records_chart(events, tmp_path))
+    assert _wrote_png(charts.records_chart([], tmp_path))  # empty is safe
 
 
 def test_load_response_chart_writes_png(tmp_path: Path) -> None:

@@ -40,12 +40,6 @@ SPORT_LABELS: dict[str, str] = {
 }
 ALL_SPORT_TYPES: tuple[str, ...] = tuple(SPORT_LABELS)
 _ROLLING_WEEKS = 4
-_DISTANCE_BUCKETS: tuple[tuple[str, float, float], ...] = (
-    ("<3k", 0.0, 3.0),
-    ("3-5k", 3.0, 5.0),
-    ("5-10k", 5.0, 10.0),
-    ("10k+", 10.0, float("inf")),
-)
 FITNESS_METRICS = ("vo2max", "resting_hr", "hrv_sdnn")
 
 # Sanity bounds that filter data-entry / GPS / sensor artifacts.
@@ -464,35 +458,6 @@ def pace_points(runs: Sequence[Run]) -> list[PacePoint]:
     ]
 
 
-@dataclass(frozen=True)
-class BucketPace:
-    label: str
-    fastest_pace_s_per_km: float | None
-    count: int
-
-
-def fastest_by_bucket(runs: Sequence[Run]) -> list[BucketPace]:
-    """Fastest average pace within each distance bucket."""
-    result: list[BucketPace] = []
-    for label, low, high in _DISTANCE_BUCKETS:
-        paces = [
-            r.avg_pace_s_per_km
-            for r in runs
-            if r.avg_pace_s_per_km is not None
-            and r.distance_km is not None
-            and low <= r.distance_km < high
-            and _plausible_pace(r.avg_pace_s_per_km)
-        ]
-        result.append(
-            BucketPace(
-                label=label,
-                fastest_pace_s_per_km=min(paces) if paces else None,
-                count=len(paces),
-            )
-        )
-    return result
-
-
 # --- Enriched per-run trends (form dynamics, effort, grade) ------------------
 
 
@@ -681,6 +646,20 @@ def daily_means(
     return [(day, statistics.mean(values)) for day, values in sorted(by_day.items())]
 
 
+# Fallback resting HR (bpm) when no passive resting-HR data has been ingested.
+DEFAULT_HR_REST = 50.0
+
+
+def resting_hr_median(conn: sqlite3.Connection) -> float:
+    """Median daily resting HR (a scalar constant for TRIMP), else a default.
+
+    A single number the load model needs; shared by the report, plan progress,
+    and the daily coach so they all use the same baseline.
+    """
+    daily = daily_means(metric_series(conn, "resting_hr"))
+    return statistics.median(v for _, v in daily) if daily else DEFAULT_HR_REST
+
+
 # --- Overall summary --------------------------------------------------------
 
 
@@ -729,31 +708,6 @@ _RACE_TARGETS: tuple[tuple[str, float], ...] = (
     ("Half", 21.0975),
     ("Marathon", 42.195),
 )
-
-
-@dataclass(frozen=True)
-class BestEffort:
-    label: str
-    pace_s_per_km: float
-    when: date
-
-
-def best_efforts(runs: Sequence[Run]) -> list[BestEffort]:
-    """Fastest plausible average pace per distance bucket, with its date."""
-    result: list[BestEffort] = []
-    for label, low, high in _DISTANCE_BUCKETS:
-        candidates = [
-            (r.avg_pace_s_per_km, r.start.date())
-            for r in runs
-            if r.avg_pace_s_per_km is not None
-            and r.distance_km is not None
-            and low <= r.distance_km < high
-            and _plausible_pace(r.avg_pace_s_per_km)
-        ]
-        if candidates:
-            pace, when = min(candidates)
-            result.append(BestEffort(label=label, pace_s_per_km=pace, when=when))
-    return result
 
 
 @dataclass(frozen=True)

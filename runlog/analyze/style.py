@@ -44,13 +44,22 @@ MUTED = "#94a3b8"  # de-emphasized marks (raw scatter)
 GRID = "#e2e8f0"
 PRIMARY = "#2563eb"  # main series
 ACCENT = "#f97316"  # trend / secondary series
+FORM = "#7c3aed"  # violet, for the PMC Form (TSB) line
 GOOD = "#16a34a"
 WARN = "#d97706"
 BAD = "#dc2626"
 # Heart-rate zones Z1..Z5, cool -> warm.
 ZONE_COLORS = ("#3b82f6", "#22c55e", "#eab308", "#f97316", "#ef4444")
 # Categorical cycle (Okabe-Ito), for multi-series charts.
-PALETTE = ("#0072B2", "#E69F00", "#009E73", "#CC79A7", "#56B4E9", "#D55E00")
+PALETTE = (
+    "#0072B2",
+    "#E69F00",
+    "#009E73",
+    "#CC79A7",
+    "#56B4E9",
+    "#D55E00",
+    "#7c3aed",
+)
 
 _FONT_STACK = ["DejaVu Sans", "Helvetica Neue", "Arial", "sans-serif"]
 

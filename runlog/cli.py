@@ -14,6 +14,10 @@ Commands:
                                 link) then print status
     report [--out DIR] [--weeks N] [--since DATE] [--min-distance KM]
                                 render trend charts (PNG) + a terminal summary
+    today [--plan PATH] [--hr-max N]
+                                morning readiness + planned-session card
+    last [--plan PATH] [--hr-max N]
+                                post-run analysis of the latest run vs the plan
     plan --goal G --date D --days mon,wed,sat [--target-time T]
          [--max-distance KM] [--max-time MIN] [--dry-run]
                                 generate an AI training plan (needs API key;
@@ -34,6 +38,8 @@ from runlog.sources.strava import auth
 
 if TYPE_CHECKING:
     import sqlite3
+
+    from runlog.plan.schedule import PlanSchedule
 
 _REDIRECT_URI = "http://localhost"
 
@@ -173,6 +179,41 @@ def _cmd_report(args: argparse.Namespace) -> int:
         print(f"  {path.parent.name}/{path.name}")
     if result.report_html is not None:
         print(f"\nHTML report: {result.report_html}")
+    return 0
+
+
+def _resolve_schedule(plan_arg: str | None) -> PlanSchedule | None:
+    """Load the given plan file, else the newest one in data/plans."""
+    from runlog.plan import schedule
+
+    if plan_arg:
+        return schedule.load_schedule(Path(plan_arg))
+    active = schedule.find_active_plan(resolve_paths().data_dir / "plans")
+    return schedule.load_schedule(active) if active is not None else None
+
+
+def _cmd_today(args: argparse.Namespace) -> int:
+    from runlog.coach import daily, render
+
+    conn = _open_db()
+    card = daily.build_today(
+        conn, _resolve_schedule(args.plan), date.today(), hr_max=args.hr_max
+    )
+    print(render.render_today(card))
+    return 0
+
+
+def _cmd_last(args: argparse.Namespace) -> int:
+    from runlog.coach import daily, render
+
+    conn = _open_db()
+    card = daily.build_last(
+        conn, _resolve_schedule(args.plan), date.today(), hr_max=args.hr_max
+    )
+    if card is None:
+        print("No runs in the database yet.")
+        return 1
+    print(render.render_last(card))
     return 0
 
 
@@ -348,6 +389,22 @@ def _build_parser() -> argparse.ArgumentParser:
         help="your max heart rate for HR zones (default: highest recorded)",
     )
     report_cmd.set_defaults(func=_cmd_report)
+
+    today_cmd = sub.add_parser("today", help="morning readiness + planned-session card")
+    today_cmd.add_argument(
+        "--plan", help="plan markdown path (default: newest in data/plans)"
+    )
+    today_cmd.add_argument("--hr-max", type=float, help="your true max HR")
+    today_cmd.set_defaults(func=_cmd_today)
+
+    last_cmd = sub.add_parser(
+        "last", help="post-run analysis of your most recent run vs the plan"
+    )
+    last_cmd.add_argument(
+        "--plan", help="plan markdown path (default: newest in data/plans)"
+    )
+    last_cmd.add_argument("--hr-max", type=float, help="your true max HR")
+    last_cmd.set_defaults(func=_cmd_last)
 
     plan_cmd = sub.add_parser("plan", help="generate an AI training plan")
     plan_cmd.add_argument("--goal", required=True, help="e.g. 3k, 5k, 10k, half")

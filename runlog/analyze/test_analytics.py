@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import math
-from datetime import date, datetime, timedelta
+import sqlite3
+from datetime import UTC, date, datetime, timedelta
 
-from runlog.analyze import analytics
+from runlog.analyze import analytics, metrics
 from runlog.analyze.metrics import Run
-from runlog.domain import ActivityId
+from runlog.db import store
+from runlog.domain import Activity, ActivityId, ActivityRecord, SourceId, StreamPoint
 
 
 def _run(when: datetime, *, avg_hr: float | None = 150.0, moving_s: int = 1800) -> Run:
@@ -73,6 +75,75 @@ def test_best_effort_seconds_rejects_stream_glitch() -> None:
         analytics.best_effort_seconds(glitch, 1000.0),
         analytics.best_effort_seconds(real, 1000.0),
     ) == (None, 250.0)
+
+
+def test_best_effort_seconds_ignores_mid_stream_teleport() -> None:
+    # 300 s at 3 m/s (real), then a GPS teleport dumps 200 m in 1 s, then more
+    # real running. The fastest 200 m must be the clean ~66.7 s, never the
+    # teleport-inflated window that would read far too fast.
+    real = [(t, float(t) * 3) for t in range(0, 301)]
+    teleport = [(301, real[-1][1] + 200.0)]  # +200 m in 1 s
+    after = [(301 + t, teleport[0][1] + t * 3) for t in range(1, 60)]
+    seconds = analytics.best_effort_seconds([*real, *teleport, *after], 200.0)
+    assert seconds is not None
+    # 200 m at 3 m/s = 66.67 s; the sampled window lands at 67 s, never <30.
+    assert seconds >= 60.0
+
+
+def _add_run_with_stream(
+    conn: sqlite3.Connection, when: datetime, speed_mps: float, key: str
+) -> None:
+    seconds = int(2000 / speed_mps)
+    stream = tuple(
+        StreamPoint(offset_s=i, distance_m=speed_mps * i, velocity_mps=speed_mps)
+        for i in range(seconds + 1)
+    )
+    store.store_record(
+        conn,
+        ActivityRecord(
+            activity=Activity(
+                source="strava",
+                source_id=SourceId(key),
+                sport_type="Run",
+                start_time_utc=when,
+                distance_m=2000.0,
+                moving_s=seconds,
+                avg_pace_s_per_km=1000 / speed_mps,
+            ),
+            stream=stream,
+        ),
+    )
+
+
+def test_run_effort_series_per_run_values() -> None:
+    # Two runs: the second is slower. Unlike best_effort_progressions (monotone),
+    # run_effort_series must report the slower value for the second run.
+    conn = store.connect(":memory:")  # type: ignore[arg-type]
+    store.init_db(conn)
+    _add_run_with_stream(conn, datetime(2026, 6, 1, 7, tzinfo=UTC), 5.0, "a")  # 200s/1k
+    _add_run_with_stream(conn, datetime(2026, 6, 8, 7, tzinfo=UTC), 4.0, "b")  # 250s/1k
+    runs = metrics.canonical_run_activities(conn)
+
+    series = analytics.run_effort_series(conn, runs, 1000.0)
+    assert series == [(date(2026, 6, 1), 200.0), (date(2026, 6, 8), 250.0)]
+
+
+def test_best_effort_records_uses_continuous_segments() -> None:
+    # A single 2 km run at a constant 5 m/s: 1k in 200 s and 2k in 400 s, both
+    # at 200 s/km (3:20/km) — continuous efforts pulled from the stream, dated.
+    conn = store.connect(":memory:")  # type: ignore[arg-type]
+    store.init_db(conn)
+    _add_run_with_stream(conn, datetime(2026, 6, 1, 7, tzinfo=UTC), 5.0, "fast")
+    runs = metrics.canonical_run_activities(conn)
+
+    records = {
+        e.label: (e.seconds, e.pace_s_per_km, e.when)
+        for e in analytics.best_effort_records(
+            conn, runs, [("1k", 1000.0), ("2k", 2000.0)]
+        )
+    }
+    assert records["1k"] == (200.0, 200.0, date(2026, 6, 1))
+    assert records["2k"] == (400.0, 200.0, date(2026, 6, 1))
 
 
 def test_fill_daily_zero_fills_rest_days() -> None:

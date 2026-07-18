@@ -19,6 +19,7 @@ from runlog.analyze import stats, style
 from runlog.analyze.style import (
     ACCENT,
     BAD,
+    FORM,
     GOOD,
     MUTED,
     PRIMARY,
@@ -32,12 +33,16 @@ if TYPE_CHECKING:
     from datetime import date, datetime
     from pathlib import Path
 
-    from runlog.analyze.analytics import BestEffortProgression, PmcPoint, Trend
+    from runlog.analyze.analytics import (
+        BestEffortProgression,
+        EffortRecord,
+        PmcPoint,
+        Trend,
+    )
     from runlog.analyze.anomaly import AnomalyReport
     from runlog.analyze.cs import CsModel
     from runlog.analyze.lifestyle import WeekdayProfile
     from runlog.analyze.metrics import (
-        BucketPace,
         Heatmap,
         HrPoint,
         HrZone,
@@ -49,6 +54,7 @@ if TYPE_CHECKING:
     )
     from runlog.analyze.physiology import IntensityDistribution
     from runlog.analyze.readiness import ReadinessDay
+    from runlog.analyze.records import RecordEvent
     from runlog.analyze.response import MarkerResponse
     from runlog.analyze.stats import TrendTest
 
@@ -307,34 +313,45 @@ def grade_adjusted_pace_chart(points: Sequence[PacePoint], out_dir: Path) -> Pat
     return style.save(fig, out_dir, "grade_adjusted_pace.png")
 
 
-def fastest_by_bucket_chart(buckets: Sequence[BucketPace], out_dir: Path) -> Path:
+def best_effort_pace_chart(efforts: Sequence[EffortRecord], out_dir: Path) -> Path:
     fig, ax = style.figure(
         "Fastest pace by distance",
-        "Best average pace achieved in each distance band",
-        "Distance bucket",
+        "Fastest continuous effort at each distance, from the GPS streams",
+        "Distance",
         "Pace (min/km)",
     )
-    values = [b.fastest_pace_s_per_km or 0.0 for b in buckets]
-    bars = ax.bar([b.label for b in buckets], values, color=PRIMARY, alpha=0.8)
-    for bucket, bar in zip(buckets, bars, strict=False):
-        if bucket.fastest_pace_s_per_km:
-            ax.annotate(
-                _format_pace(bucket.fastest_pace_s_per_km),
-                xy=(bar.get_x() + bar.get_width() / 2, bucket.fastest_pace_s_per_km),
-                xytext=(0, 3),
-                textcoords="offset points",
-                ha="center",
-                fontsize=9,
-                fontweight="bold",
-                color=SUBTLE,
-            )
+    values = [e.pace_s_per_km for e in efforts]
+    bars = ax.bar([e.label for e in efforts], values, color=PRIMARY, alpha=0.8)
+    for effort, bar in zip(efforts, bars, strict=False):
+        centre = bar.get_x() + bar.get_width() / 2
+        ax.annotate(
+            _format_pace(effort.pace_s_per_km),
+            xy=(centre, effort.pace_s_per_km),
+            xytext=(0, 3),
+            textcoords="offset points",
+            ha="center",
+            fontsize=9,
+            fontweight="bold",
+            color=SUBTLE,
+        )
+        # Exact date the effort was set, inside the bar near its base (x in
+        # data, y in axes fraction so it sits just above the x-axis).
+        ax.text(
+            centre,
+            0.03,
+            effort.when.isoformat(),
+            transform=ax.get_xaxis_transform(),
+            ha="center",
+            va="bottom",
+            fontsize=7.5,
+            color="white",
+        )
     # Format as M:SS but do NOT invert: on an inverted axis the bars hang from
-    # the top and the fastest bucket reads as the longest bar.
+    # the top and the fastest distance reads as the longest bar.
     ax.yaxis.set_major_formatter(FuncFormatter(_format_pace))
-    positive = [v for v in values if v]
-    if positive:
-        ax.set_ylim(min(positive) * 0.85, max(positive) * 1.08)
-    return style.save(fig, out_dir, "fastest_by_bucket.png")
+    if values:
+        ax.set_ylim(min(values) * 0.85, max(values) * 1.08)
+    return style.save(fig, out_dir, "best_effort_pace.png")
 
 
 def race_prediction_chart(predictions: Sequence[RacePrediction], out_dir: Path) -> Path:
@@ -584,16 +601,23 @@ def pmc_chart(points: Sequence[PmcPoint], out_dir: Path) -> Path:
         ax2 = ax.twinx()
         ax2.grid(visible=False)
         ax2.fill_between(
-            days, forms, 0, where=[f >= 0 for f in forms], color=GOOD, alpha=0.20
+            days, forms, 0, where=[f >= 0 for f in forms], color=GOOD, alpha=0.18
         )
         ax2.fill_between(
-            days, forms, 0, where=[f < 0 for f in forms], color=BAD, alpha=0.18
+            days, forms, 0, where=[f < 0 for f in forms], color=BAD, alpha=0.14
         )
+        ax2.plot(days, forms, color=FORM, lw=1.6, label="Form (TSB)")
+        ax2.axhline(0, color=MUTED, lw=0.8, zorder=1)
         ax2.set_ylabel("Form (TSB)")
         style.latest_callout(
             ax, days[-1], points[-1].fitness, f"CTL {points[-1].fitness:.0f}"
         )
-        ax.legend(loc="upper left")
+        style.latest_callout(
+            ax2, days[-1], points[-1].form, f"TSB {points[-1].form:+.0f}", color=FORM
+        )
+        handles = ax.get_legend_handles_labels()
+        extra = ax2.get_legend_handles_labels()
+        ax.legend(handles[0] + extra[0], handles[1] + extra[1], loc="upper left")
     style.date_axis(ax)
     return style.save(fig, out_dir, "pmc_fitness_form.png")
 
@@ -767,6 +791,64 @@ def anomaly_timeline_chart(report: AnomalyReport, out_dir: Path) -> Path:
             ax.scatter(anomaly.day, row, s=44, color=BAD, alpha=0.75, zorder=3)
     style.date_axis(ax)
     return style.save(fig, out_dir, "anomaly_timeline.png")
+
+
+# Record lanes bottom-to-top with display labels.
+_RECORD_ROWS = (
+    ("biggest_week", "Biggest week"),
+    ("longest_run", "Longest run"),
+    ("10k", "10k"),
+    ("5k", "5k"),
+    ("1k", "1k"),
+)
+
+
+def records_chart(events: Sequence[RecordEvent], out_dir: Path) -> Path:
+    """Timeline of personal records: all-time filled, yearly hollow."""
+    fig, ax = style.figure(
+        "Personal records",
+        "Every all-time (filled) and yearly (hollow) best over time",
+        "Date",
+        "",
+    )
+    rows = {kind: i for i, (kind, _) in enumerate(_RECORD_ROWS)}
+    ax.set_yticks(range(len(_RECORD_ROWS)))
+    ax.set_yticklabels([label for _, label in _RECORD_ROWS])
+    ax.set_ylim(-0.5, len(_RECORD_ROWS) - 0.5)
+    ax.grid(axis="y", visible=False)
+    for event in events:
+        row = rows.get(event.kind)
+        if row is None:
+            continue
+        all_time = event.scope == "all_time"
+        ax.scatter(
+            event.day,
+            row,
+            s=54 if all_time else 40,
+            color=PRIMARY if all_time else "none",
+            edgecolor=PRIMARY,
+            linewidth=1.4,
+            zorder=3,
+        )
+    for kind, _ in _RECORD_ROWS:
+        latest = [e for e in events if e.kind == kind and e.scope == "all_time"]
+        if latest:
+            best = latest[-1]
+            value = (
+                best.label.split(" ", 1)[-1]
+                if kind in ("1k", "5k", "10k")
+                else f"{best.value:.1f} km"
+            )
+            ax.annotate(
+                value,
+                xy=(best.day, rows[kind]),
+                xytext=(6, 4),
+                textcoords="offset points",
+                fontsize=8,
+                color=SUBTLE,
+            )
+    style.date_axis(ax)
+    return style.save(fig, out_dir, "records.png")
 
 
 def weekday_profile_chart(profile: WeekdayProfile, out_dir: Path) -> Path:

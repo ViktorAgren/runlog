@@ -19,12 +19,14 @@ from runlog.analyze import (
     anomaly,
     charts,
     cs,
+    forecast,
     html_report,
     importance,
     lifestyle,
     metrics,
     physiology,
     readiness,
+    records,
     report_model,
     response,
     stats,
@@ -33,8 +35,6 @@ from runlog.analyze import (
 )
 from runlog.analyze.report_model import FigureRef, Kpi, ReportModel, Section
 from runlog.db import store
-
-_DEFAULT_HR_REST = 50.0
 
 if TYPE_CHECKING:
     import sqlite3
@@ -126,9 +126,10 @@ _SECTION_SPEC: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         (
             "pace_over_time",
             "grade_adjusted_pace",
-            "fastest_by_bucket",
+            "best_effort_pace",
             "best_effort_progression",
             "race_predictions",
+            "records",
         ),
     ),
     (
@@ -212,6 +213,7 @@ _TITLE_OVERRIDES = {
     "walking_speed": "Walking speed",
     "flights_climbed": "Flights climbed",
     "weekday_profile": "Weekday rhythm",
+    "records": "Personal records",
 }
 
 
@@ -234,7 +236,7 @@ def run(
         conn, sports, since=since, min_distance_km=min_distance_km
     )
     weekly = metrics.weekly_volume(runs)
-    buckets = metrics.fastest_by_bucket(runs)
+    efforts = analytics.best_effort_records(conn, runs)
     pace = metrics.pace_points(runs)
     predictions = metrics.predict_races(runs)
 
@@ -262,7 +264,7 @@ def run(
         charts.distance_histogram(metrics.distance_distribution(runs), training_dir),
         charts.training_heatmap_chart(metrics.training_heatmap(runs), training_dir),
         charts.pace_over_time_chart(pace, training_dir),
-        charts.fastest_by_bucket_chart(buckets, training_dir),
+        charts.best_effort_pace_chart(efforts, training_dir),
         charts.race_prediction_chart(predictions, training_dir),
         charts.hr_over_time_chart(metrics.hr_over_time(runs), training_dir),
         charts.hr_histogram(hr, training_dir, zones),
@@ -364,7 +366,7 @@ def run(
     # used only as a scalar constant in the TRIMP formula (not plotted here).
     analytics_dir = out_dir / "analytics"
     analytics_dir.mkdir(parents=True, exist_ok=True)
-    hr_rest = _resolve_hr_rest(conn)
+    hr_rest = metrics.resting_hr_median(conn)
     daily = analytics.daily_trimp(runs, hr_max_value, hr_rest)
     pmc = analytics.performance_management(daily)
     acwr = analytics.acwr_series(daily)
@@ -383,6 +385,13 @@ def run(
         charts.best_effort_progression_chart(best_efforts, analytics_dir),
         charts.anomaly_timeline_chart(anomalies, analytics_dir),
     ]
+
+    # Personal-record timeline and an updating race forecast (race from the
+    # active plan when one is present next to the DB).
+    record_events = records.records_timeline(conn, runs)
+    if record_events:
+        produced.append(charts.records_chart(record_events, analytics_dir))
+    race_forecast = _race_forecast(conn, runs, db_path)
 
     # Advanced models: Critical Speed from best efforts, and a daily readiness
     # score from the recovery markers (with its link to performance). Skip-empty
@@ -432,10 +441,9 @@ def run(
     text = summary.build_summary_text(
         summary=overall,
         weekly=weekly,
-        buckets=buckets,
+        efforts=efforts,
         latest_markers=latest_markers,
         streak=metrics.active_week_streak(weekly),
-        records=metrics.best_efforts(runs),
         predictions=predictions,
         consistency=metrics.consistency_summary(runs),
         recent_weeks=recent_weeks,
@@ -457,6 +465,9 @@ def run(
     if lifestyle_text:
         text += "\n" + lifestyle_text
     text += "\n" + summary.physiology_section(intensity, median_drift, pace_intensity)
+    records_text = summary.records_section(record_events, race_forecast)
+    if records_text:
+        text += "\n" + records_text
     readiness_latest = readiness_days[-1] if readiness_days else None
     advanced = summary.advanced_section(cs_model, readiness_latest, readiness_r)
     if advanced:
@@ -629,6 +640,28 @@ def _build_sections(produced: Sequence[Path], out_dir: Path) -> list[Section]:
     return sections
 
 
+def _race_forecast(
+    conn: sqlite3.Connection, runs: Sequence[metrics.Run], db_path: Path
+) -> forecast.RaceForecast | None:
+    """Race projection from the active plan's race row, if a plan is present."""
+    from datetime import date
+
+    from runlog.plan import schedule
+
+    plans_dir = db_path.parent / "plans"
+    if not plans_dir.exists():
+        return None
+    active = schedule.find_active_plan(plans_dir)
+    if active is None:
+        return None
+    sched = schedule.load_schedule(active)
+    if sched.race is None or sched.race_distance_m is None:
+        return None
+    return forecast.race_forecast(
+        conn, runs, sched.race.day, sched.race_distance_m, date.today()
+    )
+
+
 def _pace_intensity(
     conn: sqlite3.Connection,
     runs: Sequence[metrics.Run],
@@ -747,12 +780,3 @@ def _stats_table(table: importance.SignificanceTable) -> report_model.StatsTable
             for finding in table.findings
         ],
     )
-
-
-def _resolve_hr_rest(conn: sqlite3.Connection) -> float:
-    """Median resting HR (a scalar constant for TRIMP), else a default."""
-    daily = metrics.daily_means(metrics.metric_series(conn, "resting_hr"))
-    if not daily:
-        return _DEFAULT_HR_REST
-    values = sorted(v for _, v in daily)
-    return values[len(values) // 2]
