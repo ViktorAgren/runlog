@@ -35,7 +35,9 @@ _ATL_DAYS = 7  # "Fatigue" time constant
 _ACWR_ACUTE_DAYS = 7
 _ACWR_CHRONIC_DAYS = 28
 _BEST_EFFORT_DISTANCES_M: tuple[tuple[str, float], ...] = (
+    ("200m", 200.0),
     ("1k", 1000.0),
+    ("3k", 3000.0),
     ("5k", 5000.0),
     ("10k", 10000.0),
 )
@@ -223,9 +225,11 @@ def best_effort_seconds(
 # Standard distances for the best-effort pace record (fastest continuous
 # segment at each), from a short sprint to 10k.
 _EFFORT_RECORD_DISTANCES: tuple[tuple[str, float], ...] = (
+    ("200m", 200.0),
     ("400m", 400.0),
     ("1k", 1000.0),
     ("2k", 2000.0),
+    ("3k", 3000.0),
     ("5k", 5000.0),
     ("10k", 10000.0),
 )

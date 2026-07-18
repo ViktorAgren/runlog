@@ -44,6 +44,7 @@ MUTED = "#94a3b8"  # de-emphasized marks (raw scatter)
 GRID = "#e2e8f0"
 PRIMARY = "#2563eb"  # main series
 ACCENT = "#f97316"  # trend / secondary series
+FORM = "#7c3aed"  # violet, for the PMC Form (TSB) line
 GOOD = "#16a34a"
 WARN = "#d97706"
 BAD = "#dc2626"

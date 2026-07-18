@@ -19,6 +19,7 @@ from runlog.analyze import stats, style
 from runlog.analyze.style import (
     ACCENT,
     BAD,
+    FORM,
     GOOD,
     MUTED,
     PRIMARY,
@@ -322,15 +323,28 @@ def best_effort_pace_chart(efforts: Sequence[EffortRecord], out_dir: Path) -> Pa
     values = [e.pace_s_per_km for e in efforts]
     bars = ax.bar([e.label for e in efforts], values, color=PRIMARY, alpha=0.8)
     for effort, bar in zip(efforts, bars, strict=False):
+        centre = bar.get_x() + bar.get_width() / 2
         ax.annotate(
             _format_pace(effort.pace_s_per_km),
-            xy=(bar.get_x() + bar.get_width() / 2, effort.pace_s_per_km),
+            xy=(centre, effort.pace_s_per_km),
             xytext=(0, 3),
             textcoords="offset points",
             ha="center",
             fontsize=9,
             fontweight="bold",
             color=SUBTLE,
+        )
+        # Date the effort was set, inside the bar near its base (x in data,
+        # y in axes fraction so it sits just above the x-axis).
+        ax.text(
+            centre,
+            0.03,
+            effort.when.strftime("%b %Y"),
+            transform=ax.get_xaxis_transform(),
+            ha="center",
+            va="bottom",
+            fontsize=7.5,
+            color="white",
         )
     # Format as M:SS but do NOT invert: on an inverted axis the bars hang from
     # the top and the fastest distance reads as the longest bar.
@@ -587,16 +601,23 @@ def pmc_chart(points: Sequence[PmcPoint], out_dir: Path) -> Path:
         ax2 = ax.twinx()
         ax2.grid(visible=False)
         ax2.fill_between(
-            days, forms, 0, where=[f >= 0 for f in forms], color=GOOD, alpha=0.20
+            days, forms, 0, where=[f >= 0 for f in forms], color=GOOD, alpha=0.18
         )
         ax2.fill_between(
-            days, forms, 0, where=[f < 0 for f in forms], color=BAD, alpha=0.18
+            days, forms, 0, where=[f < 0 for f in forms], color=BAD, alpha=0.14
         )
+        ax2.plot(days, forms, color=FORM, lw=1.6, label="Form (TSB)")
+        ax2.axhline(0, color=MUTED, lw=0.8, zorder=1)
         ax2.set_ylabel("Form (TSB)")
         style.latest_callout(
             ax, days[-1], points[-1].fitness, f"CTL {points[-1].fitness:.0f}"
         )
-        ax.legend(loc="upper left")
+        style.latest_callout(
+            ax2, days[-1], points[-1].form, f"TSB {points[-1].form:+.0f}", color=FORM
+        )
+        handles = ax.get_legend_handles_labels()
+        extra = ax2.get_legend_handles_labels()
+        ax.legend(handles[0] + extra[0], handles[1] + extra[1], loc="upper left")
     style.date_axis(ax)
     return style.save(fig, out_dir, "pmc_fitness_form.png")
 
