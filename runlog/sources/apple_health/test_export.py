@@ -104,6 +104,12 @@ _HEALTH_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
  <Record type="HKQuantityTypeIdentifierActiveEnergyBurned"
    startDate="2026-06-01 09:00:00 +0000" endDate="2026-06-01 09:05:00 +0000"
    value="45" unit="kcal"/>
+ <Record type="HKQuantityTypeIdentifierBasalEnergyBurned"
+   startDate="2026-06-01 08:00:00 +0000" endDate="2026-06-01 08:05:00 +0000"
+   value="700" unit="kcal"/>
+ <Record type="HKQuantityTypeIdentifierBasalEnergyBurned"
+   startDate="2026-06-01 09:00:00 +0000" endDate="2026-06-01 09:05:00 +0000"
+   value="900" unit="kcal"/>
  <Record type="HKCategoryTypeIdentifierSleepAnalysis"
    value="HKCategoryValueSleepAnalysisAsleepCore"
    startDate="2026-05-31 23:00:00 +0000" endDate="2026-06-01 01:00:00 +0000"/>
@@ -122,6 +128,7 @@ def test_parse_export_periodic_daily_and_sleep_metrics() -> None:
     by_type = {m.metric_type: m.value for m in metrics}
     assert by_type["spo2"] == 0.97
     assert by_type["active_energy"] == 75.0  # 30 + 45 summed for the day
+    assert by_type["basal_energy"] == 1600.0  # 700 + 900 summed for the day
     assert by_type["sleep_hours"] == 7.0  # 2h + 5h asleep; InBed ignored
 
 

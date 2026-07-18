@@ -50,6 +50,7 @@ _METRIC_TYPES = {
 # High-volume cumulative metrics aggregated to one daily total.
 _DAILY_SUM_TYPES = {
     "HKQuantityTypeIdentifierActiveEnergyBurned": "active_energy",
+    "HKQuantityTypeIdentifierBasalEnergyBurned": "basal_energy",
     "HKQuantityTypeIdentifierAppleExerciseTime": "exercise_minutes",
     "HKQuantityTypeIdentifierStepCount": "steps",
     "HKQuantityTypeIdentifierFlightsClimbed": "flights_climbed",
