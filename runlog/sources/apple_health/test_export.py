@@ -157,6 +157,34 @@ def test_sleep_hours_takes_largest_source_not_the_sum_across_devices() -> None:
     assert sleep == [7.5]
 
 
+# One day of steps recorded by both the iPhone and the Watch: summing the two
+# devices double-counts, so the daily total must come from the larger source.
+_TWO_SOURCE_STEPS_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
+<HealthData locale="en_GB">
+ <Record type="HKQuantityTypeIdentifierStepCount" sourceName="iPhone" unit="count"
+   startDate="2026-07-20 08:00:00 +0000" endDate="2026-07-20 08:10:00 +0000"
+   value="7000"/>
+ <Record type="HKQuantityTypeIdentifierStepCount" sourceName="iPhone" unit="count"
+   startDate="2026-07-20 18:00:00 +0000" endDate="2026-07-20 18:10:00 +0000"
+   value="10224"/>
+ <Record type="HKQuantityTypeIdentifierStepCount" sourceName="Watch" unit="count"
+   startDate="2026-07-20 08:00:00 +0000" endDate="2026-07-20 08:10:00 +0000"
+   value="8000"/>
+ <Record type="HKQuantityTypeIdentifierStepCount" sourceName="Watch" unit="count"
+   startDate="2026-07-20 18:00:00 +0000" endDate="2026-07-20 18:10:00 +0000"
+   value="10081"/>
+</HealthData>
+"""
+
+
+def test_steps_take_largest_source_not_the_sum_across_devices() -> None:
+    metrics = parse_export(io.BytesIO(_TWO_SOURCE_STEPS_XML)).metrics
+    steps = [m.value for m in metrics if m.metric_type == "steps"]
+    # iPhone summed to 17,224, the Watch to 18,081; summing both devices would
+    # give a bogus ~35,300-step day.
+    assert steps == [18081.0]
+
+
 _DYNAMICS_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
 <HealthData locale="en_GB">
  <Record type="HKQuantityTypeIdentifierRunningPower" unit="W"

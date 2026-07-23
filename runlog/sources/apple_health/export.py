@@ -336,7 +336,7 @@ def _midnight(day: date) -> datetime:
 def _consume_record(
     elem: Element,
     metrics: list[HealthMetric],
-    daily: dict[tuple[str, date], float],
+    daily: dict[tuple[str, date, str], float],
     sleep_seconds: dict[tuple[date, str], float],
     hr_samples: list[tuple[datetime, float]],
     dynamics: dict[str, list[tuple[datetime, float]]],
@@ -362,21 +362,29 @@ def _consume_record(
         value = _as_float(elem.get("value"))
         start = elem.get("startDate")
         if value is not None and start:
-            daily[(_DAILY_SUM_TYPES[type_id], date.fromisoformat(start[:10]))] += value
+            # Sum per source; the iPhone and the Watch each count the same day,
+            # so the daily total is reduced across sources (max) below, never
+            # summed together — that would double-count steps/energy.
+            key = (
+                _DAILY_SUM_TYPES[type_id],
+                date.fromisoformat(start[:10]),
+                elem.get("sourceName", ""),
+            )
+            daily[key] += value
     elif type_id == "HKCategoryTypeIdentifierSleepAnalysis":
         if "Asleep" in elem.get("value", ""):  # ignore InBed / Awake segments
             start, end = elem.get("startDate"), elem.get("endDate")
             if start and end:
                 begin, finish = _parse_dt(start), _parse_dt(end)
-                key = (finish.date(), elem.get("sourceName", ""))
-                sleep_seconds[key] += (finish - begin).total_seconds()
+                night_key = (finish.date(), elem.get("sourceName", ""))
+                sleep_seconds[night_key] += (finish - begin).total_seconds()
 
 
 def parse_export(source: IO[bytes]) -> AppleExport:
     """Parse ``export.xml`` into workouts + periodic/daily/sleep health metrics."""
     workouts: list[AppleWorkout] = []
     metrics: list[HealthMetric] = []
-    daily: dict[tuple[str, date], float] = defaultdict(float)
+    daily: dict[tuple[str, date, str], float] = defaultdict(float)
     sleep_seconds: dict[tuple[date, str], float] = defaultdict(float)
     hr_samples: list[tuple[datetime, float]] = []
     dynamics: dict[str, list[tuple[datetime, float]]] = defaultdict(list)
@@ -387,7 +395,14 @@ def parse_export(source: IO[bytes]) -> AppleExport:
         elif elem.tag == "Record":
             _consume_record(elem, metrics, daily, sleep_seconds, hr_samples, dynamics)
             elem.clear()
-    for (metric_type, day), total in daily.items():
+    # Reduce the per-source daily totals to one value per (metric, day): take
+    # the largest single source rather than summing devices that both tracked
+    # the same day (which double-counts steps, energy, and flights).
+    daily_by_source: dict[tuple[str, date], float] = defaultdict(float)
+    for (metric_type, day, _source), total in daily.items():
+        key = (metric_type, day)
+        daily_by_source[key] = max(daily_by_source[key], total)
+    for (metric_type, day), total in daily_by_source.items():
         metrics.append(
             HealthMetric(metric_type, _midnight(day), round(total, 1), source="apple")
         )

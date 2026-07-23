@@ -261,8 +261,10 @@ Data hygiene: cross-source runs are de-duplicated (the Strava row of each linked
 pair is kept, Apple-only running dynamics coalesced onto it); runs below
 `--min-distance` are dropped; implausible paces and out-of-range health readings
 are filtered; corrupted streams are flagged at ingest and excluded; intraday
-health metrics show as daily means; and off-workout data stays in `recovery/`,
-out of training totals.
+health metrics show as daily means; cumulative daily metrics (steps, energy,
+flights) are taken from the single largest-recording device rather than summed
+across the iPhone and Watch, which would double-count; and off-workout data
+stays in `recovery/`, out of training totals.
 
 ### Planning (`plan`)
 
