@@ -115,6 +115,58 @@ def test_workout_detail_surfaces_per_rep_max_hr_and_rep_set_stats(
     assert (detail.rep_hr_drift, detail.rep_pace_cv) == (18.0, 0.0)
 
 
+def test_workout_detail_surfaces_dynamics_drift_and_economy(
+    conn: sqlite3.Connection,
+) -> None:
+    # HR drifts up while speed stays flat -> positive cardiac drift; power and
+    # cadence flow from the activity; economy = speed / power.
+    stream = tuple(
+        StreamPoint(
+            offset_s=i, distance_m=float(i) * 3.0, hr=150.0 + i * 0.05, velocity_mps=3.0
+        )
+        for i in range(0, 400)
+    )
+    store.store_record(
+        conn,
+        ActivityRecord(
+            activity=Activity(
+                source="strava",
+                source_id=SourceId("s:dyn"),
+                sport_type="Run",
+                start_time_utc=datetime(2026, 7, 6, 7, tzinfo=UTC),
+                distance_m=5000.0,
+                moving_s=1500,
+                avg_pace_s_per_km=300.0,
+                avg_hr=155.0,
+                avg_cadence=170.0,
+                avg_power_w=250.0,
+                avg_stride_length_m=1.2,
+            ),
+            stream=stream,
+        ),
+    )
+    run = metrics.canonical_run_activities(conn, min_distance_km=0.0)[0]
+
+    detail = workout_detail(conn, run, hr_max=190.0)
+
+    assert (detail.avg_cadence, detail.avg_power_w, detail.avg_stride_length_m) == (
+        170.0,
+        250.0,
+        1.2,
+    )
+    # Economy = (5000/1500 m/s) / 250 W = 0.0133; drift positive (efficiency fell).
+    assert detail.running_economy == 0.0133
+    assert detail.cardiac_drift_pct is not None and detail.cardiac_drift_pct > 0
+
+
+def test_workout_detail_dynamics_none_without_data(conn: sqlite3.Connection) -> None:
+    _add_run(conn, datetime(2026, 7, 6, 7, tzinfo=UTC))  # no power/cadence set
+    run = metrics.canonical_run_activities(conn, min_distance_km=0.0)[0]
+
+    detail = workout_detail(conn, run, hr_max=190.0)
+    assert (detail.avg_power_w, detail.running_economy) == (None, None)
+
+
 def test_build_progress_counts_only_runs_since_start(conn: sqlite3.Connection) -> None:
     # One run before the block, two inside it: only the latter two count.
     _add_run(conn, datetime(2026, 6, 20, 7, tzinfo=UTC), distance_m=8000.0)  # before

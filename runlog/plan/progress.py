@@ -70,6 +70,12 @@ class WorkoutDetail:
     # work reps' paces (how even the set was).
     rep_hr_drift: float | None = None
     rep_pace_cv: float | None = None
+    # Running dynamics (Apple) and physiology, per run — None when unavailable.
+    avg_cadence: float | None = None
+    avg_power_w: float | None = None
+    avg_stride_length_m: float | None = None
+    cardiac_drift_pct: float | None = None  # +ve = HR drifted up for same pace
+    running_economy: float | None = None  # m/s per watt
 
 
 @dataclass(frozen=True)
@@ -251,6 +257,11 @@ def workout_detail(conn: sqlite3.Connection, run: Run, hr_max: float) -> Workout
         laps=laps,
         rep_hr_drift=rep_hr_drift,
         rep_pace_cv=rep_pace_cv,
+        avg_cadence=run.avg_cadence,
+        avg_power_w=run.avg_power_w,
+        avg_stride_length_m=run.avg_stride_length_m,
+        cardiac_drift_pct=physiology.cardiac_drift_pct(stream) if stream else None,
+        running_economy=metrics.running_economy(run),
     )
 
 
