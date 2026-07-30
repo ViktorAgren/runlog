@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from runlog.plan.profile import AthleteProfile, PlanRequest
+    from runlog.plan.profile import AdvancedFitness, AthleteProfile, PlanRequest
     from runlog.plan.progress import ProgressReport, WorkoutDetail
 
 COACH_SYSTEM = (
@@ -164,8 +164,16 @@ REVIEW_SYSTEM = (
     "DO NOT rewrite the plan — if a full rewrite is warranted, say so in "
     "watch_outs and recommend re-running the planner. (7) Flag injury/"
     "overtraining risk: red-flag days, ACWR above 1.5, a sharp CTL drop, or a "
-    "deeply negative Form (TSB). Keep everything concrete and prioritized; fill "
-    "every field of the required structured format."
+    "deeply negative Form (TSB). (8) Use the per-rep detail in the "
+    "STRUCTURED-SESSION SPLITS: read each rep's avg/max HR and the 'set:' HR "
+    "drift and pace CV to judge whether a quality set was controlled and even, "
+    "or faded and ragged; read the per-workout Cad (cadence) and Drift (cardiac "
+    "drift) columns and the ADVANCED FITNESS block (critical speed, best "
+    "efforts, aerobic decoupling) to ground fitness claims. When the reps sit "
+    "faster than the prescribed band at a controlled HR, or the critical-speed "
+    "predictions beat the plan's targets, say the zones may read conservative. "
+    "Keep everything concrete and prioritized; fill every field of the required "
+    "structured format."
 )
 
 _REVIEW_FORMAT_HINT = (
@@ -207,8 +215,43 @@ def _progress_block(progress: ProgressReport) -> str:
             f"{_num(progress.efficiency_trend_per_month)} per month",
             f"- Flags: {progress.red_flag_days} readiness red-flag day(s), "
             f"{progress.off_runs} off-run(s) (slow for the effort)",
+            *_advanced_lines(progress.advanced),
         ]
     )
+
+
+def _advanced_lines(advanced: AdvancedFitness | None) -> list[str]:
+    """Measured-performance context: critical speed, best efforts, decoupling."""
+    if advanced is None:
+        return []
+    lines: list[str] = ["- ADVANCED FITNESS:"]
+    cs_model = advanced.critical_speed
+    if cs_model is not None:
+        preds = " / ".join(
+            f"{label} {_clock(seconds)}"
+            for label, dist in (("3k", 3000.0), ("5k", 5000.0))
+            if (seconds := cs_model.predict_seconds(dist)) is not None
+        )
+        lines.append(
+            f"  - Critical speed {cs_model.cs_mps:.2f} m/s "
+            f"(D' {cs_model.d_prime_m:g} m, r={cs_model.r:.2f}); predicts {preds}"
+        )
+    if advanced.best_effort_records:
+        efforts = " · ".join(
+            f"{rec.label} {_clock(rec.seconds)} ({_pace(rec.pace_s_per_km)})"
+            for rec in advanced.best_effort_records
+        )
+        lines.append(f"  - Best continuous efforts: {efforts}")
+    if advanced.aerobic_decoupling:
+        recent = advanced.aerobic_decoupling[-3:]
+        drift = ", ".join(f"{pct:+g}%" for _, pct in recent)
+        lines.append(
+            f"  - Aerobic decoupling (recent long runs, +ve = HR drifted up): "
+            f"{drift}"
+        )
+    if advanced.avg_cadence is not None:
+        lines.append(f"  - Average cadence: {advanced.avg_cadence:g} spm")
+    return lines
 
 
 def _hms(seconds: int | None) -> str:
@@ -232,10 +275,24 @@ def _lap_line(workout: WorkoutDetail) -> str:
             piece = f"{lap.distance_m / 1000:.1f}km {_pace(lap.pace_s_per_km)}"
             if lap.avg_hr:
                 piece += f" @{lap.avg_hr:.0f}"
+                if lap.max_hr:
+                    piece += f" max{lap.max_hr:.0f}"
             parts.append(piece)
         elif lap.seconds:
             parts.append(f"{lap.seconds}s")
     return " · ".join(parts)
+
+
+def _rep_set_note(workout: WorkoutDetail) -> str:
+    """A compact rep-set summary (HR drift across reps, pace evenness)."""
+    if workout.rep_hr_drift is None and workout.rep_pace_cv is None:
+        return ""
+    bits = []
+    if workout.rep_hr_drift is not None:
+        bits.append(f"HR drift {workout.rep_hr_drift:+g} across reps")
+    if workout.rep_pace_cv is not None:
+        bits.append(f"pace CV {workout.rep_pace_cv:g}%")
+    return f"  [set: {', '.join(bits)}]"
 
 
 def _workout_log_block(progress: ProgressReport) -> str:
@@ -250,23 +307,32 @@ def _workout_log_block(progress: ProgressReport) -> str:
         "PER-WORKOUT LOG (compare each to the plan's session for that date; "
         "E/M/H% = time in easy Z1-2 / moderate Z3 / hard Z4-5; Kind is inferred "
         "from HR-zone time, so a true interval session and a high-HR easy run can "
-        "both read 'Quality' — weigh pace and the E/M/H% split too):",
-        "| Date | Day | Kind | km | Time | Pace | avgHR | maxHR | E/M/H% | GAP |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        "both read 'Quality' — weigh pace and the E/M/H% split too. Cad = avg "
+        "cadence (spm); Drift = cardiac drift, +ve means HR rose for the same "
+        "pace):",
+        "| Date | Day | Kind | km | Time | Pace | avgHR | maxHR | Cad | Drift "
+        "| E/M/H% | GAP |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for w in progress.workouts:
+        drift = f"{w.cardiac_drift_pct:+g}%" if w.cardiac_drift_pct is not None else "-"
         lines.append(
             f"| {w.day} | {w.weekday} | {w.kind} "
             f"| {_km(w.distance_km)} | {_hms(w.moving_s)} "
             f"| {_pace(w.avg_pace_s_per_km)} "
-            f"| {_num(w.avg_hr)} | {_num(w.max_hr)} | {_zone_split(w)} "
+            f"| {_num(w.avg_hr)} | {_num(w.max_hr)} | {_num(w.avg_cadence)} | {drift} "
+            f"| {_zone_split(w)} "
             f"| {_pace(float(w.gap_pace_s_per_km)) if w.gap_pace_s_per_km else '-'} |"
         )
 
     splits = [(w, _lap_line(w)) for w in progress.workouts if w.laps]
     if splits:
         lines += ["", "STRUCTURED-SESSION SPLITS (laps as recorded):"]
-        lines += [f"- {w.day} ({w.kind}): {line}" for w, line in splits if line]
+        lines += [
+            f"- {w.day} ({w.kind}): {line}{_rep_set_note(w)}"
+            for w, line in splits
+            if line
+        ]
     return "\n".join(lines)
 
 
