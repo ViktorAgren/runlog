@@ -32,7 +32,14 @@ COACH_SYSTEM = (
     "Recovery pairs (use `sets` with a repeat count), and a Cool Down; put the "
     "pace and/or HR target on each Work step and a goal (distance/time/Open) on "
     "every step. Leave apple_workout null for Easy/Long/Recovery/Rest. (7) Taper "
-    "into race day. Explain your reasoning in each week's notes and the summary. "
+    "into race day. (8) The TRAINING ZONES are derived from VDOT; cross-check "
+    "them against the ADVANCED FITNESS block. If the critical-speed model or "
+    "recent best efforts imply the athlete sustains faster paces than the VDOT "
+    "zones suggest (e.g. CS predicts a race faster than the goal, or best "
+    "efforts beat the zone paces), say so in the summary and lean the harder "
+    "bands (Threshold/Interval/Rep/goal-pace) toward that measured evidence "
+    "rather than the VDOT table — while keeping Easy/Recovery genuinely easy. "
+    "Explain your reasoning in each week's notes and the summary. "
     "Fill every field of the required structured format."
 )
 
@@ -136,6 +143,7 @@ def build_user_message(profile: AthleteProfile, request: PlanRequest) -> str:
             f"ACWR {profile.acwr}",
             f"- Efficiency trend: {profile.efficiency_trend_per_month} per month",
             f"- VO2max {profile.vo2max}, resting HR {profile.resting_hr}",
+            *_advanced_lines(profile.advanced),
             "",
             _zones_block(profile),
         ]
