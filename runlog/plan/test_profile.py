@@ -66,6 +66,19 @@ def test_build_profile_summarizes_history(conn: sqlite3.Connection) -> None:
     assert "1k" in profile.best_efforts  # extracted from the streams
 
 
+def test_build_profile_includes_advanced_fitness(conn: sqlite3.Connection) -> None:
+    _add_run(conn, datetime(2026, 6, 1, 7, tzinfo=UTC))
+    _add_run(conn, datetime(2026, 6, 8, 7, tzinfo=UTC))
+
+    profile = build_profile(conn)
+
+    assert profile.advanced is not None
+    # 400 m + 1 k efforts from the stream fit a critical-speed model, and best
+    # efforts are surfaced for the planner to anchor zones against.
+    assert profile.advanced.critical_speed is not None
+    assert any(e.label == "1k" for e in profile.advanced.best_effort_records)
+
+
 def test_build_profile_derives_vdot_and_zones(conn: sqlite3.Connection) -> None:
     _add_run(conn, datetime(2026, 6, 1, 7, tzinfo=UTC))
     profile = build_profile(conn, hr_max=190.0)

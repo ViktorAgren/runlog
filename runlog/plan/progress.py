@@ -17,6 +17,7 @@ from datetime import date
 from typing import TYPE_CHECKING
 
 from runlog.analyze import analytics, anomaly, metrics, physiology, streams
+from runlog.plan import profile
 
 if TYPE_CHECKING:
     import sqlite3
@@ -115,6 +116,7 @@ class ProgressReport:
     off_runs: int = 0
     workouts: list[WorkoutDetail] = field(default_factory=list)
     plan_weeks: list[PlanWeek] = field(default_factory=list)
+    advanced: profile.AdvancedFitness | None = None
 
 
 def _ctl_at(points: list[analytics.PmcPoint], start: date) -> float | None:
@@ -341,4 +343,5 @@ def build_progress(
         off_runs=len(flags.performance),
         workouts=workouts,
         plan_weeks=_plan_weeks(start, workouts),
+        advanced=profile.build_advanced_fitness(conn, all_runs),
     )
