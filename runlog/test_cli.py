@@ -79,6 +79,37 @@ def test_cli_requires_a_command(capsys: pytest.CaptureFixture[str]) -> None:
         main([])
 
 
+def test_cli_plan_ongoing_and_dated_dry_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("RUNLOG_DATA_DIR", str(tmp_path / "data"))
+    assert main(["db", "init"]) == 0
+    capsys.readouterr()
+
+    # No --date -> ongoing 8-week block; the prompt shows a HORIZON, not a race.
+    assert main(["plan", "--goal", "10k", "--days", "mon,tue,wed", "--dry-run"]) == 0
+    ongoing = capsys.readouterr().out
+    assert "HORIZON: rolling 8-week block" in ongoing and "RACE DATE:" not in ongoing
+
+    # A --date still drives the dated race path.
+    assert (
+        main(
+            [
+                "plan",
+                "--goal",
+                "3k",
+                "--date",
+                "2026-12-01",
+                "--days",
+                "mon,wed",
+                "--dry-run",
+            ]
+        )
+        == 0
+    )
+    assert "RACE DATE: 2026-12-01" in capsys.readouterr().out
+
+
 def test_cli_today_and_last_on_empty_db(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

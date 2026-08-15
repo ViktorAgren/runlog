@@ -74,6 +74,29 @@ def test_dry_run_text_is_self_contained() -> None:
     assert "=== OUTPUT FORMAT ===" in text  # so a chat produces usable markdown
 
 
+def _ongoing_request() -> PlanRequest:
+    return PlanRequest(
+        goal="10k",
+        race_date=None,
+        training_days=("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"),
+        weeks_to_goal=8,
+    )
+
+
+def test_user_message_uses_ongoing_horizon_when_no_race() -> None:
+    message = build_user_message(_profile(), _ongoing_request())
+    assert "HORIZON: rolling 8-week block" in message and "NO race" in message
+    assert "RACE DATE" not in message
+    assert "raise 10k fitness" in message
+
+
+def test_coach_system_has_ongoing_checkpoint_guidance() -> None:
+    text = dry_run_text(_profile(), _ongoing_request())
+    # The system prompt must tell the model not to taper and to end on a check.
+    assert "ONGOING block" in text and "do NOT taper" in text
+    assert "checkpoint" in text and "time-trial or parkrun" in text
+
+
 def test_to_markdown_renders_targets_and_apple_workout() -> None:
     plan = TrainingPlan(
         goal="3k",
@@ -128,6 +151,20 @@ def test_to_markdown_renders_targets_and_apple_workout() -> None:
     assert "- Repeat 6×:" in md
     assert "- Work: 400 m @ 4:00-4:10/km / 168-176" in md
     assert "- Cool Down: 1.5 km" in md
+
+
+def test_to_markdown_renders_ongoing_block_header() -> None:
+    plan = TrainingPlan(
+        goal="10k",
+        race_date=None,
+        weeks_to_goal=8,
+        summary="Rolling base block.",
+        weeks=[],
+        key_advice=[],
+    )
+    md = to_markdown(plan)
+    assert "**Ongoing block**  ·  **8 weeks** (review and extend)" in md
+    assert "Race date" not in md
 
 
 def test_to_markdown_includes_zone_table() -> None:
