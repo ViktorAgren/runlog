@@ -65,7 +65,9 @@ def test_build_progress_counts_only_runs_since_start(conn: sqlite3.Connection) -
 
     # Per-workout detail: one row per in-window run, with an HR-zone split.
     assert [w.day for w in progress.workouts] == [date(2026, 7, 6), date(2026, 7, 8)]
-    assert progress.workouts[0].moderate_pct == 100.0  # 150 bpm at HRmax 195 = Z3
-    assert progress.workouts[0].kind == "Moderate"
+    # 150 bpm at HRmax 195 / resting 50 is (150-50)/(195-50)=69% reserve = Z2 easy
+    # under Karvonen (the old %HRmax model wrongly called it Z3 moderate).
+    assert progress.workouts[0].easy_pct == 100.0
+    assert progress.workouts[0].kind == "Easy"
     # Both runs fall in plan week 1 (start .. start+6).
     assert [(pw.week, pw.runs) for pw in progress.plan_weeks] == [(1, 2)]

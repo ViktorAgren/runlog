@@ -433,6 +433,17 @@ def test_hr_zone_seconds_buckets_by_fraction() -> None:
     assert (zones[0].low_bpm, zones[0].high_bpm, zones[-1].high_bpm) == (100, 120, None)
 
 
+def test_hr_zone_seconds_karvonen_places_easy_run_in_z2() -> None:
+    # A low-resting-HR runner (max 193, rest 47) at 148 bpm: %HRmax says 77% -> Z3
+    # "moderate", but reserve is (148-47)/(193-47)=69% -> Z2 easy. Karvonen fixes it.
+    zones = metrics.hr_zone_seconds([148.0], hr_max=193.0, hr_rest=47.0)
+    seconds = {z.label: z.seconds for z in zones}
+    assert seconds == {"Z1": 0, "Z2": 1, "Z3": 0, "Z4": 0, "Z5": 0}
+    # Z2 band is 60-70% of reserve above resting: 135-149 bpm.
+    z2 = next(z for z in zones if z.label == "Z2")
+    assert (z2.low_bpm, z2.high_bpm) == (135, 149)
+
+
 def test_weekly_training_load_weights_by_intensity(conn: sqlite3.Connection) -> None:
     # 30 min (1800s moving) at avg_hr 180 with hr_max 180 -> load = 30 * 1.0 = 30.
     _add_run(conn, datetime(2026, 6, 1, 7, tzinfo=UTC), avg_hr=180.0)

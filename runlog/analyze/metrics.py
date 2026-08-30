@@ -790,7 +790,9 @@ def consistency_summary(runs: Sequence[Run]) -> ConsistencySummary:
 
 # --- Heart-rate zones & training load (workout HR only) ---------------------
 
-# Zone boundaries as a fraction of estimated HR max. Z5 upper bound is open.
+# Zone boundaries as a fraction of heart-rate *reserve* (Karvonen), not raw
+# %HRmax: a plain %HRmax split pushes an efficient, low-resting-HR runner's easy
+# aerobic running up into the moderate band. Z5 upper bound is open.
 _HR_ZONES: tuple[tuple[str, float, float], ...] = (
     ("Z1", 0.50, 0.60),
     ("Z2", 0.60, 0.70),
@@ -829,22 +831,37 @@ def hr_zone_labels() -> tuple[str, ...]:
 
 
 def hr_zone_index(fraction: float) -> int | None:
-    """Index (0..4) of the HR zone for a fraction of HR max, or None if below Z1."""
+    """Index (0..4) of the HR zone for a fraction of reserve, or None if below Z1."""
     for index, (_label, low, high) in enumerate(_HR_ZONES):
         if low <= fraction < high:
             return index
     return None
 
 
-def hr_zone_seconds(samples: Sequence[float], hr_max: float) -> list[HrZone]:
+def hr_reserve_fraction(hr: float, hr_max: float, hr_rest: float) -> float | None:
+    """Fraction of heart-rate reserve for ``hr``; ``None`` if the reserve is <= 0.
+
+    With ``hr_rest = 0`` this reduces to plain %HRmax, so callers that don't know
+    resting HR keep the old behaviour.
+    """
+    reserve = hr_max - hr_rest
+    return (hr - hr_rest) / reserve if reserve > 0 else None
+
+
+def hr_zone_seconds(
+    samples: Sequence[float], hr_max: float, hr_rest: float = 0.0
+) -> list[HrZone]:
     """Time (approx, ~1 sample/s) in each HR zone from workout HR samples.
 
-    Zones are percentages of ``hr_max``; each carries its bpm range so figures
-    can show exactly which heart-rate band each zone covers.
+    Zones are fractions of heart-rate *reserve* (``hr_max - hr_rest``); each
+    carries its bpm range so figures show which band it covers. ``hr_rest = 0``
+    falls back to plain %HRmax.
     """
+    reserve = hr_max - hr_rest
     counts = [0] * len(_HR_ZONES)
     for hr in samples:
-        index = hr_zone_index(hr / hr_max) if hr_max else None
+        fraction = hr_reserve_fraction(hr, hr_max, hr_rest)
+        index = hr_zone_index(fraction) if fraction is not None else None
         if index is not None:
             counts[index] += 1
     zones: list[HrZone] = []
@@ -853,8 +870,8 @@ def hr_zone_seconds(samples: Sequence[float], hr_max: float) -> list[HrZone]:
             HrZone(
                 label=label,
                 seconds=counts[index],
-                low_bpm=round(low * hr_max),
-                high_bpm=None if high >= 10 else round(high * hr_max),
+                low_bpm=round(hr_rest + low * reserve),
+                high_bpm=None if high >= 10 else round(hr_rest + high * reserve),
             )
         )
     return zones

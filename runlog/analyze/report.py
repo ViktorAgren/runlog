@@ -256,7 +256,8 @@ def run(
     # the HR-max estimate — never passive/resting HR.
     hr = metrics.hr_samples(conn, [r.activity_id for r in runs])
     hr_max_value = hr_max if hr_max else metrics.estimated_hr_max(hr)
-    zones = metrics.hr_zone_seconds(hr, hr_max_value)
+    hr_rest_value = metrics.resting_hr_median(conn)
+    zones = metrics.hr_zone_seconds(hr, hr_max_value, hr_rest_value)
 
     # Training charts (running workouts only) and passive recovery charts go in
     # separate folders so the two data kinds are never visually mixed.
@@ -471,7 +472,9 @@ def run(
 
     # Stream-based physiology: intensity distribution (polarization) and
     # regression cardiac drift, both from each run's own HR/velocity stream.
-    intensity = physiology.training_intensity_distribution(conn, runs, hr_max_value)
+    intensity = physiology.training_intensity_distribution(
+        conn, runs, hr_max_value, hr_rest_value
+    )
     if intensity is not None:
         produced.append(charts.intensity_distribution_chart(intensity, analytics_dir))
     # Cardiac drift feeds a summary line only; as a per-run scatter it was noise.
