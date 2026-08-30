@@ -85,10 +85,15 @@ def _apple_block(day: str, kind: str, workout: AppleWorkout) -> list[str]:
 
 def to_markdown(plan: TrainingPlan, zones: Sequence[TrainingZone] = ()) -> str:
     """Render the full plan as a markdown document."""
+    horizon = (
+        f"**Race date:** {plan.race_date}  ·  **{plan.weeks_to_goal} weeks**"
+        if plan.race_date
+        else f"**Ongoing block**  ·  **{plan.weeks_to_goal} weeks** (review and extend)"
+    )
     lines: list[str] = [
         f"# Training plan — {plan.goal}",
         "",
-        f"**Race date:** {plan.race_date}  ·  **{plan.weeks_to_goal} weeks**",
+        horizon,
         "",
         plan.summary,
     ]

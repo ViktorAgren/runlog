@@ -93,10 +93,10 @@ class Week(BaseModel):
 
 
 class TrainingPlan(BaseModel):
-    """A full, dated training plan for a goal race."""
+    """A full training plan for a goal (a race, or an ongoing block)."""
 
     goal: str
-    race_date: str
+    race_date: str | None = None  # None for an ongoing, no-race block
     weeks_to_goal: int
     summary: str = Field(
         description="Overall approach, grounded in the athlete's current fitness"

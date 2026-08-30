@@ -34,9 +34,9 @@ class PlanRequest:
     """The goal and real-world constraints for a plan."""
 
     goal: str
-    race_date: date
+    race_date: date | None  # None = an ongoing block with no scheduled race
     training_days: tuple[str, ...]
-    weeks_to_goal: int
+    weeks_to_goal: int  # block length (weeks to the race, or the ongoing span)
     target_time: str | None = None
     max_distance_km: float | None = None
     max_time_min: int | None = None

@@ -166,7 +166,8 @@ markdown to `data/plans/` and prints it. Needs `ANTHROPIC_API_KEY` unless
 | Flag | Default | Description |
 | --- | --- | --- |
 | `--goal G` (**required**) | — | Race distance, e.g. `3k`, `5k`, `10k`, `half` |
-| `--date D` (**required**) | — | Race date, `YYYY-MM-DD` |
+| `--date D` | — | Race date, `YYYY-MM-DD`. Omit for an ongoing block with no race |
+| `--weeks N` | `8` | Block length when no `--date` — a rolling block to review and extend, ending in a time-trial checkpoint |
 | `--days DAYS` (**required**) | — | Available training days, comma-separated, e.g. `mon,wed,sat` |
 | `--target-time T` | — | Optional goal finish time, e.g. `12:00` |
 | `--max-distance KM` | — | Cap on any single run |

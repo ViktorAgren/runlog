@@ -31,14 +31,20 @@ COACH_SYSTEM = (
     "custom workout is an ordered list of blocks: a Warm Up, repeated Work/"
     "Recovery pairs (use `sets` with a repeat count), and a Cool Down; put the "
     "pace and/or HR target on each Work step and a goal (distance/time/Open) on "
-    "every step. Leave apple_workout null for Easy/Long/Recovery/Rest. (7) Taper "
-    "into race day. (8) The TRAINING ZONES are derived from VDOT; cross-check "
-    "them against the ADVANCED FITNESS block. If the critical-speed model or "
-    "recent best efforts imply the athlete sustains faster paces than the VDOT "
-    "zones suggest (e.g. CS predicts a race faster than the goal, or best "
-    "efforts beat the zone paces), say so in the summary and lean the harder "
-    "bands (Threshold/Interval/Rep/goal-pace) toward that measured evidence "
-    "rather than the VDOT table — while keeping Easy/Recovery genuinely easy. "
+    "every step. Leave apple_workout null for Easy/Long/Recovery/Rest. (7) If a "
+    "RACE DATE is given, taper into it. If this is an ONGOING block (the request "
+    "shows HORIZON, no race), do NOT taper: build progressively, keep the final "
+    "week a sustainable normal week (not a peak), and end it with a checkpoint — "
+    "a time-trial or parkrun at the goal distance — to measure progress, noting "
+    "the block is meant to be regenerated and extended. Bias the quality work "
+    "toward the goal distance's demands (threshold/tempo for 10k). (8) The "
+    "TRAINING ZONES are derived from VDOT; cross-check them against the ADVANCED "
+    "FITNESS block. If the critical-speed model or recent best efforts imply the "
+    "athlete sustains faster paces than the VDOT zones suggest (e.g. CS predicts "
+    "a race faster than the goal, or best efforts beat the zone paces), say so "
+    "in the summary and lean the harder bands (Threshold/Interval/Rep/goal-pace) "
+    "toward that measured evidence rather than the VDOT table — while keeping "
+    "Easy/Recovery genuinely easy. "
     "Explain your reasoning in each week's notes and the summary. "
     "Fill every field of the required structured format."
 )
@@ -121,10 +127,19 @@ def build_user_message(profile: AthleteProfile, request: PlanRequest) -> str:
         limits.append(f"max {request.max_time_min} min per run")
     limit_text = "; ".join(limits) if limits else "none stated"
 
+    if request.race_date is not None:
+        horizon = f"RACE DATE: {request.race_date} ({request.weeks_to_goal} weeks away)"
+    else:
+        horizon = (
+            f"HORIZON: rolling {request.weeks_to_goal}-week block — NO race "
+            f"scheduled. Ongoing block to review and extend; the goal is to "
+            f"raise {request.goal} fitness."
+        )
+
     return "\n".join(
         [
             f"GOAL: {goal}",
-            f"RACE DATE: {request.race_date} ({request.weeks_to_goal} weeks away)",
+            horizon,
             f"AVAILABLE TRAINING DAYS: {', '.join(request.training_days)}",
             f"CONSTRAINTS: {limit_text}",
             "",

@@ -228,8 +228,12 @@ def _cmd_plan(args: argparse.Namespace) -> int:
     from runlog.plan.render import to_markdown
 
     paths = resolve_paths()
-    race_date = date.fromisoformat(args.date)
-    weeks = max(1, math.ceil((race_date - date.today()).days / 7))
+    _DEFAULT_BLOCK_WEEKS = 8
+    race_date = date.fromisoformat(args.date) if args.date else None
+    if race_date is not None:
+        weeks = max(1, math.ceil((race_date - date.today()).days / 7))
+    else:
+        weeks = args.weeks or _DEFAULT_BLOCK_WEEKS
     days = tuple(d.strip().capitalize() for d in args.days.split(",") if d.strip())
     request = PlanRequest(
         goal=args.goal,
@@ -259,10 +263,11 @@ def _cmd_plan(args: argparse.Namespace) -> int:
         )
         return 1
 
+    stem = args.date if race_date is not None else f"ongoing-{date.today()}"
     out = (
         Path(args.out)
         if args.out
-        else paths.data_dir / "plans" / f"plan-{args.goal}-{args.date}.md"
+        else paths.data_dir / "plans" / f"plan-{args.goal}-{stem}.md"
     )
     out.parent.mkdir(parents=True, exist_ok=True)
     markdown = to_markdown(plan, profile.zones)
@@ -409,7 +414,14 @@ def _build_parser() -> argparse.ArgumentParser:
 
     plan_cmd = sub.add_parser("plan", help="generate an AI training plan")
     plan_cmd.add_argument("--goal", required=True, help="e.g. 3k, 5k, 10k, half")
-    plan_cmd.add_argument("--date", required=True, help="race date, YYYY-MM-DD")
+    plan_cmd.add_argument(
+        "--date", help="race date, YYYY-MM-DD (omit for an ongoing block)"
+    )
+    plan_cmd.add_argument(
+        "--weeks",
+        type=int,
+        help="block length in weeks when no --date is given (default 8)",
+    )
     plan_cmd.add_argument(
         "--days", required=True, help="training days, e.g. mon,wed,sat"
     )
