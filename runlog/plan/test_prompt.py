@@ -74,6 +74,30 @@ def test_dry_run_text_is_self_contained() -> None:
     assert "=== OUTPUT FORMAT ===" in text  # so a chat produces usable markdown
 
 
+def test_user_message_includes_advanced_fitness_and_cs_anchoring() -> None:
+    import dataclasses
+
+    from runlog.analyze.cs import CsModel, CsPoint
+    from runlog.plan.profile import AdvancedFitness
+
+    advanced = AdvancedFitness(
+        critical_speed=CsModel(
+            cs_mps=3.9, d_prime_m=200.0, r=0.99, points=[CsPoint(1000.0, 250.0)]
+        ),
+        best_effort_records=[],
+        aerobic_decoupling=[],
+        avg_cadence=170.0,
+    )
+    profile = dataclasses.replace(_profile(), advanced=advanced)
+
+    message = build_user_message(profile, _request())
+    text = dry_run_text(profile, _request())
+
+    assert "ADVANCED FITNESS" in message and "Critical speed 3.90 m/s" in message
+    # The coach system prompt tells the planner to reconcile VDOT zones with it.
+    assert "cross-check" in text and "critical-speed model" in text
+
+
 def test_to_markdown_renders_targets_and_apple_workout() -> None:
     plan = TrainingPlan(
         goal="3k",

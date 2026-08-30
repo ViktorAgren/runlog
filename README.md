@@ -276,7 +276,10 @@ assigns each session a zone and copies the pace/HR/RPE from it (rather than
 guessing), tags venue (Track optional vs Road/GPS), and for interval/tempo/track
 sessions produces an Apple Watch custom workout (warm-up → work/recovery reps →
 cool-down with pace/HR alerts). It respects your available days and max run
-distance/time and tapers into race day.
+distance/time and tapers into race day. It also cross-checks the VDOT zones
+against a **critical-speed model** fit from your best efforts, so when you're
+running faster than VDOT implies it leans the hard bands toward measured
+evidence rather than the table.
 
 No API credits? Add `--dry-run` to print the prompt instead of calling the API.
 Paste it into Claude Code or claude.ai (covered by a Pro/Max subscription) — the
@@ -286,9 +289,12 @@ Console API is billed separately from chat subscriptions.
 
 Point `plan-review` at the plan markdown plus its start date. It builds a
 progress report from your DB — per-plan-week volume vs. plan, a per-workout log
-(date, kind, distance, pace, HR, zone split, GAP) reconstructed from the
-streams, fitness trajectory (CTL then vs. now), ACWR, and readiness flags — and
-asks Claude to compare each performed session to the planned one and advise. The
+(date, kind, distance, pace, HR, zone split, GAP, cadence, cardiac drift)
+reconstructed from the streams, **per-rep detail for structured sessions**
+(each rep's avg/max HR plus the set's HR drift and pace evenness), an advanced-
+fitness block (critical speed, best efforts, decoupling), fitness trajectory
+(CTL then vs. now), ACWR, and readiness flags — and asks Claude to compare each
+performed session to the planned one and advise. The
 plan markdown is passed verbatim (never re-parsed), so it works with any plan
 you've generated. Same `--dry-run` path as `plan`.
 

@@ -9,6 +9,7 @@ the plan. Pure aggregation over the analysis layer — no API, no plan parsing.
 
 from __future__ import annotations
 
+import itertools
 import math
 import statistics
 from dataclasses import dataclass, field
@@ -16,6 +17,7 @@ from datetime import date
 from typing import TYPE_CHECKING
 
 from runlog.analyze import analytics, anomaly, metrics, physiology, streams
+from runlog.plan import profile
 
 if TYPE_CHECKING:
     import sqlite3
@@ -26,6 +28,11 @@ if TYPE_CHECKING:
 # is in Z1-2, else "Moderate" (mostly Z3 — often easy running under %HRmax zones).
 _QUALITY_HARD_FRACTION = 30.0
 _EASY_FRACTION = 50.0
+# Rep-set detection: ignore sub-200 m transition laps, and treat every lap
+# within 15% of the fastest lap's pace as a "work" rep (warm-up, jogs and
+# cool-down are all clearly slower, so this isolates the reps).
+_MIN_REP_M = 200.0
+_REP_PACE_TOLERANCE = 1.15
 
 
 @dataclass(frozen=True)
@@ -37,6 +44,7 @@ class LapSplit:
     distance_m: float | None
     pace_s_per_km: float | None
     avg_hr: float | None
+    max_hr: float | None = None  # peak HR within the lap, from the point stream
 
 
 @dataclass(frozen=True)
@@ -58,6 +66,17 @@ class WorkoutDetail:
     negative_split_pct: float | None
     elevation_gain_m: float | None
     laps: tuple[LapSplit, ...] = ()
+    # Rep-set fatigue signals (None unless it's a structured session): avg HR of
+    # the last work rep minus the first, and the coefficient of variation of the
+    # work reps' paces (how even the set was).
+    rep_hr_drift: float | None = None
+    rep_pace_cv: float | None = None
+    # Running dynamics (Apple) and physiology, per run — None when unavailable.
+    avg_cadence: float | None = None
+    avg_power_w: float | None = None
+    avg_stride_length_m: float | None = None
+    cardiac_drift_pct: float | None = None  # +ve = HR drifted up for same pace
+    running_economy: float | None = None  # m/s per watt
 
 
 @dataclass(frozen=True)
@@ -97,6 +116,7 @@ class ProgressReport:
     off_runs: int = 0
     workouts: list[WorkoutDetail] = field(default_factory=list)
     plan_weeks: list[PlanWeek] = field(default_factory=list)
+    advanced: profile.AdvancedFitness | None = None
 
 
 def _ctl_at(points: list[analytics.PmcPoint], start: date) -> float | None:
@@ -147,8 +167,14 @@ def _classify(zones: tuple[float, float, float] | None) -> str:
     return "Moderate"
 
 
-def _laps(conn: sqlite3.Connection, run: Run) -> tuple[LapSplit, ...]:
-    """Stored lap splits for a run (only when it has a structured set)."""
+def _laps(
+    conn: sqlite3.Connection, run: Run, stream: list[streams.StreamSample]
+) -> tuple[LapSplit, ...]:
+    """Stored lap splits for a run (only when it has a structured set).
+
+    Per-lap max HR is recovered by slicing the HR stream at the laps' cumulative
+    end times, since the ``laps`` table stores only the average.
+    """
     rows = conn.execute(
         """
         SELECT lap_index, elapsed_s, distance_m, avg_pace_s_per_km, avg_hr
@@ -158,6 +184,8 @@ def _laps(conn: sqlite3.Connection, run: Run) -> tuple[LapSplit, ...]:
     ).fetchall()
     if len(rows) < 3:
         return ()
+    ends = list(itertools.accumulate(int(row["elapsed_s"] or 0) for row in rows))
+    max_hrs = streams.lap_hr_stats(stream, ends) if stream else [None] * len(rows)
     return tuple(
         LapSplit(
             index=int(row["lap_index"]),
@@ -165,9 +193,41 @@ def _laps(conn: sqlite3.Connection, run: Run) -> tuple[LapSplit, ...]:
             distance_m=row["distance_m"],
             pace_s_per_km=row["avg_pace_s_per_km"],
             avg_hr=row["avg_hr"],
+            max_hr=max_hrs[i],
         )
-        for row in rows
+        for i, row in enumerate(rows)
     )
+
+
+def _rep_set_stats(
+    laps: tuple[LapSplit, ...],
+) -> tuple[float | None, float | None]:
+    """HR drift (last minus first work rep) and pace CV over the work reps.
+
+    Isolates the "work" reps from warm-up/jog/cool-down laps: drops sub-200 m
+    transitions, then keeps laps within 15% of the fastest lap's pace (jogs,
+    warm-up and cool-down are all clearly slower). Returns ``(None, None)`` when
+    there is no clear rep set.
+    """
+    reps = [
+        (lap.pace_s_per_km, lap.avg_hr)
+        for lap in laps
+        if lap.pace_s_per_km is not None
+        and lap.distance_m is not None
+        and lap.distance_m >= _MIN_REP_M
+    ]
+    if len(reps) < 3:
+        return None, None
+    fastest = min(pace for pace, _ in reps)
+    work = [(pace, hr) for pace, hr in reps if pace <= fastest * _REP_PACE_TOLERANCE]
+    if len(work) < 2:
+        return None, None
+    paces = [pace for pace, _ in work]
+    hrs = [hr for _, hr in work if hr is not None]
+    mean_pace = statistics.mean(paces)
+    drift = round(hrs[-1] - hrs[0], 1) if len(hrs) >= 2 else None
+    cv = round(statistics.pstdev(paces) / mean_pace * 100, 1) if mean_pace else None
+    return drift, cv
 
 
 def workout_detail(
@@ -177,6 +237,8 @@ def workout_detail(
     zones = _zone_pcts(stream, hr_max, hr_rest) if stream else None
     pacing = streams.pacing_stats(stream) if stream else None
     climb = streams.climb_stats(stream) if stream else None
+    laps = _laps(conn, run, stream)
+    rep_hr_drift, rep_pace_cv = _rep_set_stats(laps)
     return WorkoutDetail(
         day=run.start.date(),
         weekday=run.start.strftime("%a"),
@@ -196,7 +258,14 @@ def workout_detail(
         ),
         negative_split_pct=pacing.negative_split_pct if pacing else None,
         elevation_gain_m=round(climb.ascent_m) if climb else run.elevation_gain_m,
-        laps=_laps(conn, run),
+        laps=laps,
+        rep_hr_drift=rep_hr_drift,
+        rep_pace_cv=rep_pace_cv,
+        avg_cadence=run.avg_cadence,
+        avg_power_w=run.avg_power_w,
+        avg_stride_length_m=run.avg_stride_length_m,
+        cardiac_drift_pct=physiology.cardiac_drift_pct(stream) if stream else None,
+        running_economy=metrics.running_economy(run),
     )
 
 
@@ -278,4 +347,5 @@ def build_progress(
         off_runs=len(flags.performance),
         workouts=workouts,
         plan_weeks=_plan_weeks(start, workouts),
+        advanced=profile.build_advanced_fitness(conn, all_runs),
     )

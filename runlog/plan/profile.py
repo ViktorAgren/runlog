@@ -12,13 +12,15 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from runlog.analyze import analytics, metrics
+from runlog.analyze import analytics, cs, metrics
 from runlog.plan import targets
 
 if TYPE_CHECKING:
     import sqlite3
     from collections.abc import Sequence
 
+    from runlog.analyze.analytics import EffortRecord
+    from runlog.analyze.metrics import Run
     from runlog.plan.targets import TrainingZone
 
 _DEFAULT_HR_REST = 50.0
@@ -38,6 +40,34 @@ class PlanRequest:
     target_time: str | None = None
     max_distance_km: float | None = None
     max_time_min: int | None = None
+
+
+@dataclass(frozen=True)
+class AdvancedFitness:
+    """Measured-performance signals shared by the planner and the review.
+
+    The critical-speed model and recent best efforts anchor training pace to
+    what the athlete actually runs, as a cross-check on the VDOT-derived zones;
+    decoupling and cadence add aerobic-durability and form context.
+    """
+
+    critical_speed: cs.CsModel | None
+    best_effort_records: list[EffortRecord]
+    aerobic_decoupling: list[tuple[date, float]]
+    avg_cadence: float | None
+
+
+def build_advanced_fitness(
+    conn: sqlite3.Connection, runs: Sequence[Run]
+) -> AdvancedFitness:
+    """Fit the critical-speed model and gather best efforts, decoupling, cadence."""
+    cadences = [run.avg_cadence for run in runs if run.avg_cadence]
+    return AdvancedFitness(
+        critical_speed=cs.critical_speed(conn, runs),
+        best_effort_records=analytics.best_effort_records(conn, runs),
+        aerobic_decoupling=analytics.aerobic_decoupling(conn, runs),
+        avg_cadence=round(statistics.mean(cadences), 1) if cadences else None,
+    )
 
 
 @dataclass(frozen=True)
@@ -65,6 +95,7 @@ class AthleteProfile:
     hr_rest: float | None = None
     vdot: float | None = None
     zones: list[TrainingZone] = field(default_factory=list)
+    advanced: AdvancedFitness | None = None
 
 
 def _median_resting_hr(conn: sqlite3.Connection) -> float:
@@ -147,4 +178,5 @@ def build_profile(
         hr_rest=hr_rest,
         vdot=round(vdot, 1) if vdot is not None else None,
         zones=zones,
+        advanced=build_advanced_fitness(conn, runs),
     )

@@ -20,6 +20,36 @@ def _sample(offset: int, dist: float, alt: float | None = None) -> StreamSample:
     )
 
 
+def _hr_sample(offset: int, hr: float | None) -> StreamSample:
+    return StreamSample(
+        offset_s=offset,
+        distance_m=float(offset),
+        altitude_m=None,
+        lat=None,
+        lng=None,
+        hr=hr,
+        velocity_mps=None,
+    )
+
+
+def test_lap_hr_stats_max_per_lap_window() -> None:
+    # Two laps ending at 10 s and 20 s: max HR per window, plus a lap with no HR.
+    stream = [
+        _hr_sample(2, 150.0),
+        _hr_sample(8, 165.0),  # lap 0 max
+        _hr_sample(12, 170.0),
+        _hr_sample(18, 175.0),  # lap 1 max
+        _hr_sample(25, 140.0),  # past last boundary -> falls in the final lap
+    ]
+    assert streams.lap_hr_stats(stream, [10, 20, 30]) == [165.0, 175.0, 140.0]
+
+
+def test_lap_hr_stats_empty_lap_is_none() -> None:
+    stream = [_hr_sample(2, 150.0), _hr_sample(4, 160.0)]
+    # Second lap (10-20 s) has no samples -> None.
+    assert streams.lap_hr_stats(stream, [10, 20]) == [160.0, None]
+
+
 @pytest.mark.parametrize(
     ("grade", "expected"),
     [(0.0, 1.0), (0.10, 1.658), (-0.10, 0.598)],

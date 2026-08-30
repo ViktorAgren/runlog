@@ -10,6 +10,7 @@ pacing quality.
 
 from __future__ import annotations
 
+import bisect
 import statistics
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -69,6 +70,31 @@ def full_stream(
             (int(activity_id),),
         )
     ]
+
+
+def lap_hr_stats(
+    stream: Sequence[StreamSample], lap_end_offsets: Sequence[int]
+) -> list[float | None]:
+    """Max HR within each lap, from the point stream and the laps' end times.
+
+    ``lap_end_offsets`` are the cumulative end offsets (seconds from the run
+    start) of each lap, ascending. A point at ``offset_s`` belongs to the first
+    lap whose end exceeds it; points past the last boundary fall in the final
+    lap. Returns one max HR per lap (``None`` for a lap with no HR samples), so
+    a per-rep max can sit next to the stored per-rep average.
+    """
+    ends = list(lap_end_offsets)
+    maxes: list[float | None] = [None] * len(ends)
+    if not ends:
+        return maxes
+    for sample in stream:
+        if sample.hr is None:
+            continue
+        lap = min(bisect.bisect_right(ends, sample.offset_s), len(ends) - 1)
+        current = maxes[lap]
+        if current is None or sample.hr > current:
+            maxes[lap] = sample.hr
+    return maxes
 
 
 def grade_adjust_factor(grade: float) -> float:

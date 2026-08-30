@@ -86,6 +86,62 @@ def test_build_review_message_includes_plan_progress_and_zones() -> None:
     assert "12/26/62" in message  # its zone split
 
 
+def test_build_review_message_includes_per_rep_and_advanced() -> None:
+    import dataclasses
+
+    from runlog.analyze.analytics import EffortRecord
+    from runlog.analyze.cs import CsModel, CsPoint
+    from runlog.plan.profile import AdvancedFitness
+    from runlog.plan.progress import LapSplit
+
+    workout = WorkoutDetail(
+        day=date(2026, 7, 7),
+        weekday="Tue",
+        kind="Quality",
+        distance_km=8.0,
+        moving_s=2400,
+        avg_pace_s_per_km=300.0,
+        avg_hr=165.0,
+        max_hr=180.0,
+        easy_pct=2.0,
+        moderate_pct=40.0,
+        hard_pct=58.0,
+        gap_pace_s_per_km=300.0,
+        negative_split_pct=None,
+        elevation_gain_m=10.0,
+        laps=(
+            LapSplit(1, 240, 1000.0, 240.0, 160.0, 172.0),
+            LapSplit(2, 240, 1000.0, 240.0, 176.0, 184.0),
+        ),
+        rep_hr_drift=16.0,
+        rep_pace_cv=0.0,
+        avg_cadence=170.0,
+        cardiac_drift_pct=3.5,
+        running_economy=0.013,
+    )
+    advanced = AdvancedFitness(
+        critical_speed=CsModel(
+            cs_mps=3.9, d_prime_m=200.0, r=0.99, points=[CsPoint(1000.0, 250.0)]
+        ),
+        best_effort_records=[EffortRecord("1k", 1000.0, 245.0, date(2026, 7, 7))],
+        aerobic_decoupling=[(date(2026, 7, 1), 4.2)],
+        avg_cadence=169.0,
+    )
+    progress = dataclasses.replace(_progress(), workouts=[workout], advanced=advanced)
+
+    message = build_review_message(_PLAN_MD, progress, _profile())
+
+    # Per-rep max HR and the rep-set drift/CV note.
+    assert "@160 max172" in message
+    assert "[set: HR drift +16 across reps, pace CV 0%]" in message
+    # New per-workout columns and the advanced-fitness block.
+    assert "| Cad | Drift " in message and "| 170 | +3.5% |" in message
+    assert "ADVANCED FITNESS" in message
+    assert "Critical speed 3.90 m/s" in message and "predicts 3k 11:58" in message
+    assert "Best continuous efforts: 1k 4:05" in message
+    assert "Aerobic decoupling" in message and "+4.2%" in message
+
+
 class _FakeMessages:
     def __init__(self, review: PlanReview) -> None:
         self._review = review
