@@ -337,7 +337,7 @@ def _consume_record(
     elem: Element,
     metrics: list[HealthMetric],
     daily: dict[tuple[str, date, str], float],
-    sleep_seconds: dict[tuple[date, str], float],
+    sleep_intervals: dict[str, list[tuple[datetime, datetime]]],
     hr_samples: list[tuple[datetime, float]],
     dynamics: dict[str, list[tuple[datetime, float]]],
 ) -> None:
@@ -376,8 +376,94 @@ def _consume_record(
             start, end = elem.get("startDate"), elem.get("endDate")
             if start and end:
                 begin, finish = _parse_dt(start), _parse_dt(end)
-                night_key = (finish.date(), elem.get("sourceName", ""))
-                sleep_seconds[night_key] += (finish - begin).total_seconds()
+                sleep_intervals[elem.get("sourceName", "")].append((begin, finish))
+
+
+# An awake gap longer than this ends one sleep session and starts another, so a
+# nap or the pre-midnight start of the next night is never summed onto the same
+# calendar date as the main overnight sleep.
+_SLEEP_SESSION_GAP_S = 2 * 3600
+
+# Dedicated sleep trackers (matched case-insensitively by substring) are trusted
+# over the Apple Watch, whose auto-detection scores long sedentary evenings as
+# sleep. For any night one of these recorded, its figure wins and the watch is
+# ignored; the watch is used only as a fallback where none of them logged.
+_PREFERRED_SLEEP_SOURCES = ("Sleep Cycle",)
+
+
+def _merge_intervals(
+    intervals: list[tuple[datetime, datetime]],
+) -> list[tuple[datetime, datetime]]:
+    """Union overlapping/touching intervals into sorted, disjoint spans.
+
+    A single device emits many overlapping asleep segments (Core, Deep, ...) per
+    night, so the covered time — not the sum of segment durations — is the real
+    sleep. Unioning here removes that intra-device overlap.
+    """
+    merged: list[tuple[datetime, datetime]] = []
+    for begin, finish in sorted(intervals):
+        if merged and begin <= merged[-1][1]:
+            if finish > merged[-1][1]:
+                merged[-1] = (merged[-1][0], finish)
+        else:
+            merged.append((begin, finish))
+    return merged
+
+
+def _sessions_by_night(
+    intervals: list[tuple[datetime, datetime]],
+) -> dict[date, float]:
+    """Longest sleep-session seconds per wake-up date, for one source's segments.
+
+    Segments are unioned, split into sessions on awake gaps longer than
+    ``_SLEEP_SESSION_GAP_S``, attributed to the date each session *ends*, and
+    reduced to the longest session per date — so a nap or the pre-midnight start
+    of the next night never inflates a night's total.
+    """
+    by_night: dict[date, float] = {}
+    session_s = 0.0
+    session_end: datetime | None = None
+    for begin, finish in _merge_intervals(intervals):
+        if (
+            session_end is not None
+            and (begin - session_end).total_seconds() > _SLEEP_SESSION_GAP_S
+        ):
+            night = session_end.date()
+            by_night[night] = max(by_night.get(night, 0.0), session_s)
+            session_s = 0.0
+        session_s += (finish - begin).total_seconds()
+        session_end = finish
+    if session_end is not None:
+        night = session_end.date()
+        by_night[night] = max(by_night.get(night, 0.0), session_s)
+    return by_night
+
+
+def _nightly_sleep_hours(
+    intervals_by_source: dict[str, list[tuple[datetime, datetime]]],
+) -> dict[date, float]:
+    """Hours of the main sleep session per night, one trusted source per night.
+
+    Each source's segments are reduced to a longest-session-per-night figure
+    (:func:`_sessions_by_night`). A night recorded by a preferred tracker
+    (:data:`_PREFERRED_SLEEP_SOURCES`) takes that tracker's figure and the watch
+    is ignored; otherwise the largest remaining source is used. Sources are never
+    summed together, so overlapping devices cannot double-count a night.
+    """
+    preferred: dict[date, float] = {}
+    fallback: dict[date, float] = {}
+    for source, intervals in intervals_by_source.items():
+        is_preferred = any(
+            name.lower() in source.lower() for name in _PREFERRED_SLEEP_SOURCES
+        )
+        target = preferred if is_preferred else fallback
+        for night, seconds in _sessions_by_night(intervals).items():
+            target[night] = max(target.get(night, 0.0), seconds)
+    nights = set(preferred) | set(fallback)
+    return {
+        night: round(preferred.get(night, fallback.get(night, 0.0)) / 3600, 2)
+        for night in nights
+    }
 
 
 def parse_export(source: IO[bytes]) -> AppleExport:
@@ -385,7 +471,7 @@ def parse_export(source: IO[bytes]) -> AppleExport:
     workouts: list[AppleWorkout] = []
     metrics: list[HealthMetric] = []
     daily: dict[tuple[str, date, str], float] = defaultdict(float)
-    sleep_seconds: dict[tuple[date, str], float] = defaultdict(float)
+    sleep_intervals: dict[str, list[tuple[datetime, datetime]]] = defaultdict(list)
     hr_samples: list[tuple[datetime, float]] = []
     dynamics: dict[str, list[tuple[datetime, float]]] = defaultdict(list)
     for _event, elem in iterparse(source, events=("end",)):
@@ -393,7 +479,7 @@ def parse_export(source: IO[bytes]) -> AppleExport:
             workouts.append(_parse_workout(elem))
             elem.clear()
         elif elem.tag == "Record":
-            _consume_record(elem, metrics, daily, sleep_seconds, hr_samples, dynamics)
+            _consume_record(elem, metrics, daily, sleep_intervals, hr_samples, dynamics)
             elem.clear()
     # Reduce the per-source daily totals to one value per (metric, day): take
     # the largest single source rather than summing devices that both tracked
@@ -406,21 +492,12 @@ def parse_export(source: IO[bytes]) -> AppleExport:
         metrics.append(
             HealthMetric(metric_type, _midnight(day), round(total, 1), source="apple")
         )
-    # Several devices can record the same night (a sleep app and the watch)
-    # with overlapping intervals, so a night's hours come from the single
-    # source that captured the most sleep, never the sum across sources.
-    nightly: dict[date, float] = defaultdict(float)
-    for (day, _source), seconds in sleep_seconds.items():
-        nightly[day] = max(nightly[day], seconds)
-    for day, seconds in nightly.items():
+    # Group each source's asleep segments into overnight sessions and attribute
+    # one main session to each night; this stops two nights' fragments (or a nap)
+    # colliding on a single calendar date and never sums overlapping devices.
+    for day, hours in _nightly_sleep_hours(sleep_intervals).items():
         metrics.append(
-            HealthMetric(
-                "sleep_hours",
-                _midnight(day),
-                round(seconds / 3600, 2),
-                unit="h",
-                source="apple",
-            )
+            HealthMetric("sleep_hours", _midnight(day), hours, unit="h", source="apple")
         )
     hr_samples.sort(key=lambda pair: pair[0])
     return AppleExport(

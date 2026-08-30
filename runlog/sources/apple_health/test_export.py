@@ -132,8 +132,9 @@ def test_parse_export_periodic_daily_and_sleep_metrics() -> None:
     assert by_type["sleep_hours"] == 7.0  # 2h + 5h asleep; InBed ignored
 
 
-# The same night recorded by two devices (a sleep app and the watch): their
-# intervals overlap, so per-night totals must come from one source, not the sum.
+# The same night recorded by a dedicated sleep app and the watch: the app is
+# the trusted source, so its figure wins and the watch is ignored for that night
+# (never summed, and not blended with the watch's over-scored auto-detection).
 _TWO_SOURCE_SLEEP_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
 <HealthData locale="en_GB">
  <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Sleep Cycle"
@@ -149,12 +150,56 @@ _TWO_SOURCE_SLEEP_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
-def test_sleep_hours_takes_largest_source_not_the_sum_across_devices() -> None:
+def test_sleep_hours_prefers_dedicated_tracker_over_watch() -> None:
     metrics = parse_export(io.BytesIO(_TWO_SOURCE_SLEEP_XML)).metrics
     sleep = [m.value for m in metrics if m.metric_type == "sleep_hours"]
-    # Sleep Cycle logged 7.0 h, the watch 7.5 h across two stages; summing
-    # sources would give a bogus 14.5 h night.
-    assert sleep == [7.5]
+    # Sleep Cycle covered 23:00-06:00 (7.0 h); its figure wins over the watch's
+    # 7.5 h. Summing the devices would give a bogus 14.5 h night.
+    assert sleep == [7.0]
+
+
+# One device, one calendar date, but two sleep sessions: the main overnight
+# sleep (ends 07:00) and an afternoon nap (ends 15:00). They must not be summed
+# into a bogus 8 h+ "night" — the longest session for the date is the night.
+_NIGHT_PLUS_NAP_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
+<HealthData locale="en_GB">
+ <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Watch"
+   value="HKCategoryValueSleepAnalysisAsleepCore"
+   startDate="2026-07-22 00:30:00 +0000" endDate="2026-07-22 06:40:00 +0000"/>
+ <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Watch"
+   value="HKCategoryValueSleepAnalysisAsleepCore"
+   startDate="2026-07-22 13:00:00 +0000" endDate="2026-07-22 15:00:00 +0000"/>
+</HealthData>
+"""
+
+
+def test_sleep_hours_keeps_main_session_not_night_plus_nap_on_same_date() -> None:
+    metrics = parse_export(io.BytesIO(_NIGHT_PLUS_NAP_XML)).metrics
+    sleep = [m.value for m in metrics if m.metric_type == "sleep_hours"]
+    # 6.17 h overnight + 2 h nap would sum to a bogus 8.17 h; keep the night.
+    assert sleep == [6.17]
+
+
+# A single device emits overlapping asleep stages for one night (Core and Deep
+# covering the same minutes). Summing their durations double-counts the overlap.
+_OVERLAPPING_STAGES_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
+<HealthData locale="en_GB">
+ <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Watch"
+   value="HKCategoryValueSleepAnalysisAsleepCore"
+   startDate="2026-07-08 23:00:00 +0000" endDate="2026-07-09 05:00:00 +0000"/>
+ <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Watch"
+   value="HKCategoryValueSleepAnalysisAsleepDeep"
+   startDate="2026-07-09 02:00:00 +0000" endDate="2026-07-09 06:00:00 +0000"/>
+</HealthData>
+"""
+
+
+def test_sleep_hours_unions_overlapping_stages_within_one_source() -> None:
+    metrics = parse_export(io.BytesIO(_OVERLAPPING_STAGES_XML)).metrics
+    sleep = [m.value for m in metrics if m.metric_type == "sleep_hours"]
+    # Covered span 23:00-06:00 = 7 h; summing the 6 h + 4 h stages that overlap
+    # 02:00-05:00 would give a bogus 10 h night.
+    assert sleep == [7.0]
 
 
 # One day of steps recorded by both the iPhone and the Watch: summing the two
