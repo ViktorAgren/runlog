@@ -32,16 +32,23 @@ if TYPE_CHECKING:
 _ZONE_COUNT = 5
 
 
-def zone_seconds_for_run(stream: Sequence[StreamSample], hr_max: float) -> list[float]:
-    """Seconds in each HR zone (Z1..Z5) for one run, dt-weighted per sample."""
+def zone_seconds_for_run(
+    stream: Sequence[StreamSample], hr_max: float, hr_rest: float = 0.0
+) -> list[float]:
+    """Seconds in each HR zone (Z1..Z5) for one run, dt-weighted per sample.
+
+    Zones are fractions of heart-rate reserve; ``hr_rest = 0`` falls back to
+    plain %HRmax.
+    """
     buckets = [0.0] * _ZONE_COUNT
-    if hr_max <= 0:
+    if hr_max <= hr_rest:
         return buckets
     for current, nxt in zip(stream, stream[1:], strict=False):
         if current.hr is None:
             continue
         dt = nxt.offset_s - current.offset_s
-        index = metrics.hr_zone_index(current.hr / hr_max)
+        fraction = metrics.hr_reserve_fraction(current.hr, hr_max, hr_rest)
+        index = metrics.hr_zone_index(fraction) if fraction is not None else None
         if dt > 0 and index is not None:
             buckets[index] += dt
     return buckets
@@ -73,13 +80,13 @@ def intensity_distribution(
 
 
 def training_intensity_distribution(
-    conn: sqlite3.Connection, runs: Sequence[Run], hr_max: float
+    conn: sqlite3.Connection, runs: Sequence[Run], hr_max: float, hr_rest: float = 0.0
 ) -> IntensityDistribution | None:
     """Aggregate zone seconds across all runs into one intensity distribution."""
     totals = [0.0] * _ZONE_COUNT
     for run in runs:
         for index, seconds in enumerate(
-            zone_seconds_for_run(full_stream(conn, run.activity_id), hr_max)
+            zone_seconds_for_run(full_stream(conn, run.activity_id), hr_max, hr_rest)
         ):
             totals[index] += seconds
     return intensity_distribution(totals)

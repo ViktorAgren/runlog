@@ -121,10 +121,10 @@ def _plausible_best_efforts(
 
 
 def _zone_pcts(
-    stream: list[streams.StreamSample], hr_max: float
+    stream: list[streams.StreamSample], hr_max: float, hr_rest: float = 0.0
 ) -> tuple[float, float, float] | None:
     """(easy Z1-2, moderate Z3, hard Z4-5) share of time, or None without HR."""
-    seconds = physiology.zone_seconds_for_run(stream, hr_max)
+    seconds = physiology.zone_seconds_for_run(stream, hr_max, hr_rest)
     total = sum(seconds)
     if total <= 0:
         return None
@@ -170,9 +170,11 @@ def _laps(conn: sqlite3.Connection, run: Run) -> tuple[LapSplit, ...]:
     )
 
 
-def workout_detail(conn: sqlite3.Connection, run: Run, hr_max: float) -> WorkoutDetail:
+def workout_detail(
+    conn: sqlite3.Connection, run: Run, hr_max: float, hr_rest: float = 0.0
+) -> WorkoutDetail:
     stream = streams.full_stream(conn, run.activity_id)
-    zones = _zone_pcts(stream, hr_max) if stream else None
+    zones = _zone_pcts(stream, hr_max, hr_rest) if stream else None
     pacing = streams.pacing_stats(stream) if stream else None
     climb = streams.climb_stats(stream) if stream else None
     return WorkoutDetail(
@@ -243,10 +245,12 @@ def build_progress(
     pmc = analytics.performance_management(daily_load)
     acwr = analytics.acwr_series(daily_load)
     ef_trend = analytics.linear_trend(analytics.efficiency_factor(window))
-    intensity = physiology.training_intensity_distribution(conn, window, hr_max_value)
+    intensity = physiology.training_intensity_distribution(
+        conn, window, hr_max_value, hr_rest
+    )
     flags = anomaly.analyze(conn, window, since=start)
     best = _plausible_best_efforts(analytics.best_effort_progressions(conn, window))
-    workouts = [workout_detail(conn, run, hr_max_value) for run in window]
+    workouts = [workout_detail(conn, run, hr_max_value, hr_rest) for run in window]
 
     return ProgressReport(
         start=start,

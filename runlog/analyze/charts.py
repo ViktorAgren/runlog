@@ -435,7 +435,7 @@ def hr_histogram(
 def hr_zones_chart(zones: Sequence[HrZone], hr_max: float, out_dir: Path) -> Path:
     fig, ax = style.figure(
         "Time in heart-rate zones",
-        f"Minutes per zone as a fraction of HRmax ≈ {hr_max:.0f} bpm",
+        f"Minutes per zone by heart-rate reserve (Karvonen); HRmax ≈ {hr_max:.0f} bpm",
         "Zone",
         "Time (minutes)",
     )
