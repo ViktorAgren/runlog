@@ -45,19 +45,26 @@ def init_db(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _drop_if_missing_column(conn: sqlite3.Connection, table: str, column: str) -> None:
+    """Drop ``table`` if it exists but lacks ``column`` (the schema recreates it)."""
+    if not conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+    ).fetchone():
+        return
+    columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+    if column not in columns:
+        conn.execute(f"DROP TABLE {table}")
+
+
 def _drop_stale_tables(conn: sqlite3.Connection) -> None:
     """Drop derived tables whose shape changed, so the schema recreates them.
 
-    ``runna_links`` gained a generic ``twin_activity_id`` (Strava or Apple twin);
-    the old Strava-only form is rebuilt on the next Runna import.
+    ``runna_links`` gained a generic ``twin_activity_id``; ``derived_series`` is a
+    rebuildable cache that gained a ``seq`` ordinal. Both are re-created empty by
+    the schema and refilled on the next ingest / report.
     """
-    if not conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='runna_links'"
-    ).fetchone():
-        return
-    columns = {row["name"] for row in conn.execute("PRAGMA table_info(runna_links)")}
-    if "twin_activity_id" not in columns:
-        conn.execute("DROP TABLE runna_links")
+    _drop_if_missing_column(conn, "runna_links", "twin_activity_id")
+    _drop_if_missing_column(conn, "derived_series", "seq")
 
 
 def _add_missing_columns(conn: sqlite3.Connection) -> None:

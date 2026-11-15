@@ -9,7 +9,7 @@ give those a name so they can be persisted, exported, and served uniformly.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, cast, get_args
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
 # The analytic "lane" a series belongs to, mirroring the report's grouping.
 Lane = Literal["training", "recovery", "lifestyle", "energy", "cross"]
+_LANES: frozenset[str] = frozenset(get_args(Lane))
 
 
 @dataclass(frozen=True)
@@ -39,14 +40,20 @@ class Scalar:
 
 
 def from_trends(
-    trends: Sequence[tuple[str, Lane, str, list[tuple[date, float]]]],
+    trends: Sequence[tuple[str, str, str, list[tuple[date, float]]]],
 ) -> list[Series]:
     """Build :class:`Series` from the report's ``(name, lane, unit, points)`` tuples.
 
-    Empty series are dropped, so only series with data are persisted.
+    Empty series are dropped; an unrecognized lane raises (the report controls
+    the lane strings, so a bad one is a bug worth surfacing).
     """
-    return [
-        Series(name=name, lane=lane, unit=unit, points=points)
-        for name, lane, unit, points in trends
-        if points
-    ]
+    series: list[Series] = []
+    for name, lane, unit, points in trends:
+        if not points:
+            continue
+        if lane not in _LANES:
+            raise ValueError(f"unknown series lane: {lane!r}")
+        series.append(
+            Series(name=name, lane=cast("Lane", lane), unit=unit, points=points)
+        )
+    return series

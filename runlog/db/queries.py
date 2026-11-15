@@ -50,9 +50,13 @@ def replace_series(
     """Replace a named series with ``rows`` of ``(iso_day, value)`` (latest-wins)."""
     conn.execute("DELETE FROM derived_series WHERE name = ?", (name,))
     conn.executemany(
-        "INSERT INTO derived_series (name, lane, unit, day, value, computed_at) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        [(name, lane, unit, day, value, computed_at) for day, value in rows],
+        "INSERT INTO derived_series "
+        "(name, seq, lane, unit, day, value, computed_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [
+            (name, seq, lane, unit, day, value, computed_at)
+            for seq, (day, value) in enumerate(rows)
+        ],
     )
 
 
@@ -72,7 +76,7 @@ def read_series(
 ) -> tuple[str, str, list[tuple[str, float]]] | None:
     """A stored series as ``(lane, unit, [(iso_day, value)])``, or None if absent."""
     rows = conn.execute(
-        "SELECT lane, unit, day, value FROM derived_series WHERE name = ? ORDER BY day",
+        "SELECT lane, unit, day, value FROM derived_series WHERE name = ? ORDER BY seq",
         (name,),
     ).fetchall()
     if not rows:
@@ -98,7 +102,7 @@ def all_series_rows(
         )
         for row in conn.execute(
             "SELECT name, lane, unit, day, value FROM derived_series "
-            "ORDER BY name, day"
+            "ORDER BY name, seq"
         )
     ]
 

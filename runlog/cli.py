@@ -211,6 +211,7 @@ def _cmd_report(args: argparse.Namespace) -> int:
         hr_rest=hr_rest,
         sex=cfg.sex,
         athlete=cfg.demographics(),
+        save=not args.no_save,
     )
     print(result.summary_text)
     print(f"\nCharts written to {out_dir}:")
@@ -218,6 +219,21 @@ def _cmd_report(args: argparse.Namespace) -> int:
         print(f"  {path.parent.name}/{path.name}")
     if result.report_html is not None:
         print(f"\nHTML report: {result.report_html}")
+    for path in result.data_exports:
+        print(f"Derived data: {path}")
+    return 0
+
+
+def _cmd_series(args: argparse.Namespace) -> int:
+    from runlog.analyze import persist
+
+    paths = resolve_paths()
+    out_dir = Path(args.out) if args.out else paths.data_dir / "reports"
+    conn = store.connect(paths.db_path)
+    store.init_db(conn)
+    exports = persist.export(conn, out_dir)
+    for path in exports:
+        print(f"Exported {path}")
     return 0
 
 
@@ -472,6 +488,11 @@ def _build_parser() -> argparse.ArgumentParser:
         type=float,
         help="max HR for zones (overrides athlete.toml; default: highest recorded)",
     )
+    report_cmd.add_argument(
+        "--no-save",
+        action="store_true",
+        help="do not persist/export the derived timeseries",
+    )
     report_cmd.set_defaults(func=_cmd_report)
 
     today_cmd = sub.add_parser("today", help="morning readiness + planned-session card")
@@ -546,6 +567,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="print the review prompt instead of calling the API (no key/credits)",
     )
     review_cmd.set_defaults(func=_cmd_plan_review)
+
+    series_cmd = sub.add_parser(
+        "series", help="export the persisted derived timeseries as CSV"
+    )
+    series_cmd.add_argument("--out", help="output directory (default: data/reports)")
+    series_cmd.set_defaults(func=_cmd_series)
 
     serve_cmd = sub.add_parser("serve", help="run the read-only JSON API (web extra)")
     serve_cmd.add_argument("--host", default="127.0.0.1", help="bind host")

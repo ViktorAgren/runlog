@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import date
 
+import pytest
+
 from runlog.analyze.series import Series, from_trends
 
 
@@ -12,7 +14,7 @@ def test_from_trends_builds_series_and_drops_empty() -> None:
         ("ctl", "training", "load", [(date(2026, 1, 1), 10.0)]),
         ("empty", "recovery", "ms", []),
     ]
-    assert from_trends(trends) == [  # type: ignore[arg-type]
+    assert from_trends(trends) == [
         Series(
             name="ctl",
             lane="training",
@@ -20,3 +22,8 @@ def test_from_trends_builds_series_and_drops_empty() -> None:
             points=[(date(2026, 1, 1), 10.0)],
         )
     ]
+
+
+def test_from_trends_rejects_unknown_lane() -> None:
+    with pytest.raises(ValueError, match="unknown series lane"):
+        from_trends([("x", "bogus", "u", [(date(2026, 1, 1), 1.0)])])

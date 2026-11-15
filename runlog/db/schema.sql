@@ -115,14 +115,17 @@ CREATE TABLE IF NOT EXISTS raw_files (
 -- Derived analytics, persisted after each report run (latest-wins). These are
 -- recomputed from the raw tables, so they can always be rebuilt; storing them
 -- makes every computed series queryable and exportable without a recompute.
+-- seq is the point's ordinal within the series (its identity): per-run series
+-- can carry several points on the same day, so day is data, not a key.
 CREATE TABLE IF NOT EXISTS derived_series (
     name        TEXT NOT NULL,
+    seq         INTEGER NOT NULL,
     lane        TEXT NOT NULL,
     unit        TEXT NOT NULL,
     day         TEXT NOT NULL,  -- ISO-8601 date
     value       REAL NOT NULL,
     computed_at TEXT NOT NULL,  -- ISO-8601 UTC datetime of the run that wrote it
-    PRIMARY KEY (name, day)
+    PRIMARY KEY (name, seq)
 );
 
 CREATE TABLE IF NOT EXISTS derived_scalars (

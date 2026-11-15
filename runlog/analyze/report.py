@@ -26,6 +26,7 @@ from runlog.analyze import (
     importance,
     lifestyle,
     metrics,
+    persist,
     physiology,
     readiness,
     records,
@@ -36,6 +37,7 @@ from runlog.analyze import (
     summary,
 )
 from runlog.analyze.report_model import FigureRef, Kpi, ReportModel, Section
+from runlog.analyze.series import from_trends
 from runlog.db import queries, store
 
 if TYPE_CHECKING:
@@ -102,6 +104,7 @@ class ReportResult:
     summary_text: str
     report_html: Path | None = None
     activity_pages: list[Path] = field(default_factory=list)
+    data_exports: list[Path] = field(default_factory=list)
 
 
 # Report sections for the HTML dashboard: (title, narrative, figure stems).
@@ -247,9 +250,11 @@ def run(
     hr_rest: float | None = None,
     sex: Sex | None = None,
     athlete: Athlete | None = None,
+    save: bool = True,
 ) -> ReportResult:
     """Compute all metrics, render charts into ``out_dir``, return the summary."""
     conn = store.connect(db_path)
+    store.init_db(conn)  # ensure the derived-metrics tables exist before persisting
     # One shared stream load per run for the whole read-only pass (the report
     # reads each run's stream many times).
     with streams.stream_cache(conn):
@@ -265,6 +270,7 @@ def run(
             hr_rest=hr_rest,
             sex=sex,
             athlete=athlete,
+            save=save,
         )
 
 
@@ -281,6 +287,7 @@ def _run(
     hr_rest: float | None,
     sex: Sex | None,
     athlete: Athlete | None,
+    save: bool,
 ) -> ReportResult:
     runs = metrics.canonical_run_activities(
         conn, sports, since=since, min_distance_km=min_distance_km
@@ -609,6 +616,13 @@ def _run(
     )
     activity_pages = html_report.render_activity_pages(activity_details, out_dir)
 
+    # Persist every computed series to the derived store and export tidy CSVs,
+    # so the timeseries are queryable/exportable without a recompute.
+    data_exports: list[Path] = []
+    if save:
+        persist.persist(conn, from_trends(trend_series), [], datetime.now().isoformat())
+        data_exports = persist.export(conn, out_dir)
+
     span = f"{overall.first_run} to {overall.last_run}"
     model = ReportModel(
         title="Running analytics report",
@@ -637,6 +651,7 @@ def _run(
         summary_text=text,
         report_html=report_html,
         activity_pages=activity_pages,
+        data_exports=data_exports,
     )
 
 
