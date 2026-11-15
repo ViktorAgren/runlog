@@ -190,11 +190,12 @@ def _pace_from_velocity(velocity_mps: float | None) -> float | None:
 
 # Physiological name per Karvonen zone, shown next to Z1..Z5.
 _ZONE_NAMES = ("Recovery", "Endurance", "Tempo", "Threshold", "VO2max")
-# Lactate-threshold estimates as a fraction of heart-rate reserve: LT1 (aerobic
-# threshold) at the Z2/Z3 boundary, LT2 (lactate/anaerobic threshold) near the
-# top of the threshold band (Z4/Z5 boundary).
-_LT1_FRACTION = 0.70
-_LT2_FRACTION = 0.90
+# Per-workout threshold *heart rates* as a fraction of heart-rate reserve: LT1
+# (aerobic threshold) at the Z2/Z3 boundary, LT2 (lactate/anaerobic threshold)
+# near the top of the threshold band (Z4/Z5 boundary). These are HR anchors in
+# bpm and are distinct from cs.LT1_OF_LT2, which relates threshold *speeds*.
+_LT1_HR_FRACTION = 0.70
+_LT2_HR_FRACTION = 0.90
 
 
 def _zone_seconds(
@@ -238,8 +239,8 @@ def _thresholds(hr_max: float, hr_rest: float) -> list[tuple[str, str]]:
     if hr_max <= hr_rest:
         return []
     reserve = hr_max - hr_rest
-    lt1 = round(hr_rest + _LT1_FRACTION * reserve)
-    lt2 = round(hr_rest + _LT2_FRACTION * reserve)
+    lt1 = round(hr_rest + _LT1_HR_FRACTION * reserve)
+    lt2 = round(hr_rest + _LT2_HR_FRACTION * reserve)
     return [
         ("LT1 (aerobic)", f"{lt1} bpm"),
         ("LT2 (lactate threshold)", f"{lt2} bpm"),
