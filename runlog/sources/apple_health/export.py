@@ -387,12 +387,14 @@ def _consume_record(
                 elem.get("sourceName", ""),
             )
             daily[key] += value
-    elif type_id == "HKCategoryTypeIdentifierSleepAnalysis":
-        if "Asleep" in elem.get("value", ""):  # ignore InBed / Awake segments
-            start, end = elem.get("startDate"), elem.get("endDate")
-            if start and end:
-                begin, finish = _parse_dt(start), _parse_dt(end)
-                sleep_intervals[elem.get("sourceName", "")].append((begin, finish))
+    elif type_id == "HKCategoryTypeIdentifierSleepAnalysis" and "Asleep" in elem.get(
+        "value", ""
+    ):
+        # Ignore InBed / Awake segments.
+        start, end = elem.get("startDate"), elem.get("endDate")
+        if start and end:
+            begin, finish = _parse_dt(start), _parse_dt(end)
+            sleep_intervals[elem.get("sourceName", "")].append((begin, finish))
 
 
 # An awake gap longer than this ends one sleep session and starts another, so a
