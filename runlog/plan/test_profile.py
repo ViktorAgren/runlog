@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import pytest
 
@@ -54,7 +54,9 @@ def test_build_profile_summarizes_history(conn: sqlite3.Connection) -> None:
     _add_run(conn, datetime(2026, 6, 1, 7, tzinfo=UTC), distance_m=5000.0, pace=300.0)
     _add_run(conn, datetime(2026, 6, 8, 7, tzinfo=UTC), distance_m=10000.0, pace=320.0)
 
-    profile = build_profile(conn)
+    # Pin "today" near the fixtures: the recent-window pace stats are relative to
+    # it, so a wall-clock default would exclude these runs once they age out.
+    profile = build_profile(conn, today=date(2026, 6, 9))
 
     assert (profile.run_count, profile.total_km, profile.longest_run_km) == (
         2,
