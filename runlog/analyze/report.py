@@ -764,6 +764,7 @@ def _run(
         sections=_build_sections(produced, out_dir),
         stats=_stats_table(table),
         activities=activity_rows,
+        summary=text,
     )
     report_html = html_report.render(model, out_dir)
     return ReportResult(

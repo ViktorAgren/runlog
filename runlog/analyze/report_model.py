@@ -71,6 +71,7 @@ class ReportModel:
     sections: list[Section]
     stats: StatsTable | None = None
     activities: list[ActivityRow] = field(default_factory=list)
+    summary: str = ""  # the analyst narrative, shown as the report's abstract
 
 
 def acwr_tone(acwr: float) -> Tone:

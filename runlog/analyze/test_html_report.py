@@ -94,7 +94,7 @@ def test_render_embeds_figures_and_kpis(tmp_path: Path) -> None:
         "Fitness &amp; form" in html,  # autoescaped section title
         "<svg" in html,  # the figure is inlined as vector SVG
         "analytics/pmc.svg" not in html,  # path not referenced, only embedded
-        "What matters (FDR-corrected)" in html,
+        "Results — what matters" in html,
         '<table class="stats">' in html,
         'class="sig"' in html,  # the significant row carries the accent
     )

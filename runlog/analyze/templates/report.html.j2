@@ -6,118 +6,155 @@
 <title>{{ model.title }}</title>
 <style>
   :root {
-    --ink: #0f172a; --subtle: #64748b; --muted: #94a3b8;
-    --line: #e2e8f0; --bg: #f8fafc; --card: #ffffff;
-    --primary: #2563eb; --good: #16a34a; --warn: #d97706; --bad: #dc2626;
+    --paper: #fbfaf7; --surface: #ffffff; --ink: #1b1b1a; --sub: #5c5b57;
+    --muted: #8a8984; --line: #e6e3db; --line-strong: #d4d0c6;
+    --accent: #1d4ed8; --good: #15803d; --warn: #b45309; --bad: #b91c1c;
+    --sig: #15803d; --shadow: 0 1px 2px rgba(20,20,19,0.04);
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, "Roboto Mono", monospace;
+  }
+  :root:not([data-theme="light"]) {
+    @media (prefers-color-scheme: dark) {
+      --paper: #15171c; --surface: #1b1e25; --ink: #e7e6e2; --sub: #a8a79f;
+      --muted: #74736c; --line: #2a2e37; --line-strong: #3a3f4a;
+      --accent: #7aa2ff; --good: #4ade80; --warn: #fbbf24; --bad: #f87171;
+      --sig: #4ade80; --shadow: 0 1px 2px rgba(0,0,0,0.3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #15171c; --surface: #1b1e25; --ink: #e7e6e2; --sub: #a8a79f;
+    --muted: #74736c; --line: #2a2e37; --line-strong: #3a3f4a;
+    --accent: #7aa2ff; --good: #4ade80; --warn: #fbbf24; --bad: #f87171;
+    --sig: #4ade80; --shadow: 0 1px 2px rgba(0,0,0,0.3);
   }
   * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--bg); color: var(--ink);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-      "Helvetica Neue", Arial, sans-serif;
-    line-height: 1.5;
-  }
-  .wrap { max-width: 1100px; margin: 0 auto; padding: 32px 24px 64px; }
-  header { border-bottom: 1px solid var(--line); padding-bottom: 20px; margin-bottom: 20px; }
-  h1 { font-size: 28px; margin: 0 0 4px; letter-spacing: -0.02em; }
-  .sub { color: var(--subtle); font-size: 15px; }
-  .gen { color: var(--muted); font-size: 12px; margin-top: 6px; }
-  .tabs { display: flex; gap: 6px; margin-bottom: 20px; }
-  .tab { appearance: none; border: 1px solid var(--line); background: var(--card);
-    color: var(--subtle); font-size: 14px; font-weight: 600; padding: 8px 18px;
-    border-radius: 999px; cursor: pointer; }
-  .tab.active { background: var(--primary); color: #fff; border-color: var(--primary); }
-  .kpis {
-    display: grid; gap: 14px; margin: 8px 0;
-    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-  }
-  .kpi {
-    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
-    padding: 16px 18px; border-left: 4px solid var(--muted);
-  }
-  .kpi.good { border-left-color: var(--good); }
-  .kpi.warn { border-left-color: var(--warn); }
-  .kpi.bad  { border-left-color: var(--bad); }
-  .kpi .k-label { color: var(--subtle); font-size: 12px; text-transform: uppercase;
-    letter-spacing: 0.04em; }
-  .kpi .k-value { font-size: 26px; font-weight: 700; margin: 4px 0 2px; }
-  .kpi .k-unit { font-size: 14px; font-weight: 500; color: var(--subtle); margin-left: 3px; }
-  .kpi .k-context { color: var(--subtle); font-size: 12.5px; }
-  section { margin-top: 40px; }
-  h2 { font-size: 20px; margin: 0 0 6px; letter-spacing: -0.01em; }
-  .narrative { color: var(--subtle); font-size: 15px; margin: 0 0 18px; max-width: 70ch; }
-  .figs { display: grid; gap: 22px; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); }
-  figure { margin: 0; background: var(--card); border: 1px solid var(--line);
-    border-radius: 12px; padding: 12px; }
-  figure img { width: 100%; height: auto; display: block; border-radius: 6px; }
+  body { margin: 0; background: var(--paper); color: var(--ink);
+    font-family: var(--sans); line-height: 1.6; font-size: 16px;
+    -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 40px 24px 80px; }
+  .figs, .acts-layout { max-width: 1120px; }
+  header { display: flex; justify-content: space-between; align-items: flex-start;
+    gap: 16px; border-bottom: 2px solid var(--ink); padding-bottom: 18px; }
+  h1 { font-family: var(--serif); font-weight: 600; font-size: 30px; line-height: 1.15;
+    margin: 0 0 6px; letter-spacing: -0.01em; }
+  .sub { color: var(--sub); font-size: 15.5px; }
+  .gen { color: var(--muted); font-size: 12.5px; margin-top: 6px; font-family: var(--mono); }
+  .theme-btn { flex: none; appearance: none; border: 1px solid var(--line-strong);
+    background: var(--surface); color: var(--sub); border-radius: 8px; cursor: pointer;
+    font-size: 13px; padding: 6px 12px; font-family: var(--sans); }
+  nav.tabs { display: flex; gap: 4px; margin: 20px 0 8px; border-bottom: 1px solid var(--line); }
+  .tab { appearance: none; border: none; background: none; color: var(--sub);
+    font-size: 14px; font-weight: 600; padding: 9px 14px; cursor: pointer;
+    border-bottom: 2px solid transparent; margin-bottom: -1px; font-family: var(--sans); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .abstract { background: var(--surface); border: 1px solid var(--line);
+    border-left: 3px solid var(--accent); border-radius: 8px; padding: 18px 22px;
+    margin: 28px 0; box-shadow: var(--shadow); }
+  .abstract h2 { font-family: var(--serif); font-size: 15px; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--sub); margin: 0 0 10px; font-weight: 600; }
+  .abstract pre { margin: 0; white-space: pre-wrap; font-family: var(--sans);
+    font-size: 14px; line-height: 1.65; color: var(--ink); }
+  h2.sec { font-family: var(--serif); font-weight: 600; font-size: 21px;
+    margin: 0 0 4px; letter-spacing: -0.01em; }
+  .sec-num { color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 8px; }
+  section { margin-top: 44px; }
+  .results h2.sec { color: var(--ink); }
+  .narrative { color: var(--sub); font-size: 15px; margin: 2px 0 20px; max-width: 72ch; }
+  .kpis { display: grid; gap: 12px; margin: 16px 0;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
+  .kpi { background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+    padding: 14px 16px; border-top: 3px solid var(--muted); box-shadow: var(--shadow); }
+  .kpi.good { border-top-color: var(--good); }
+  .kpi.warn { border-top-color: var(--warn); }
+  .kpi.bad  { border-top-color: var(--bad); }
+  .kpi .k-label { color: var(--sub); font-size: 11.5px; text-transform: uppercase;
+    letter-spacing: 0.05em; }
+  .kpi .k-value { font-size: 25px; font-weight: 700; margin: 4px 0 2px;
+    font-variant-numeric: tabular-nums; }
+  .kpi .k-unit { font-size: 13px; font-weight: 500; color: var(--sub); margin-left: 3px; }
+  .kpi .k-context { color: var(--sub); font-size: 12.5px; }
+  .figs { display: grid; gap: 24px; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); }
+  figure { margin: 0; background: var(--surface); border: 1px solid var(--line);
+    border-radius: 10px; padding: 14px 14px 10px; box-shadow: var(--shadow); }
   figure .svg-fig { width: 100%; }
   figure .svg-fig svg { width: 100%; height: auto; display: block; }
-  figcaption { color: var(--subtle); font-size: 12.5px; margin-top: 8px; }
-  footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line);
-    color: var(--muted); font-size: 12px; }
+  figcaption { color: var(--sub); font-size: 12.5px; margin-top: 10px;
+    padding-top: 8px; border-top: 1px solid var(--line); }
+  figcaption .figlabel { font-weight: 700; color: var(--ink); }
   table.stats { border-collapse: collapse; width: 100%; font-size: 13px;
-    background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
-  table.stats th { text-align: left; color: var(--subtle); font-size: 11.5px;
-    text-transform: uppercase; letter-spacing: 0.04em; padding: 10px 12px;
-    border-bottom: 1px solid var(--line); }
-  table.stats td { padding: 8px 12px; border-bottom: 1px solid var(--line); }
-  table.stats td.num { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 12.5px; white-space: nowrap; }
-  table.stats tr.sig td:first-child { border-left: 3px solid var(--good); }
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+    overflow: hidden; box-shadow: var(--shadow); }
+  table.stats th { text-align: left; color: var(--sub); font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.05em; padding: 11px 13px;
+    border-bottom: 2px solid var(--line-strong); }
+  table.stats td { padding: 9px 13px; border-bottom: 1px solid var(--line); }
+  table.stats td.num { font-family: var(--mono); font-size: 12px; white-space: nowrap;
+    font-variant-numeric: tabular-nums; }
+  table.stats tr.sig td:first-child { border-left: 3px solid var(--sig); font-weight: 600; }
   table.stats tr:last-child td { border-bottom: none; }
-  .stats-caption { color: var(--subtle); font-size: 12.5px; margin: 6px 0 14px; }
+  .stats-caption { color: var(--sub); font-size: 12.5px; margin: 6px 0 14px; }
+  .methods { margin-top: 48px; padding-top: 10px; }
+  .methods dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 18px;
+    font-size: 13.5px; margin: 10px 0 0; }
+  .methods dt { font-weight: 700; color: var(--ink); }
+  .methods dd { margin: 0; color: var(--sub); }
+  .methods .refs { color: var(--muted); font-size: 12px; margin-top: 18px; line-height: 1.7; }
+  footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--line);
+    color: var(--muted); font-size: 12px; }
+  /* Activities tab */
   .acts-layout { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
     gap: 18px; align-items: start; }
-  @media (max-width: 900px) { .acts-layout { grid-template-columns: 1fr; } }
+  @media (max-width: 900px) { .acts-layout { grid-template-columns: 1fr; }
+    .figs { grid-template-columns: 1fr; } header { flex-direction: column; } }
   .acts-scroll { max-height: 78vh; overflow: auto; border: 1px solid var(--line);
-    border-radius: 12px; background: var(--card); }
+    border-radius: 10px; background: var(--surface); }
   table.acts { border-collapse: collapse; width: 100%; font-size: 13px; }
-  table.acts th { position: sticky; top: 0; background: var(--card); text-align: left;
-    color: var(--subtle); font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em;
-    padding: 9px 10px; border-bottom: 1px solid var(--line); cursor: pointer; white-space: nowrap; }
+  table.acts th { position: sticky; top: 0; background: var(--surface); text-align: left;
+    color: var(--sub); font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em;
+    padding: 9px 10px; border-bottom: 2px solid var(--line-strong); cursor: pointer;
+    white-space: nowrap; }
   table.acts td { padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
   table.acts td.num { font-variant-numeric: tabular-nums; }
   table.acts tbody tr { cursor: pointer; }
-  table.acts tbody tr:hover { background: #f1f5f9; }
-  table.acts tbody tr.sel { background: #dbeafe; }
+  table.acts tbody tr:hover { background: var(--paper); }
+  table.acts tbody tr.sel { background: color-mix(in srgb, var(--accent) 14%, transparent); }
   .detail-frame { width: 100%; height: 78vh; border: 1px solid var(--line);
-    border-radius: 12px; background: var(--card); position: sticky; top: 16px; }
+    border-radius: 10px; background: var(--surface); position: sticky; top: 16px; }
   .hint { color: var(--muted); font-size: 12.5px; padding: 10px 2px; }
   .filters { display: flex; gap: 16px; margin-bottom: 10px; align-items: center;
-    font-size: 13px; color: var(--subtle); }
+    font-size: 13px; color: var(--sub); }
   .filters select { font-size: 13px; padding: 4px 8px; border: 1px solid var(--line);
-    border-radius: 8px; background: var(--card); color: var(--ink); margin-left: 4px; }
+    border-radius: 8px; background: var(--surface); color: var(--ink); margin-left: 4px; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <h1>{{ model.title }}</h1>
-    <div class="sub">{{ model.subtitle }}</div>
-    <div class="gen">Generated {{ model.generated_at }}</div>
+    <div>
+      <h1>{{ model.title }}</h1>
+      <div class="sub">{{ model.subtitle }}</div>
+      <div class="gen">Generated {{ model.generated_at }}</div>
+    </div>
+    <button class="theme-btn" onclick="toggleTheme()" id="theme-btn">◐ Theme</button>
   </header>
 
   <nav class="tabs">
-    <button class="tab active" data-tab="overview" onclick="showTab('overview')">Overview</button>
+    <button class="tab active" data-tab="overview" onclick="showTab('overview')">Report</button>
     <button class="tab" data-tab="activities" onclick="showTab('activities')">Activities</button>
   </nav>
 
   <div id="overview" class="panel">
-    {% if model.kpis %}
-    <div class="kpis">
-      {% for kpi in model.kpis %}
-      <div class="kpi {{ kpi.tone }}">
-        <div class="k-label">{{ kpi.label }}</div>
-        <div class="k-value">{{ kpi.value }}{% if kpi.unit %}<span class="k-unit">{{ kpi.unit }}</span>{% endif %}</div>
-        {% if kpi.context %}<div class="k-context">{{ kpi.context }}</div>{% endif %}
-      </div>
-      {% endfor %}
+    {% if model.summary %}
+    <div class="abstract">
+      <h2>Summary</h2>
+      <pre>{{ model.summary }}</pre>
     </div>
     {% endif %}
 
-    {% if model.stats %}
-    <section>
-      <h2>What matters (FDR-corrected)</h2>
+    {% if model.stats and model.stats.rows %}
+    <section class="results">
+      <h2 class="sec">Results — what matters</h2>
       <p class="stats-caption">{{ model.stats.caption }}</p>
       <table class="stats">
         <tr><th>Finding</th><th>Lane</th><th>Effect</th><th>95% CI</th>
@@ -134,20 +171,59 @@
     </section>
     {% endif %}
 
+    {% if model.kpis %}
+    <section>
+      <h2 class="sec">At a glance</h2>
+      <div class="kpis">
+        {% for kpi in model.kpis %}
+        <div class="kpi {{ kpi.tone }}">
+          <div class="k-label">{{ kpi.label }}</div>
+          <div class="k-value">{{ kpi.value }}{% if kpi.unit %}<span class="k-unit">{{ kpi.unit }}</span>{% endif %}</div>
+          {% if kpi.context %}<div class="k-context">{{ kpi.context }}</div>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+
     {% for section in sections %}
     <section>
-      <h2>{{ section.title }}</h2>
+      <h2 class="sec"><span class="sec-num">{{ loop.index }}</span>{{ section.title }}</h2>
       {% if section.narrative %}<p class="narrative">{{ section.narrative }}</p>{% endif %}
       <div class="figs">
         {% for fig in section.figures %}
         <figure>
           <div class="svg-fig">{{ fig.svg|safe }}</div>
-          {% if fig.caption %}<figcaption>{{ fig.caption }}</figcaption>{% endif %}
+          <figcaption><span class="figlabel">Fig {{ loop.index }}.</span> {{ fig.title }}{% if fig.caption %} — {{ fig.caption }}{% endif %}</figcaption>
         </figure>
         {% endfor %}
       </div>
     </section>
     {% endfor %}
+
+    <section class="methods">
+      <h2 class="sec">Methods &amp; definitions</h2>
+      <p class="narrative">Every trend is tested once as a family and corrected for
+        multiple comparisons (Benjamini-Hochberg FDR); a finding is flagged only
+        when its q-value clears the threshold. Confidence intervals use the exact
+        Student-t distribution.</p>
+      <dl>
+        <dt>Critical Speed (CS) &amp; D′</dt><dd>Sustainable-speed asymptote and the finite distance available above it, from the 2-parameter critical-power model.</dd>
+        <dt>Mean-maximal curve</dt><dd>Fastest average speed held for each duration, across all runs — the running power-duration curve.</dd>
+        <dt>VDOT</dt><dd>VO₂max-equivalent race fitness (Daniels-Gilbert), from the modelled 5 km.</dd>
+        <dt>Polarization Index</dt><dd>log₁₀(Z1·Z3/Z2) on easy/moderate/hard shares; &gt; 2.0 is polarized (Treff 2019).</dd>
+        <dt>Durability</dt><dd>Percent efficiency fade from the fresh first third to the fatigued last third of long runs (Jones 2023).</dd>
+        <dt>Monotony / Strain</dt><dd>Weekly mean÷SD of daily load, and that times weekly load (Foster 1998).</dd>
+        <dt>PMC (CTL / ATL / Form)</dt><dd>Fitness, fatigue and form as exponentially-weighted TRIMP (Banister).</dd>
+        <dt>ACWR</dt><dd>Acute:chronic workload ratio — shown with the caveat that the ratio is spuriously coupled.</dd>
+        <dt>Efficiency factor</dt><dd>Speed per heart beat; its trend tracks aerobic efficiency.</dd>
+      </dl>
+      <div class="refs">
+        Jones AM (2023), <em>J Physiol</em>. Treff et al. (2019), <em>Front Physiol</em>.
+        Foster C (1998), <em>Med Sci Sports Exerc</em>. Daniels &amp; Gilbert, <em>Oxygen Power</em>.
+        Benjamini &amp; Hochberg (1995), <em>J R Stat Soc B</em>.
+      </div>
+    </section>
   </div>
 
   <div id="activities" class="panel" hidden>
@@ -215,9 +291,20 @@
     {% endif %}
   </div>
 
-  <footer>runlog · self-contained analytics report · figures embedded inline</footer>
+  <footer>runlog · self-contained analytics report · vector figures embedded inline</footer>
 </div>
 <script>
+  function toggleTheme() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var dark = cur ? cur === 'dark'
+      : window.matchMedia('(prefers-color-scheme: dark)').matches;
+    document.documentElement.setAttribute('data-theme', dark ? 'light' : 'dark');
+    try { localStorage.setItem('runlog-theme', dark ? 'light' : 'dark'); } catch (e) {}
+  }
+  try {
+    var saved = localStorage.getItem('runlog-theme');
+    if (saved) document.documentElement.setAttribute('data-theme', saved);
+  } catch (e) {}
   function showTab(id) {
     document.querySelectorAll('.panel').forEach(function (p) { p.hidden = p.id !== id; });
     document.querySelectorAll('.tab').forEach(function (b) {
