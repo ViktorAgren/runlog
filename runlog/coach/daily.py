@@ -21,6 +21,7 @@ from runlog.analyze import (
     records,
     streams,
 )
+from runlog.db import queries
 from runlog.plan import progress
 
 if TYPE_CHECKING:
@@ -151,7 +152,7 @@ def _resolve_hr_max(
 ) -> float:
     if hr_max is not None:
         return hr_max
-    samples = metrics.hr_samples(conn, [r.activity_id for r in runs])
+    samples = queries.hr_samples(conn, [r.activity_id for r in runs])
     return metrics.estimated_hr_max(samples)
 
 

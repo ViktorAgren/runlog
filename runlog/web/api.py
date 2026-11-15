@@ -21,7 +21,7 @@ from runlog.analyze.analytics import PmcPoint
 from runlog.analyze.metrics import Run, WeeklyVolume
 from runlog.analyze.readiness import ReadinessDay
 from runlog.config import Sex, load_athlete_config
-from runlog.db import store
+from runlog.db import queries, store
 
 
 def _resolve_hr(
@@ -30,7 +30,7 @@ def _resolve_hr(
     """HR max/rest/sex from the athlete profile, falling back to stored data."""
     cfg = load_athlete_config()
     hr_max = cfg.hr_max or metrics.estimated_hr_max(
-        metrics.hr_samples(conn, [r.activity_id for r in runs])
+        queries.hr_samples(conn, [r.activity_id for r in runs])
     )
     hr_rest = (
         cfg.hr_rest if cfg.hr_rest is not None else metrics.resting_hr_median(conn)

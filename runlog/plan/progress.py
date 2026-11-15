@@ -17,6 +17,7 @@ from datetime import date
 from typing import TYPE_CHECKING
 
 from runlog.analyze import analytics, anomaly, metrics, physiology, streams
+from runlog.db import queries
 from runlog.plan import profile
 
 if TYPE_CHECKING:
@@ -310,7 +311,7 @@ def build_progress(
     overall = metrics.overall_summary(window)
     paces = [p.pace_s_per_km for p in metrics.pace_points(window)]
 
-    hr_samples = metrics.hr_samples(conn, [r.activity_id for r in all_runs])
+    hr_samples = queries.hr_samples(conn, [r.activity_id for r in all_runs])
     hr_max_value = hr_max if hr_max else metrics.estimated_hr_max(hr_samples)
     hr_rest_value = hr_rest if hr_rest is not None else metrics.resting_hr_median(conn)
     daily_load = analytics.daily_trimp(all_runs, hr_max_value, hr_rest_value, sex)

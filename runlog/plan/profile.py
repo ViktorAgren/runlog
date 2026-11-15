@@ -13,6 +13,7 @@ from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from runlog.analyze import analytics, cs, metrics
+from runlog.db import queries
 from runlog.plan import targets
 
 if TYPE_CHECKING:
@@ -133,7 +134,7 @@ def build_profile(
     overall = metrics.overall_summary(runs)
     paces = [p.pace_s_per_km for p in metrics.pace_points(recent)]
 
-    hr_samples = metrics.hr_samples(conn, [r.activity_id for r in runs])
+    hr_samples = queries.hr_samples(conn, [r.activity_id for r in runs])
     hr_max_value = hr_max if hr_max else metrics.estimated_hr_max(hr_samples)
     hr_rest_value = hr_rest if hr_rest is not None else _median_resting_hr(conn)
     daily_load = analytics.daily_trimp(runs, hr_max_value, hr_rest_value, sex)

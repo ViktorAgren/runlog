@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
+from runlog.db import queries
 from runlog.db.quality import QUARANTINE_FLAGS
 from runlog.domain import ActivityId, Source
 
@@ -123,7 +124,7 @@ def canonical_run_activities(
     when the canonical row does not.
     """
     superseded, inherited = _dedup_clusters(conn)
-    placeholders = ",".join("?" for _ in sports)
+    placeholders = queries.in_placeholders(len(sports))
     conditions = [f"sport_type IN ({placeholders})"]
     params: list[object] = list(sports)
     if since is not None:
@@ -190,7 +191,7 @@ def quarantined_count(
     conn: sqlite3.Connection, sports: Sequence[str] = _RUN_SPORTS
 ) -> int:
     """How many running activities are excluded from analytics as data errors."""
-    placeholders = ",".join("?" for _ in sports)
+    placeholders = queries.in_placeholders(len(sports))
     return sum(
         _is_quarantined(row["quality_flags"])
         for row in conn.execute(
@@ -222,7 +223,7 @@ def _apple_dynamics(
     """Map each linked Apple activity id to its non-null running-dynamics values."""
     if not apple_ids:
         return {}
-    placeholders = ",".join("?" for _ in apple_ids)
+    placeholders = queries.in_placeholders(len(apple_ids))
     fields = ", ".join(_APPLE_DYNAMICS)
     return {
         int(row["id"]): {
@@ -264,7 +265,7 @@ def _dedup_clusters(
         return set(), {}
     clusters = _connected_components(edges)
     nodes = {node for cluster in clusters for node in cluster}
-    placeholders = ",".join("?" for _ in nodes)
+    placeholders = queries.in_placeholders(len(nodes))
     meta = {
         int(row["id"]): (str(row["source"]), bool(row["is_indoor"]))
         for row in conn.execute(
@@ -610,23 +611,6 @@ def hr_over_time(runs: Sequence[Run]) -> list[HrPoint]:
         HrPoint(start=r.start, avg_hr=r.avg_hr, max_hr=r.max_hr)
         for r in runs
         if r.avg_hr is not None
-    ]
-
-
-def hr_samples(conn: sqlite3.Connection, run_ids: Sequence[ActivityId]) -> list[float]:
-    """All per-point heart-rate samples for the given runs (for a histogram)."""
-    if not run_ids:
-        return []
-    placeholders = ",".join("?" for _ in run_ids)
-    return [
-        float(row["hr"])
-        for row in conn.execute(
-            f"""
-            SELECT hr FROM stream_points
-            WHERE hr IS NOT NULL AND activity_id IN ({placeholders})
-            """,
-            tuple(int(i) for i in run_ids),
-        )
     ]
 
 

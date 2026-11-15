@@ -36,7 +36,7 @@ from runlog.analyze import (
     summary,
 )
 from runlog.analyze.report_model import FigureRef, Kpi, ReportModel, Section
-from runlog.db import store
+from runlog.db import queries, store
 
 if TYPE_CHECKING:
     import sqlite3
@@ -292,7 +292,7 @@ def _run(
 
     # Workout HR samples (from run streams only) drive the histogram, zones, and
     # the HR-max estimate — never passive/resting HR.
-    hr = metrics.hr_samples(conn, [r.activity_id for r in runs])
+    hr = queries.hr_samples(conn, [r.activity_id for r in runs])
     hr_max_value = hr_max if hr_max else metrics.estimated_hr_max(hr)
     hr_rest_value = hr_rest if hr_rest is not None else metrics.resting_hr_median(conn)
     zones = metrics.hr_zone_seconds(hr, hr_max_value, hr_rest_value)

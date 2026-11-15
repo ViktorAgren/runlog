@@ -14,7 +14,7 @@ import zipfile
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
-from runlog.db import store
+from runlog.db import queries, store
 from runlog.domain import Activity, ActivityRecord, SourceId, StreamPoint
 from runlog.ingest import archive
 from runlog.sources import gpx
@@ -188,7 +188,7 @@ def attach_run_dynamics(
         column: ([t for t, _ in samples], [v for _, v in samples])
         for column, samples in dynamics_samples.items()
     }
-    placeholders = ",".join("?" for _ in _RUN_SPORTS)
+    placeholders = queries.in_placeholders(len(_RUN_SPORTS))
     updated = 0
     for row in conn.execute(
         f"SELECT id, start_time_utc, elapsed_s, moving_s FROM activities "
