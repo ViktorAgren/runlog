@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import bisect
 import statistics
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -19,7 +20,7 @@ from runlog.analyze.metrics import PLAUSIBLE_PACE_S_PER_KM
 
 if TYPE_CHECKING:
     import sqlite3
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Iterator, Sequence
     from datetime import date
 
     from runlog.analyze.metrics import Run
@@ -46,11 +47,33 @@ class StreamSample:
     velocity_mps: float | None
 
 
+# A run's stream is immutable within a read-only pass, yet a report reads each
+# one many times (best efforts, CS, zones, records, and a detail page per run).
+# full_stream() shares a single load per activity while a stream_cache() is open
+# for the connection; the cache is keyed by connection and never active during a
+# write, so there is no staleness risk.
+_active_caches: dict[sqlite3.Connection, dict[int, list[StreamSample]]] = {}
+
+
+@contextmanager
+def stream_cache(conn: sqlite3.Connection) -> Iterator[None]:
+    """Memoize ``full_stream(conn, ...)`` for the duration of a read-only pass."""
+    _active_caches[conn] = {}
+    try:
+        yield
+    finally:
+        _active_caches.pop(conn, None)
+
+
 def full_stream(
     conn: sqlite3.Connection, activity_id: ActivityId
 ) -> list[StreamSample]:
     """Load a run's full per-point stream, ordered by position."""
-    return [
+    cache = _active_caches.get(conn)
+    key = int(activity_id)
+    if cache is not None and key in cache:
+        return cache[key]
+    stream = [
         StreamSample(
             offset_s=int(row["offset_s"]),
             distance_m=float(row["distance_m"]),
@@ -67,9 +90,12 @@ def full_stream(
             WHERE activity_id = ? AND distance_m IS NOT NULL AND offset_s IS NOT NULL
             ORDER BY seq
             """,
-            (int(activity_id),),
+            (key,),
         )
     ]
+    if cache is not None:
+        cache[key] = stream
+    return stream
 
 
 def lap_hr_stats(

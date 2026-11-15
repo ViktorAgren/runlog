@@ -250,6 +250,38 @@ def run(
 ) -> ReportResult:
     """Compute all metrics, render charts into ``out_dir``, return the summary."""
     conn = store.connect(db_path)
+    # One shared stream load per run for the whole read-only pass (the report
+    # reads each run's stream many times).
+    with streams.stream_cache(conn):
+        return _run(
+            conn,
+            out_dir,
+            db_path=db_path,
+            sports=sports,
+            recent_weeks=recent_weeks,
+            since=since,
+            min_distance_km=min_distance_km,
+            hr_max=hr_max,
+            hr_rest=hr_rest,
+            sex=sex,
+            athlete=athlete,
+        )
+
+
+def _run(
+    conn: sqlite3.Connection,
+    out_dir: Path,
+    *,
+    db_path: Path,
+    sports: tuple[str, ...],
+    recent_weeks: int,
+    since: date | None,
+    min_distance_km: float,
+    hr_max: float | None,
+    hr_rest: float | None,
+    sex: Sex | None,
+    athlete: Athlete | None,
+) -> ReportResult:
     runs = metrics.canonical_run_activities(
         conn, sports, since=since, min_distance_km=min_distance_km
     )

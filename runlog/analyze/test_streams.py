@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import sqlite3
+from datetime import UTC, datetime
+
 import pytest
 
 from runlog.analyze import streams
 from runlog.analyze.streams import ClimbStats, PacingStats, StreamSample
+from runlog.db import store
+from runlog.domain import Activity, ActivityId, ActivityRecord, SourceId, StreamPoint
 
 
 def _sample(offset: int, dist: float, alt: float | None = None) -> StreamSample:
@@ -94,3 +99,41 @@ def test_pacing_stats_detects_negative_split() -> None:
     assert streams.pacing_stats([*first_km, *second_km]) == PacingStats(
         even_cv=0.333, negative_split_pct=50.0
     )
+
+
+def _store_run_with_stream(count: int = 10) -> tuple[sqlite3.Connection, ActivityId]:
+    conn = store.connect(":memory:")  # type: ignore[arg-type]
+    store.init_db(conn)
+    stream = tuple(
+        StreamPoint(offset_s=i, distance_m=float(i) * 3.0, velocity_mps=3.0)
+        for i in range(count)
+    )
+    store.store_record(
+        conn,
+        ActivityRecord(
+            activity=Activity(
+                source="strava",
+                source_id=SourceId("s:1"),
+                sport_type="Run",
+                start_time_utc=datetime(2026, 6, 1, 7, tzinfo=UTC),
+                distance_m=float(count) * 3.0,
+                moving_s=count,
+                avg_pace_s_per_km=333.0,
+            ),
+            stream=stream,
+        ),
+    )
+    row = conn.execute("SELECT id FROM activities").fetchone()
+    return conn, ActivityId(int(row[0]))
+
+
+def test_stream_cache_memoizes_within_scope() -> None:
+    conn, activity_id = _store_run_with_stream()
+    with streams.stream_cache(conn):
+        first = streams.full_stream(conn, activity_id)
+        conn.execute("DELETE FROM stream_points")
+        # Still served from the cache, so the mid-scope deletion is not observed.
+        second = streams.full_stream(conn, activity_id)
+    assert first and second == first
+    # Outside the cache the deletion is visible, proving the scope closed.
+    assert streams.full_stream(conn, activity_id) == []
