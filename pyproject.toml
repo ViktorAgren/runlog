@@ -32,9 +32,12 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
-    "black>=24.1",
-    "mypy>=1.8",
-    "ruff>=0.2",
+    # Gate tools pinned exactly so local and CI never drift: an unpinned linter
+    # bump (e.g. a new ruff rule) must be an explicit version change, not a
+    # surprise red build.
+    "black==26.10.1",
+    "mypy==2.4.1",
+    "ruff==0.17.5",
     "types-requests>=2.31",
 ]
 
