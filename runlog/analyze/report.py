@@ -21,6 +21,7 @@ from runlog.analyze import (
     charts,
     cs,
     curves,
+    durability,
     energy,
     forecast,
     html_report,
@@ -574,6 +575,12 @@ def _run(
     if polarization:
         trend_series.append(
             ("Polarization index trend", "training", "a.u./30d", polarization)
+        )
+    # Durability: within-long-run efficiency fade (fatigue resistance).
+    fade = durability.durability_series(conn, runs)
+    if fade:
+        trend_series.append(
+            ("Durability (efficiency fade) trend", "training", "%/30d", fade)
         )
     table = importance.build_table(
         _collect_candidates(trend_series, responses, readiness_r, life)
