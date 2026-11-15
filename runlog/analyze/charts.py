@@ -1017,6 +1017,32 @@ def critical_speed_chart(model: CsModel | None, out_dir: Path) -> Path:
     return style.save(fig, out_dir, "critical_speed.png")
 
 
+def lactate_threshold_chart(
+    series: Sequence[tuple[date, float, float]], out_dir: Path
+) -> Path:
+    """Estimated LT1/LT2 threshold pace (km/h) over time from critical speed."""
+    fig, ax = style.figure(
+        "Lactate thresholds over time",
+        "Estimated aerobic (LT1) and lactate (LT2) threshold speed from the "
+        "critical-speed model — a rising line is improving threshold pace",
+        "Date",
+        "Speed (km/h)",
+    )
+    if series:
+        days = [day for day, _, _ in series]
+        lt1 = [a for _, a, _ in series]
+        lt2 = [b for _, _, b in series]
+        ax.plot(days, lt2, color=PRIMARY, lw=2.2, label="LT2 (lactate threshold)")
+        ax.plot(days, lt1, color=WARN, lw=1.8, label="LT1 (aerobic threshold)")
+        style.latest_callout(ax, days[-1], lt2[-1], f"LT2 {lt2[-1]:.1f} km/h")
+        style.latest_callout(
+            ax, days[-1], lt1[-1], f"LT1 {lt1[-1]:.1f} km/h", color=WARN
+        )
+        ax.legend(loc="lower right")
+    style.date_axis(ax)
+    return style.save(fig, out_dir, "lactate_thresholds.png")
+
+
 def readiness_chart(days: Sequence[ReadinessDay], out_dir: Path) -> Path:
     """Daily readiness score over time with the 40-60 normal band."""
     fig, ax = style.figure(

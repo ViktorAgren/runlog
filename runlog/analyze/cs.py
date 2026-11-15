@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from runlog.analyze import analytics, streams
@@ -22,6 +23,7 @@ from runlog.analyze import analytics, streams
 if TYPE_CHECKING:
     import sqlite3
     from collections.abc import Sequence
+    from datetime import date
 
     from runlog.analyze.metrics import Run
 
@@ -114,3 +116,86 @@ def critical_speed(
 ) -> CsModel | None:
     """Fit the CS/D' model from the athlete's best efforts, or None if too few."""
     return fit_cs(best_efforts_for_cs(conn, runs, distances))
+
+
+@dataclass(frozen=True)
+class _DatedEffort:
+    day: date
+    distance_m: float
+    seconds: float
+
+
+def _dated_efforts(
+    conn: sqlite3.Connection, runs: Sequence[Run], distances: Sequence[float]
+) -> list[_DatedEffort]:
+    """Each run's best effort at each CS distance, with the run's date."""
+    efforts: list[_DatedEffort] = []
+    for run in runs:
+        stream = [
+            (s.offset_s, s.distance_m)
+            for s in streams.full_stream(conn, run.activity_id)
+        ]
+        if not stream:
+            continue
+        for target in distances:
+            seconds = analytics.best_effort_seconds(stream, target)
+            if seconds is not None:
+                efforts.append(_DatedEffort(run.start.date(), target, seconds))
+    return efforts
+
+
+def critical_speed_series(
+    conn: sqlite3.Connection,
+    runs: Sequence[Run],
+    today: date,
+    window_days: int = 120,
+    step_days: int = 14,
+    distances: Sequence[float] = CS_DISTANCES_M,
+) -> list[tuple[date, CsModel]]:
+    """Critical speed re-fitted over a trailing window at regular sample dates.
+
+    Critical speed is a lactate-threshold / MLSS proxy, so its rise over time is
+    the athlete's threshold fitness trend. Each sample fits the model from the
+    best efforts inside the preceding ``window_days``; samples that cannot fit
+    (too little distance spread in the window) are skipped. One stream pass per
+    run, so the cost matches a single all-time fit.
+    """
+    efforts = _dated_efforts(conn, runs, distances)
+    if not efforts:
+        return []
+    window = timedelta(days=window_days)
+    sample = min(e.day for e in efforts) + window
+    series: list[tuple[date, CsModel]] = []
+    while sample <= today:
+        bests: dict[float, float] = {}
+        for effort in efforts:
+            if sample - window <= effort.day <= sample and (
+                effort.distance_m not in bests
+                or effort.seconds < bests[effort.distance_m]
+            ):
+                bests[effort.distance_m] = effort.seconds
+        model = fit_cs([CsPoint(dist, secs) for dist, secs in bests.items()])
+        if model is not None:
+            series.append((sample, model))
+        sample += timedelta(days=step_days)
+    return series
+
+
+# Aerobic-threshold (LT1) velocity as a fraction of the lactate-threshold (LT2)
+# velocity. Critical speed is the LT2/MLSS proxy; LT1 sits ~12% slower.
+LT1_OF_LT2 = 0.88
+
+
+def lactate_threshold_speeds(
+    series: Sequence[tuple[date, CsModel]],
+) -> list[tuple[date, float, float]]:
+    """Estimated (date, LT1 km/h, LT2 km/h) from a critical-speed series.
+
+    Critical speed is the lactate-threshold (LT2/MLSS) velocity; LT1 (aerobic
+    threshold) is taken at :data:`LT1_OF_LT2` of it. Speeds are km/h so a rising
+    line reads as improving threshold pace.
+    """
+    return [
+        (day, round(model.cs_mps * 3.6 * LT1_OF_LT2, 2), round(model.cs_mps * 3.6, 2))
+        for day, model in series
+    ]

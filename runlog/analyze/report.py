@@ -162,6 +162,7 @@ _SECTION_SPEC: tuple[tuple[str, str, tuple[str, ...]], ...] = (
             "efficiency_factor",
             "aerobic_decoupling",
             "critical_speed",
+            "lactate_thresholds",
         ),
     ),
     (
@@ -200,6 +201,7 @@ _TITLE_OVERRIDES = {
     "grade_adjusted_pace": "Grade-adjusted pace",
     "efficiency_factor": "Aerobic efficiency factor",
     "critical_speed": "Critical speed",
+    "lactate_thresholds": "Lactate thresholds (LT1 / LT2) over time",
     "readiness": "Daily readiness",
     "running_economy": "Running economy (speed per watt)",
     "vo2max": "VO2max",
@@ -460,6 +462,21 @@ def run(
     cs_model = cs.critical_speed(conn, runs)
     if cs_model is not None:
         produced.append(charts.critical_speed_chart(cs_model, analytics_dir))
+    # Estimated LT1/LT2 threshold pace over time: critical speed is the LT2/MLSS
+    # velocity (rolling re-fit per window), LT1 a fixed fraction of it.
+    lt_series = cs.lactate_threshold_speeds(
+        cs.critical_speed_series(conn, runs, datetime.now().date())
+    )
+    if lt_series:
+        produced.append(charts.lactate_threshold_chart(lt_series, analytics_dir))
+        trend_series.append(
+            (
+                "LT2 threshold speed trend",
+                "training",
+                "km/h/30d",
+                [(day, lt2) for day, _lt1, lt2 in lt_series],
+            )
+        )
     readiness_days = readiness.readiness_series(conn, since=since)
     readiness_r = readiness.performance_correlation(readiness_days, runs)
     if readiness_days:

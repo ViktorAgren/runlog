@@ -93,3 +93,26 @@ def test_critical_speed_fits_from_constant_velocity_stream(
     model = cs.critical_speed(conn, runs)
     assert model is not None
     assert (model.cs_mps, model.d_prime_m) == (4.0, 0.0)
+
+
+def test_critical_speed_series_fits_window_bests_over_time(
+    conn: sqlite3.Connection,
+) -> None:
+    from datetime import date
+
+    # A 4 m/s run, then a faster 5 m/s run; a window covering both takes the
+    # faster best efforts, so the latest sampled critical speed is 5 m/s.
+    _add_run_with_stream(conn, datetime(2026, 6, 1, 7, tzinfo=UTC), speed_mps=4.0)
+    _add_run_with_stream(conn, datetime(2026, 7, 31, 7, tzinfo=UTC), speed_mps=5.0)
+    runs = metrics.canonical_run_activities(conn)
+
+    series = cs.critical_speed_series(
+        conn, runs, today=date(2026, 10, 1), window_days=120, step_days=14
+    )
+
+    assert series
+    assert series[-1][1].cs_mps == 5.0
+
+    # LT2 is the CS velocity in km/h (5 m/s = 18 km/h); LT1 is 0.88 of it.
+    lt = cs.lactate_threshold_speeds(series)
+    assert lt[-1] == (series[-1][0], round(18.0 * cs.LT1_OF_LT2, 2), 18.0)
