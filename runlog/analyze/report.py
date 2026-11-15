@@ -31,6 +31,7 @@ from runlog.analyze import (
     metrics,
     persist,
     physiology,
+    race,
     readiness,
     records,
     report_model,
@@ -510,9 +511,8 @@ def _run(
         produced.append(charts.critical_speed_chart(cs_model, analytics_dir))
     # Estimated LT1/LT2 threshold pace over time: critical speed is the LT2/MLSS
     # velocity (rolling re-fit per window), LT1 a fixed fraction of it.
-    lt_series = cs.lactate_threshold_speeds(
-        cs.critical_speed_series(conn, runs, datetime.now().date())
-    )
+    cs_series = cs.critical_speed_series(conn, runs, datetime.now().date())
+    lt_series = cs.lactate_threshold_speeds(cs_series)
     if lt_series:
         produced.append(charts.lactate_threshold_chart(lt_series, analytics_dir))
         trend_series.append(
@@ -522,6 +522,11 @@ def _run(
                 "km/h/30d",
                 [(day, lt2) for day, _lt1, lt2 in lt_series],
             )
+        )
+    vdot_points = race.vdot_series(cs_series)
+    if vdot_points:
+        trend_series.append(
+            ("VDOT (from critical speed) trend", "training", "/30d", vdot_points)
         )
     readiness_days = readiness.readiness_series(conn, since=since)
     readiness_r = readiness.performance_correlation(readiness_days, runs)
