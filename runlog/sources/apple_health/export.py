@@ -55,6 +55,22 @@ _DAILY_SUM_TYPES = {
     "HKQuantityTypeIdentifierStepCount": "steps",
     "HKQuantityTypeIdentifierFlightsClimbed": "flights_climbed",
 }
+# Per-metric plausibility ceiling for a single source's daily total. A buggy
+# source (e.g. a running app writing 2000 duplicate step records = 300k steps/day)
+# would otherwise win the cross-source max; totals above these are dropped as
+# errors, generously above any real day so genuine data is never clipped.
+_DAILY_SUM_CEILINGS: dict[str, float] = {
+    "steps": 60000.0,
+    "active_energy": 10000.0,
+    "basal_energy": 6000.0,
+    "exercise_minutes": 1440.0,
+    "flights_climbed": 500.0,
+}
+# Sources (matched case-insensitively by substring) that write per-activity
+# step/energy records which duplicate and inflate the device's authoritative
+# all-day totals — a run tracker, not an all-day counter — excluded from daily
+# sums so they never win the cross-source max.
+_DAILY_SUM_EXCLUDED_SOURCES: tuple[str, ...] = ("runna",)
 _DISTANCE_TO_M = {"km": 1000.0, "mi": 1609.344, "m": 1.0, "yd": 0.9144, "ft": 0.3048}
 _DURATION_TO_S = {"s": 1.0, "min": 60.0, "hr": 3600.0}
 _LAP_EVENT_TYPES = {"HKWorkoutEventTypeSegment", "HKWorkoutEventTypeLap"}
@@ -481,11 +497,17 @@ def parse_export(source: IO[bytes]) -> AppleExport:
         elif elem.tag == "Record":
             _consume_record(elem, metrics, daily, sleep_intervals, hr_samples, dynamics)
             elem.clear()
-    # Reduce the per-source daily totals to one value per (metric, day): take
-    # the largest single source rather than summing devices that both tracked
-    # the same day (which double-counts steps, energy, and flights).
+    # Reduce the per-source daily totals to one value per (metric, day): take the
+    # largest single source rather than summing devices that both tracked the
+    # same day (which double-counts), after dropping any source whose daily total
+    # is implausible — else a buggy source's inflated total wins the max.
     daily_by_source: dict[tuple[str, date], float] = defaultdict(float)
-    for (metric_type, day, _source), total in daily.items():
+    for (metric_type, day, src), total in daily.items():
+        lowered = src.lower()
+        if any(name in lowered for name in _DAILY_SUM_EXCLUDED_SOURCES):
+            continue
+        if total > _DAILY_SUM_CEILINGS.get(metric_type, float("inf")):
+            continue
         key = (metric_type, day)
         daily_by_source[key] = max(daily_by_source[key], total)
     for (metric_type, day), total in daily_by_source.items():

@@ -230,6 +230,32 @@ def test_steps_take_largest_source_not_the_sum_across_devices() -> None:
     assert steps == [18081.0]
 
 
+# A run tracker (Runna) writes inflated step records, and a third source posts an
+# impossible total above the ceiling. Both are dropped; the watch's real count
+# wins, even though Runna's inflated figure sits under the ceiling.
+_BUGGY_SOURCE_STEPS_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
+<HealthData locale="en_GB">
+ <Record type="HKQuantityTypeIdentifierStepCount" sourceName="Watch" unit="count"
+   startDate="2026-07-20 08:00:00 +0000" endDate="2026-07-20 08:10:00 +0000"
+   value="12000"/>
+ <Record type="HKQuantityTypeIdentifierStepCount" sourceName="Runna" unit="count"
+   startDate="2026-07-20 09:00:00 +0000" endDate="2026-07-20 09:10:00 +0000"
+   value="55000"/>
+ <Record type="HKQuantityTypeIdentifierStepCount" sourceName="GlitchApp" unit="count"
+   startDate="2026-07-20 10:00:00 +0000" endDate="2026-07-20 10:10:00 +0000"
+   value="300000"/>
+</HealthData>
+"""
+
+
+def test_steps_drop_unreliable_app_and_implausible_totals() -> None:
+    metrics = parse_export(io.BytesIO(_BUGGY_SOURCE_STEPS_XML)).metrics
+    steps = [m.value for m in metrics if m.metric_type == "steps"]
+    # Runna is excluded as an app source and GlitchApp's 300k exceeds the
+    # ceiling, so the watch's 12k is the day's count.
+    assert steps == [12000.0]
+
+
 _DYNAMICS_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
 <HealthData locale="en_GB">
  <Record type="HKQuantityTypeIdentifierRunningPower" unit="W"
