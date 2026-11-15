@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from runlog.analyze import analytics, metrics
@@ -20,6 +21,7 @@ from runlog.analyze.streams import full_stream
 if TYPE_CHECKING:
     import sqlite3
     from collections.abc import Sequence
+    from datetime import date
 
     from runlog.analyze.metrics import Run
     from runlog.analyze.streams import StreamSample
@@ -192,3 +194,65 @@ def cardiac_drift_pct(stream: Sequence[StreamSample]) -> float | None:
     if start_ratio <= 0:
         return None
     return round(-slope * (xs[-1] - xs[0]) / start_ratio * 100, 1)
+
+
+# --- Training intensity distribution over time (Polarization Index) ----------
+
+# Treff et al. (2019): PI = log10(Z1 * Z3 / Z2) with zone shares as percentages
+# (equivalently log10((Z1/Z2) * Z3 * 100) on fractions). Polarized when PI > 2.0.
+_POLARIZED_PI = 2.0
+
+
+def polarization_index(
+    easy_pct: float, moderate_pct: float, hard_pct: float
+) -> float | None:
+    """Treff Polarization-Index from easy/moderate/hard shares (Z1/Z2/Z3, %).
+
+    Returns None when Z3 > Z1 (not a polarized structure — the index is not
+    defined there) or Z2 is zero; 0.0 when Z3 is zero (per the paper).
+    """
+    if hard_pct > easy_pct or moderate_pct == 0:
+        return None
+    if hard_pct == 0:
+        return 0.0
+    return math.log10(easy_pct * hard_pct / moderate_pct)
+
+
+def run_intensity_bands(
+    conn: sqlite3.Connection, runs: Sequence[Run], hr_max: float, hr_rest: float
+) -> list[tuple[date, tuple[float, float, float]]]:
+    """Per-run (easy, moderate, hard) HR-zone seconds, dated, newest last."""
+    bands: list[tuple[date, tuple[float, float, float]]] = []
+    for run in runs:
+        zones = zone_seconds_for_run(
+            full_stream(conn, run.activity_id), hr_max, hr_rest
+        )
+        easy, moderate, hard = zones[0] + zones[1], zones[2], zones[3] + zones[4]
+        if easy + moderate + hard > 0:
+            bands.append((run.start.date(), (easy, moderate, hard)))
+    return sorted(bands)
+
+
+def polarization_series(
+    bands: Sequence[tuple[date, tuple[float, float, float]]],
+    window_days: int = 42,
+) -> list[tuple[date, float]]:
+    """Trailing-window Polarization Index sampled at each run date."""
+    series: list[tuple[date, float]] = []
+    for day, _ in bands:
+        start = day - timedelta(days=window_days)
+        easy = moderate = hard = 0.0
+        for other, (band_easy, band_moderate, band_hard) in bands:
+            if start <= other <= day:
+                easy += band_easy
+                moderate += band_moderate
+                hard += band_hard
+        total = easy + moderate + hard
+        if total <= 0:
+            continue
+        index = polarization_index(
+            easy / total * 100, moderate / total * 100, hard / total * 100
+        )
+        if index is not None:
+            series.append((day, round(index, 2)))
+    return series

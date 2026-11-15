@@ -69,3 +69,24 @@ def test_cardiac_drift_positive_when_efficiency_falls() -> None:
 
 def test_cardiac_drift_none_without_enough_paired_samples() -> None:
     assert physiology.cardiac_drift_pct([_hr(0, 150.0, vel=3.0)]) is None
+
+
+def test_polarization_index_matches_treff_examples() -> None:
+    # Treff: 60-14-26 -> ~2.05; 80-5-15 (classic polarized) -> ~2.38.
+    low = physiology.polarization_index(60, 14, 26)
+    high = physiology.polarization_index(80, 5, 15)
+    assert low is not None and round(low, 2) == 2.05
+    assert high is not None and round(high, 2) == 2.38
+
+
+def test_polarization_index_edge_cases() -> None:
+    assert physiology.polarization_index(20, 30, 50) is None  # Z3 > Z1
+    assert physiology.polarization_index(80, 0, 20) is None  # Z2 = 0
+    assert physiology.polarization_index(90, 10, 0) == 0.0  # Z3 = 0
+
+
+def test_polarization_series_trailing_window() -> None:
+    from datetime import date
+
+    bands = [(date(2026, 1, 1), (800.0, 100.0, 100.0))]  # 80/10/10 -> log10(80)
+    assert physiology.polarization_series(bands) == [(date(2026, 1, 1), 1.9)]

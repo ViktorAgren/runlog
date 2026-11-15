@@ -567,6 +567,14 @@ def _run(
     ):
         if points:
             trend_series.append((label, "training", unit, points))
+    # Polarization Index over time (Treff): training intensity structure.
+    polarization = physiology.polarization_series(
+        physiology.run_intensity_bands(conn, runs, hr_max_value, hr_rest_value)
+    )
+    if polarization:
+        trend_series.append(
+            ("Polarization index trend", "training", "a.u./30d", polarization)
+        )
     table = importance.build_table(
         _collect_candidates(trend_series, responses, readiness_r, life)
     )
