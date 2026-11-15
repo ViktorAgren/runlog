@@ -26,6 +26,7 @@ dependencies = [
     "jinja2>=3.1",
     "anthropic>=0.69",
     "pydantic>=2",
+    "fitparse>=1.2",
 ]
 
 [project.optional-dependencies]
@@ -68,7 +69,7 @@ warn_unreachable = true
 files = ["runlog"]
 
 [[tool.mypy.overrides]]
-module = ["matplotlib.*", "seaborn.*"]
+module = ["matplotlib.*", "seaborn.*", "fitparse.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

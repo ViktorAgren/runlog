@@ -39,6 +39,7 @@ def test_cli_pipeline_imports_and_reports(
             "stream_points": 4,
             "health_metrics": 3,
             "activity_links": 0,
+            "runna_links": 0,
             "raw_files": 2,
             "activities:strava": 2,
             "activities:apple_health": 1,

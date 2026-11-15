@@ -36,6 +36,7 @@ def _add_run(
     pace: float | None = 300.0,
     avg_hr: float | None = 150.0,
     hr_stream: list[float] | None = None,
+    is_indoor: bool = False,
 ) -> ActivityId:
     stream = tuple(
         StreamPoint(offset_s=i, hr=hr) for i, hr in enumerate(hr_stream or [])
@@ -49,12 +50,13 @@ def _add_run(
             activity=Activity(
                 source=source,
                 source_id=SourceId(f"{source}:{when.isoformat()}"),
-                sport_type="Run" if source == "strava" else "Running",
+                sport_type="Running" if source == "apple_health" else "Run",
                 start_time_utc=when,
                 distance_m=distance_m,
                 moving_s=moving_s,
                 avg_pace_s_per_km=pace,
                 avg_hr=avg_hr,
+                is_indoor=is_indoor,
             ),
             stream=stream,
         ),
@@ -112,6 +114,46 @@ def test_canonical_drops_linked_apple_twin(conn: sqlite3.Connection) -> None:
 
     canonical = metrics.canonical_run_activities(conn)
     assert [r.source for r in canonical] == ["strava"]
+
+
+def test_canonical_prefers_indoor_runna_over_arm_swing_twin(
+    conn: sqlite3.Connection,
+) -> None:
+    # A treadmill run: the Strava twin's arm-swing distance is wrong; Runna's
+    # manually set distance is right, so the Runna row must win the cluster.
+    when = datetime(2026, 6, 1, 7, tzinfo=UTC)
+    strava = _add_run(conn, when, source="strava", distance_m=4100.0)
+    runna = _add_run(conn, when, source="runna", distance_m=5000.0, is_indoor=True)
+    store.insert_runna_link(conn, runna, strava, 1.0)
+
+    canonical = metrics.canonical_run_activities(conn)
+    assert [(r.source, r.distance_m) for r in canonical] == [("runna", 5000.0)]
+
+
+def test_canonical_outdoor_runna_dedups_to_strava(conn: sqlite3.Connection) -> None:
+    # An outdoor Runna recording duplicates its Strava twin; Strava (GPS) stays
+    # canonical and the Runna row is dropped.
+    when = datetime(2026, 6, 1, 7, tzinfo=UTC)
+    strava = _add_run(conn, when, source="strava", distance_m=10000.0)
+    runna = _add_run(conn, when, source="runna", distance_m=10000.0, is_indoor=False)
+    store.insert_runna_link(conn, runna, strava, 1.0)
+
+    assert [r.source for r in metrics.canonical_run_activities(conn)] == ["strava"]
+
+
+def test_canonical_indoor_runna_drops_both_strava_and_apple_twins(
+    conn: sqlite3.Connection,
+) -> None:
+    # Three sources recorded one treadmill run (Strava<->Apple linked, Runna<->
+    # Strava linked). The single indoor Runna row must supersede both twins.
+    when = datetime(2026, 6, 1, 7, tzinfo=UTC)
+    strava = _add_run(conn, when, source="strava", distance_m=4100.0)
+    apple = _add_run(conn, when, source="apple_health", distance_m=4050.0)
+    runna = _add_run(conn, when, source="runna", distance_m=5000.0, is_indoor=True)
+    store.insert_link(conn, strava, apple, 1.0)
+    store.insert_runna_link(conn, runna, strava, 1.0)
+
+    assert [r.source for r in metrics.canonical_run_activities(conn)] == ["runna"]
 
 
 def test_canonical_keeps_unlinked_from_both_sources(conn: sqlite3.Connection) -> None:

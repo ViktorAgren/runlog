@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS activities (
     calories          REAL,
     name              TEXT,
     raw_path          TEXT,
+    is_indoor         INTEGER,
     -- Strava extras
     relative_effort   REAL,
     grade_adj_distance_m REAL,
@@ -91,6 +92,16 @@ CREATE TABLE IF NOT EXISTS activity_links (
     apple_activity_id  INTEGER NOT NULL REFERENCES activities (id) ON DELETE CASCADE,
     match_confidence   REAL,
     PRIMARY KEY (strava_activity_id, apple_activity_id)
+);
+
+-- Each Runna run is matched to its twin in another source so the duplicate
+-- collapses: exactly (confidence 1.0) to the Strava id Runna embeds, and by
+-- start-time proximity to an Apple twin that has no Strava row to go through.
+CREATE TABLE IF NOT EXISTS runna_links (
+    runna_activity_id INTEGER NOT NULL REFERENCES activities (id) ON DELETE CASCADE,
+    twin_activity_id  INTEGER NOT NULL REFERENCES activities (id) ON DELETE CASCADE,
+    match_confidence  REAL,
+    PRIMARY KEY (runna_activity_id, twin_activity_id)
 );
 
 CREATE TABLE IF NOT EXISTS raw_files (

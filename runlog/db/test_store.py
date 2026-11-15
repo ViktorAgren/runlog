@@ -72,6 +72,7 @@ def test_store_record_is_idempotent(conn: sqlite3.Connection) -> None:
             "stream_points": 2,
             "health_metrics": 0,
             "activity_links": 0,
+            "runna_links": 0,
             "raw_files": 0,
             "activities:strava": 1,
         },

@@ -99,6 +99,7 @@ def test_import_export_stores_workout_metrics_and_route(tmp_path: Path) -> None:
             "stream_points": 2,
             "health_metrics": 3,
             "activity_links": 0,
+            "runna_links": 0,
             "raw_files": 1,
             "activities:apple_health": 1,
         },

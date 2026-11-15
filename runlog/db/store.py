@@ -39,8 +39,32 @@ def connect(db_path: Path) -> sqlite3.Connection:
 def init_db(conn: sqlite3.Connection) -> None:
     """Create all tables if they do not already exist."""
     schema = resources.files("runlog.db").joinpath("schema.sql").read_text()
+    _drop_stale_tables(conn)
     conn.executescript(schema)
+    _add_missing_columns(conn)
     conn.commit()
+
+
+def _drop_stale_tables(conn: sqlite3.Connection) -> None:
+    """Drop derived tables whose shape changed, so the schema recreates them.
+
+    ``runna_links`` gained a generic ``twin_activity_id`` (Strava or Apple twin);
+    the old Strava-only form is rebuilt on the next Runna import.
+    """
+    if not conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='runna_links'"
+    ).fetchone():
+        return
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(runna_links)")}
+    if "twin_activity_id" not in columns:
+        conn.execute("DROP TABLE runna_links")
+
+
+def _add_missing_columns(conn: sqlite3.Connection) -> None:
+    """Apply additive column migrations a plain CREATE IF NOT EXISTS cannot."""
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(activities)")}
+    if "is_indoor" not in existing:
+        conn.execute("ALTER TABLE activities ADD COLUMN is_indoor INTEGER")
 
 
 def _iso(dt: datetime) -> str:
@@ -69,6 +93,7 @@ _ACTIVITY_COLUMNS: tuple[str, ...] = (
     "calories",
     "name",
     "raw_path",
+    "is_indoor",
     "relative_effort",
     "grade_adj_distance_m",
     "max_speed_mps",
@@ -243,6 +268,25 @@ def insert_link(
     conn.commit()
 
 
+def insert_runna_link(
+    conn: sqlite3.Connection,
+    runna_activity_id: ActivityId,
+    twin_activity_id: ActivityId,
+    match_confidence: float,
+) -> None:
+    """Record a Runna run's twin in another source (Strava or Apple). Commits."""
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO runna_links (
+            runna_activity_id, twin_activity_id, match_confidence
+        )
+        VALUES (?, ?, ?)
+        """,
+        (runna_activity_id, twin_activity_id, match_confidence),
+    )
+    conn.commit()
+
+
 def table_counts(conn: sqlite3.Connection) -> dict[str, int]:
     """Return row counts per table, plus per-source activity counts."""
     tables = (
@@ -251,6 +295,7 @@ def table_counts(conn: sqlite3.Connection) -> dict[str, int]:
         "stream_points",
         "health_metrics",
         "activity_links",
+        "runna_links",
         "raw_files",
     )
     counts = {

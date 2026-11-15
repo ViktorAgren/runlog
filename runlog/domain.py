@@ -17,7 +17,7 @@ ActivityId = NewType("ActivityId", int)
 # or a synthesized key for bulk rows). Unique only within a source.
 SourceId = NewType("SourceId", str)
 
-Source = Literal["strava", "apple_health"]
+Source = Literal["strava", "apple_health", "runna"]
 
 
 @dataclass(frozen=True)
@@ -44,6 +44,9 @@ class Activity:
     calories: float | None = None
     name: str | None = None
     raw_path: str | None = None
+    # True for treadmill/indoor runs whose distance is manually set (Runna), where
+    # the arm-swing distance from a GPS-less Strava/Apple twin is unreliable.
+    is_indoor: bool = False
     # Strava extras (from the bulk CSV).
     relative_effort: float | None = None
     grade_adj_distance_m: float | None = None

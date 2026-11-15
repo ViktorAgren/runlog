@@ -7,6 +7,7 @@ Commands:
                                 incrementally pull activities from the API
     strava import-bulk PATH     import a "Download your data" export ZIP
     apple import PATH           import an Apple Health export ZIP
+    runna import PATH           import a Runna export ZIP (treadmill-authoritative)
     link [--window S]           match Strava<->Apple activities by start time
     status                      print row counts per table
     sync [--apple PATH] [--report]
@@ -33,12 +34,13 @@ from typing import TYPE_CHECKING
 
 from runlog.config import load_athlete, load_strava_credentials, resolve_paths
 from runlog.db import store
-from runlog.ingest import apple_ingest, link, strava_ingest
+from runlog.ingest import apple_ingest, link, runna_ingest, strava_ingest
 from runlog.sources.strava import auth
 
 if TYPE_CHECKING:
     import sqlite3
 
+    from runlog.config import Paths
     from runlog.plan.schedule import PlanSchedule
 
 _REDIRECT_URI = "http://localhost"
@@ -103,9 +105,24 @@ def _cmd_apple_import(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_runna_import(args: argparse.Namespace) -> int:
+    stored = runna_ingest.import_export(_open_db(), resolve_paths(), Path(args.path))
+    print(f"Imported {stored} Runna activities.")
+    return 0
+
+
+def _latest_runna_export(paths: Paths) -> Path | None:
+    exports = sorted(paths.raw_dir("runna").glob("*.zip"))
+    return exports[-1] if exports else None
+
+
 def _cmd_link(args: argparse.Namespace) -> int:
-    linked = link.link_activities(_open_db(), window_s=args.window)
-    print(f"Linked {linked} Strava/Apple activity pairs.")
+    conn = _open_db()
+    linked = link.link_activities(conn, window_s=args.window)
+    runna_linked = link.link_runna_apple(conn, window_s=args.window)
+    print(
+        f"Linked {linked} Strava/Apple and {runna_linked} Runna/Apple activity pairs."
+    )
     return 0
 
 
@@ -118,10 +135,11 @@ def _cmd_status(_args: argparse.Namespace) -> int:
 
 
 def _cmd_sync(args: argparse.Namespace) -> int:
-    """Refresh all sources in the correct order: Strava -> Apple -> link.
+    """Refresh all sources in order: Strava -> Apple -> Runna -> link.
 
     Apple is imported after Strava so per-second HR and running dynamics are
     backfilled onto any new Strava-logged runs (they only exist Apple-side).
+    Runna follows so each activity's Strava twin exists to link exactly.
     """
     paths = resolve_paths()
     conn = _open_db()
@@ -142,6 +160,13 @@ def _cmd_sync(args: argparse.Namespace) -> int:
         print(f"Apple: imported {workouts} workouts and {metrics} health metrics.")
     else:
         print(f"Apple: no export at {apple_path}, skipping.")
+
+    runna_path = Path(args.runna) if args.runna else _latest_runna_export(paths)
+    if runna_path is not None and runna_path.exists():
+        count = runna_ingest.import_export(conn, paths, runna_path)
+        print(f"Runna: imported {count} activities.")
+    else:
+        print("Runna: no export found, skipping.")
 
     linked = link.link_activities(conn)
     print(f"Linked {linked} Strava/Apple activity pairs.\n")
@@ -356,6 +381,13 @@ def _build_parser() -> argparse.ArgumentParser:
     apple_import.add_argument("path", help="path to the Apple Health export ZIP")
     apple_import.set_defaults(func=_cmd_apple_import)
 
+    runna = sub.add_parser("runna", help="Runna export import")
+    runna_import = runna.add_subparsers(dest="runna_command", required=True).add_parser(
+        "import", help="import a Runna export ZIP"
+    )
+    runna_import.add_argument("path", help="path to the Runna export ZIP")
+    runna_import.set_defaults(func=_cmd_runna_import)
+
     link_cmd = sub.add_parser("link", help="match Strava<->Apple activities")
     link_cmd.add_argument(
         "--window", type=int, default=180, help="match window in seconds"
@@ -369,6 +401,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     sync_all.add_argument(
         "--apple", help="Apple export ZIP (default: the archived export)"
+    )
+    sync_all.add_argument(
+        "--runna", help="Runna export ZIP (default: the newest archived export)"
     )
     sync_all.add_argument(
         "--report", action="store_true", help="also render the report afterwards"

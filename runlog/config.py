@@ -22,6 +22,7 @@ _RAW_SUBDIRS: dict[Source | str, str] = {
     "strava_api": "raw/strava/api",
     "strava_bulk": "raw/strava/bulk",
     "apple_health": "raw/apple_health",
+    "runna": "raw/runna",
 }
 
 

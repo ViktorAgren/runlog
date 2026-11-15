@@ -112,22 +112,16 @@ def canonical_run_activities(
 ) -> list[Run]:
     """Return one :class:`Run` per real run.
 
-    De-duplicates by dropping the Apple twin of each link, discards junk
-    activities shorter than ``min_distance_km`` (accidental/aborted starts), and
-    optionally limits to runs on/after ``since``.
+    De-duplicates by clustering the same physical run across Strava, Apple, and
+    Runna and keeping one canonical row (see :func:`_dedup_clusters`), discards
+    junk activities shorter than ``min_distance_km`` (accidental/aborted starts),
+    and optionally limits to runs on/after ``since``.
 
-    The kept Strava row inherits the running-dynamics fields (power, stride,
-    vertical oscillation, ground contact) from its dropped Apple twin, since
-    those live only on the Apple side.
+    The kept row inherits the running-dynamics fields (power, stride, vertical
+    oscillation, ground contact) from its dropped twins, which may carry them
+    when the canonical row does not.
     """
-    twin_of = {
-        int(row["strava_activity_id"]): int(row["apple_activity_id"])
-        for row in conn.execute(
-            "SELECT strava_activity_id, apple_activity_id FROM activity_links"
-        )
-    }
-    linked_apple = set(twin_of.values())
-    apple_dynamics = _apple_dynamics(conn, linked_apple)
+    superseded, inherited = _dedup_clusters(conn)
     placeholders = ",".join("?" for _ in sports)
     conditions = [f"sport_type IN ({placeholders})"]
     params: list[object] = list(sports)
@@ -149,14 +143,14 @@ def canonical_run_activities(
         """,
         tuple(params),
     ):
-        if int(row["id"]) in linked_apple:
+        if int(row["id"]) in superseded:
             continue
         if _is_quarantined(row["quality_flags"]):
             continue  # corrupted stream (implausible pace / paused / fragment)
         distance_m = row["distance_m"]
         if distance_m is not None and distance_m / 1000 < min_distance_km:
             continue
-        twin = apple_dynamics.get(twin_of.get(int(row["id"]), -1), {})
+        twin = inherited.get(int(row["id"]), {})
         runs.append(
             Run(
                 activity_id=ActivityId(int(row["id"])),
@@ -237,6 +231,87 @@ def _apple_dynamics(
             tuple(apple_ids),
         )
     }
+
+
+# Preferred canonical source for an outdoor cluster: Strava (GPS) over Apple over
+# Runna. Indoor clusters override this to prefer Runna's manual treadmill distance.
+_SOURCE_PRIORITY: dict[str, int] = {"strava": 0, "apple_health": 1, "runna": 2}
+
+
+def _dedup_clusters(
+    conn: sqlite3.Connection,
+) -> tuple[set[int], dict[int, dict[str, float]]]:
+    """Cluster the same physical run across sources and pick one canonical row.
+
+    Returns the ids to drop (every non-canonical cluster member) and, per kept
+    canonical id, the running-dynamics values inherited from its dropped twins.
+    """
+    edges = [
+        (int(row["strava_activity_id"]), int(row["apple_activity_id"]))
+        for row in conn.execute(
+            "SELECT strava_activity_id, apple_activity_id FROM activity_links"
+        )
+    ]
+    edges += [
+        (int(row["runna_activity_id"]), int(row["twin_activity_id"]))
+        for row in conn.execute(
+            "SELECT runna_activity_id, twin_activity_id FROM runna_links"
+        )
+    ]
+    if not edges:
+        return set(), {}
+    clusters = _connected_components(edges)
+    nodes = {node for cluster in clusters for node in cluster}
+    placeholders = ",".join("?" for _ in nodes)
+    meta = {
+        int(row["id"]): (str(row["source"]), bool(row["is_indoor"]))
+        for row in conn.execute(
+            f"SELECT id, source, is_indoor FROM activities "
+            f"WHERE id IN ({placeholders})",
+            tuple(nodes),
+        )
+    }
+    dynamics = _apple_dynamics(conn, nodes)
+    superseded: set[int] = set()
+    inherited: dict[int, dict[str, float]] = {}
+    for cluster in clusters:
+        canonical = _pick_canonical(cluster, meta)
+        twins = [node for node in cluster if node != canonical]
+        superseded.update(twins)
+        merged: dict[str, float] = {}
+        for twin in twins:
+            for field, value in dynamics.get(twin, {}).items():
+                merged.setdefault(field, value)
+        if merged:
+            inherited[canonical] = merged
+    return superseded, inherited
+
+
+def _connected_components(edges: list[tuple[int, int]]) -> list[list[int]]:
+    """Union-find over link edges: each component is one physical run."""
+    parent: dict[int, int] = {}
+
+    def find(node: int) -> int:
+        parent.setdefault(node, node)
+        while parent[node] != node:
+            parent[node] = parent[parent[node]]
+            node = parent[node]
+        return node
+
+    for left, right in edges:
+        parent[find(left)] = find(right)
+    groups: dict[int, list[int]] = defaultdict(list)
+    for node in parent:
+        groups[find(node)].append(node)
+    return list(groups.values())
+
+
+def _pick_canonical(cluster: list[int], meta: dict[int, tuple[str, bool]]) -> int:
+    """Canonical row for a cluster: an indoor Runna row wins, else by source."""
+    indoor_runna = [i for i in cluster if meta[i][0] == "runna" and meta[i][1]]
+    if indoor_runna:
+        return min(indoor_runna)
+    return min(cluster, key=lambda i: (_SOURCE_PRIORITY.get(meta[i][0], 9), i))
 
 
 def _week_start(moment: datetime) -> date:
