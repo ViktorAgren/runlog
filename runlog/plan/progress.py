@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     import sqlite3
 
     from runlog.analyze.metrics import Run
+    from runlog.config import Sex
 
 # A run is "Quality" when this share of time sits in Z4-5, "Easy" when most time
 # is in Z1-2, else "Moderate" (mostly Z3 — often easy running under %HRmax zones).
@@ -297,6 +298,7 @@ def build_progress(
     start: date,
     hr_max: float | None = None,
     hr_rest: float | None = None,
+    sex: Sex | None = None,
     today: date | None = None,
 ) -> ProgressReport:
     """Summarize training between ``start`` and ``today`` for a plan follow-up."""
@@ -311,7 +313,7 @@ def build_progress(
     hr_samples = metrics.hr_samples(conn, [r.activity_id for r in all_runs])
     hr_max_value = hr_max if hr_max else metrics.estimated_hr_max(hr_samples)
     hr_rest_value = hr_rest if hr_rest is not None else metrics.resting_hr_median(conn)
-    daily_load = analytics.daily_trimp(all_runs, hr_max_value, hr_rest_value)
+    daily_load = analytics.daily_trimp(all_runs, hr_max_value, hr_rest_value, sex)
     pmc = analytics.performance_management(daily_load)
     acwr = analytics.acwr_series(daily_load)
     ef_trend = analytics.linear_trend(analytics.efficiency_factor(window))

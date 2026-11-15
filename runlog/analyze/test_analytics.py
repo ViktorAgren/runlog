@@ -41,6 +41,27 @@ def test_run_trimp_matches_banister_formula() -> None:
     assert got is not None and math.isclose(got, expected, rel_tol=1e-9)
 
 
+def test_run_trimp_uses_female_coefficients() -> None:
+    run = _run(datetime(2026, 1, 1), avg_hr=150.0, moving_s=3600)
+    hrr = (150 - 50) / (190 - 50)
+    expected = 60 * hrr * 0.86 * math.exp(1.67 * hrr)
+    got = analytics.run_trimp(run, hr_max=190.0, hr_rest=50.0, sex="female")
+    assert got is not None and math.isclose(got, expected, rel_tol=1e-9)
+
+
+def test_trimp_coefficients_default_to_male() -> None:
+    assert analytics.trimp_coefficients(None) == (0.64, 1.92)
+    assert analytics.trimp_coefficients("male") == (0.64, 1.92)
+    assert analytics.trimp_coefficients("female") == (0.86, 1.67)
+
+
+def test_daily_trimp_threads_sex() -> None:
+    runs = [_run(datetime(2026, 1, 1), avg_hr=150.0, moving_s=3600)]
+    male = analytics.daily_trimp(runs, 190.0, 50.0)
+    female = analytics.daily_trimp(runs, 190.0, 50.0, sex="female")
+    assert male[0][1] != female[0][1]
+
+
 def test_performance_management_ewma_and_form() -> None:
     daily = [(date(2026, 1, 1), 100.0)]
     pmc = analytics.performance_management(daily)

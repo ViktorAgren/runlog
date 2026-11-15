@@ -23,11 +23,22 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from runlog.analyze.metrics import Run
+    from runlog.config import Sex
     from runlog.domain import ActivityId
 
-# Banister TRIMP (male coefficients); HRr is the heart-rate reserve fraction.
-_TRIMP_A = 0.64
-_TRIMP_B = 1.92
+# Banister TRIMP weighting factors by sex (HRr is the heart-rate reserve
+# fraction): the exponential weights hard efforts, differently for each sex.
+_TRIMP_COEFFS: dict[str, tuple[float, float]] = {
+    "male": (0.64, 1.92),
+    "female": (0.86, 1.67),
+}
+
+
+def trimp_coefficients(sex: Sex | None) -> tuple[float, float]:
+    """The (a, b) Banister weights for ``sex``; male is the default/unknown case."""
+    return _TRIMP_COEFFS.get(sex or "male", _TRIMP_COEFFS["male"])
+
+
 _CTL_DAYS = 42  # "Fitness" time constant
 _ATL_DAYS = 7  # "Fatigue" time constant
 _ACWR_ACUTE_DAYS = 7
@@ -95,23 +106,26 @@ def linear_trend(points: Sequence[tuple[date, float]]) -> Trend | None:
 # --- TRIMP & Performance Management Chart ------------------------------------
 
 
-def run_trimp(run: Run, hr_max: float, hr_rest: float) -> float | None:
+def run_trimp(
+    run: Run, hr_max: float, hr_rest: float, sex: Sex | None = None
+) -> float | None:
     """Banister training impulse for one run (needs avg HR and duration)."""
     if run.avg_hr is None or not run.moving_s or hr_max <= hr_rest:
         return None
     reserve = (run.avg_hr - hr_rest) / (hr_max - hr_rest)
     reserve = max(0.0, min(1.0, reserve))
     minutes = run.moving_s / 60
-    return minutes * reserve * _TRIMP_A * math.exp(_TRIMP_B * reserve)
+    a, b = trimp_coefficients(sex)
+    return minutes * reserve * a * math.exp(b * reserve)
 
 
 def daily_trimp(
-    runs: Sequence[Run], hr_max: float, hr_rest: float
+    runs: Sequence[Run], hr_max: float, hr_rest: float, sex: Sex | None = None
 ) -> list[tuple[date, float]]:
     """Total TRIMP per calendar day (only days with a scored run)."""
     totals: dict[date, float] = {}
     for run in runs:
-        score = run_trimp(run, hr_max, hr_rest)
+        score = run_trimp(run, hr_max, hr_rest, sex)
         if score is not None:
             totals[run.start.date()] = totals.get(run.start.date(), 0.0) + score
     return sorted(totals.items())

@@ -14,13 +14,8 @@ import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from runlog.analyze import metrics
+from runlog.analyze import analytics, metrics
 from runlog.analyze.streams import full_stream
-
-# Banister TRIMP weighting (same coefficients as analytics.run_trimp), applied
-# per stream sample instead of once on the whole-run average HR.
-_TRIMP_A = 0.64
-_TRIMP_B = 1.92
 
 if TYPE_CHECKING:
     import sqlite3
@@ -28,6 +23,7 @@ if TYPE_CHECKING:
 
     from runlog.analyze.metrics import Run
     from runlog.analyze.streams import StreamSample
+    from runlog.config import Sex
 
 _ZONE_COUNT = 5
 
@@ -146,11 +142,15 @@ def pace_intensity_distribution(
 
 
 def stream_trimp(
-    stream: Sequence[StreamSample], hr_max: float, hr_rest: float
+    stream: Sequence[StreamSample],
+    hr_max: float,
+    hr_rest: float,
+    sex: Sex | None = None,
 ) -> float | None:
     """Banister TRIMP integrated over the HR stream (accurate internal load)."""
     if hr_max <= hr_rest:
         return None
+    a, b = analytics.trimp_coefficients(sex)
     total = 0.0
     counted = False
     for current, nxt in zip(stream, stream[1:], strict=False):
@@ -160,7 +160,7 @@ def stream_trimp(
         if dt <= 0:
             continue
         reserve = max(0.0, min(1.0, (current.hr - hr_rest) / (hr_max - hr_rest)))
-        total += (dt / 60) * reserve * _TRIMP_A * math.exp(_TRIMP_B * reserve)
+        total += (dt / 60) * reserve * a * math.exp(b * reserve)
         counted = True
     return round(total, 1) if counted else None
 

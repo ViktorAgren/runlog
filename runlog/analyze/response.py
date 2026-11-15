@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from datetime import date
 
     from runlog.analyze.anomaly import Reading
+    from runlog.config import Sex
 
 # Recovery markers and the tail that signals reduced recovery (interpretation
 # only — the response math is direction-agnostic).
@@ -118,12 +119,13 @@ def load_response(
     hr_max: float,
     hr_rest: float,
     since: date | None = None,
+    sex: Sex | None = None,
 ) -> list[MarkerResponse]:
     """Next-day response of every recovery marker to all-sport training load."""
     activities = metrics.canonical_run_activities(
         conn, metrics.ALL_SPORT_TYPES, since=since, min_distance_km=0.0
     )
-    daily_load = analytics.daily_trimp(activities, hr_max, hr_rest)
+    daily_load = analytics.daily_trimp(activities, hr_max, hr_rest, sex)
     responses: list[MarkerResponse] = []
     for metric, direction in RESPONSE_MARKERS:
         daily = metrics.daily_means(metrics.metric_series(conn, metric, since=since))

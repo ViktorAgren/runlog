@@ -209,6 +209,7 @@ def _cmd_report(args: argparse.Namespace) -> int:
         min_distance_km=args.min_distance,
         hr_max=hr_max,
         hr_rest=hr_rest,
+        sex=cfg.sex,
         athlete=cfg.demographics(),
     )
     print(result.summary_text)
@@ -234,13 +235,15 @@ def _cmd_today(args: argparse.Namespace) -> int:
     from runlog.coach import daily, render
 
     conn = _open_db()
-    hr_max, hr_rest = _hr_from(args, load_athlete_config())
+    cfg = load_athlete_config()
+    hr_max, hr_rest = _hr_from(args, cfg)
     card = daily.build_today(
         conn,
         _resolve_schedule(args.plan),
         date.today(),
         hr_max=hr_max,
         hr_rest=hr_rest,
+        sex=cfg.sex,
     )
     print(render.render_today(card))
     return 0
@@ -293,8 +296,9 @@ def _cmd_plan(args: argparse.Namespace) -> int:
     )
     conn = store.connect(paths.db_path)
     store.init_db(conn)
-    hr_max, hr_rest = _hr_from(args, load_athlete_config(paths))
-    profile = build_profile(conn, hr_max=hr_max, hr_rest=hr_rest)
+    cfg = load_athlete_config(paths)
+    hr_max, hr_rest = _hr_from(args, cfg)
+    profile = build_profile(conn, hr_max=hr_max, hr_rest=hr_rest, sex=cfg.sex)
 
     if args.dry_run:
         from runlog.plan.prompt import dry_run_text
@@ -344,9 +348,10 @@ def _cmd_plan_review(args: argparse.Namespace) -> int:
     paths = resolve_paths()
     conn = store.connect(paths.db_path)
     store.init_db(conn)
-    hr_max, hr_rest = _hr_from(args, load_athlete_config(paths))
-    profile = build_profile(conn, hr_max=hr_max, hr_rest=hr_rest)
-    progress = build_progress(conn, start, hr_max=hr_max, hr_rest=hr_rest)
+    cfg = load_athlete_config(paths)
+    hr_max, hr_rest = _hr_from(args, cfg)
+    profile = build_profile(conn, hr_max=hr_max, hr_rest=hr_rest, sex=cfg.sex)
+    progress = build_progress(conn, start, hr_max=hr_max, hr_rest=hr_rest, sex=cfg.sex)
 
     if args.dry_run:
         print(review_dry_run_text(plan_md, progress, profile))

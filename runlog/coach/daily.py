@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from runlog.analyze.metrics import Run
     from runlog.analyze.readiness import ReadinessDay
     from runlog.analyze.records import RecordEvent
+    from runlog.config import Sex
     from runlog.plan.progress import WorkoutDetail
     from runlog.plan.schedule import PlannedSession, PlanSchedule
 
@@ -160,6 +161,7 @@ def build_today(
     today: date,
     hr_max: float | None = None,
     hr_rest: float | None = None,
+    sex: Sex | None = None,
 ) -> TodayCard:
     """The morning card: readiness, yesterday's strain, plan, guidance."""
     runs = metrics.canonical_run_activities(conn)
@@ -172,7 +174,7 @@ def build_today(
         z <= _RED_FLAG_Z for z in latest.contributors.values()
     )
 
-    daily = analytics.daily_trimp(runs, hr_max_value, hr_rest_value)
+    daily = analytics.daily_trimp(runs, hr_max_value, hr_rest_value, sex)
     trimp_by_day = dict(daily)
     yesterday_trimp = trimp_by_day.get(today - timedelta(days=1))
     window = [

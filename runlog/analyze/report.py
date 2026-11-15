@@ -44,7 +44,7 @@ if TYPE_CHECKING:
     from datetime import date
     from pathlib import Path
 
-    from runlog.config import Athlete
+    from runlog.config import Athlete, Sex
 
 
 # Passive, off-workout health metrics kept strictly separate from training data
@@ -245,6 +245,7 @@ def run(
     min_distance_km: float = metrics.MIN_DISTANCE_KM,
     hr_max: float | None = None,
     hr_rest: float | None = None,
+    sex: Sex | None = None,
     athlete: Athlete | None = None,
 ) -> ReportResult:
     """Compute all metrics, render charts into ``out_dir``, return the summary."""
@@ -432,7 +433,7 @@ def run(
     # used only as a scalar constant in the TRIMP formula (not plotted here).
     analytics_dir = out_dir / "analytics"
     analytics_dir.mkdir(parents=True, exist_ok=True)
-    daily = analytics.daily_trimp(runs, hr_max_value, hr_rest_value)
+    daily = analytics.daily_trimp(runs, hr_max_value, hr_rest_value, sex)
     pmc = analytics.performance_management(daily)
     acwr = analytics.acwr_series(daily)
     efficiency = analytics.efficiency_factor(runs)
@@ -485,7 +486,9 @@ def run(
         produced.append(charts.readiness_chart(readiness_days, analytics_dir))
 
     # Dose-response: how all-sport training load moves next-day recovery.
-    responses = response.load_response(conn, hr_max_value, hr_rest_value, since=since)
+    responses = response.load_response(
+        conn, hr_max_value, hr_rest_value, since=since, sex=sex
+    )
     if responses:
         produced.append(charts.load_response_chart(responses, analytics_dir))
 
