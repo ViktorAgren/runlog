@@ -176,6 +176,20 @@ _SECTION_SPEC: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         ),
     ),
     (
+        "Performance models",
+        "Mean-maximal speed and the critical-speed model, modelled race fitness "
+        "(VDOT), training intensity structure (Polarization Index), long-run "
+        "durability, and training-load structure.",
+        (
+            "mean_maximal_curve",
+            "vdot",
+            "polarization_index",
+            "durability",
+            "training_monotony",
+            "training_strain",
+        ),
+    ),
+    (
         "Anomalies & readiness",
         "Days and runs that deviate from your own rolling baseline, and how "
         "training load moves next-day recovery.",
@@ -212,6 +226,12 @@ _TITLE_OVERRIDES = {
     "efficiency_factor": "Aerobic efficiency factor",
     "critical_speed": "Critical speed",
     "lactate_thresholds": "Lactate thresholds (LT1 / LT2) over time",
+    "mean_maximal_curve": "Mean-maximal speed curve",
+    "vdot": "VDOT (modelled race fitness)",
+    "polarization_index": "Polarization Index (intensity structure)",
+    "durability": "Durability (long-run efficiency fade)",
+    "training_monotony": "Training monotony",
+    "training_strain": "Training strain",
     "readiness": "Daily readiness",
     "running_economy": "Running economy (speed per watt)",
     "vo2max": "VO2max",
@@ -509,6 +529,13 @@ def _run(
     cs_model = cs.critical_speed(conn, runs)
     if cs_model is not None:
         produced.append(charts.critical_speed_chart(cs_model, analytics_dir))
+    # Mean-maximal speed curve (power-duration analogue) and its CS/D' fit.
+    mm_curve = curves.mean_maximal_curve(conn, runs)
+    mm_model = curves.fit(mm_curve)
+    if mm_curve:
+        produced.append(
+            charts.mean_maximal_curve_chart(mm_curve, mm_model, analytics_dir)
+        )
     # Estimated LT1/LT2 threshold pace over time: critical speed is the LT2/MLSS
     # velocity (rolling re-fit per window), LT1 a fixed fraction of it.
     cs_series = cs.critical_speed_series(conn, runs, datetime.now().date())
@@ -527,6 +554,15 @@ def _run(
     if vdot_points:
         trend_series.append(
             ("VDOT (from critical speed) trend", "training", "/30d", vdot_points)
+        )
+        produced.append(
+            charts.marker_chart(
+                vdot_points,
+                "VDOT (modelled race fitness)",
+                "VDOT",
+                "vdot.svg",
+                analytics_dir,
+            )
         )
     readiness_days = readiness.readiness_series(conn, since=since)
     readiness_r = readiness.performance_correlation(readiness_days, runs)
@@ -567,13 +603,34 @@ def _run(
         )
     )
     # Load structure (Foster): monotony, strain, and week-over-week ramp rate.
+    monotony, strain, ramp = (
+        load.monotony_series(daily),
+        load.strain_series(daily),
+        load.ramp_series(daily),
+    )
     for label, unit, points in (
-        ("Training monotony trend", "ratio/30d", load.monotony_series(daily)),
-        ("Training strain trend", "load/30d", load.strain_series(daily)),
-        ("Weekly load ramp trend", "%/30d", load.ramp_series(daily)),
+        ("Training monotony trend", "ratio/30d", monotony),
+        ("Training strain trend", "load/30d", strain),
+        ("Weekly load ramp trend", "%/30d", ramp),
     ):
         if points:
             trend_series.append((label, "training", unit, points))
+    if monotony:
+        produced.append(
+            charts.marker_chart(
+                monotony,
+                "Training monotony",
+                "mean/SD",
+                "training_monotony.svg",
+                analytics_dir,
+            )
+        )
+    if strain:
+        produced.append(
+            charts.marker_chart(
+                strain, "Training strain", "load", "training_strain.svg", analytics_dir
+            )
+        )
     # Polarization Index over time (Treff): training intensity structure.
     polarization = physiology.polarization_series(
         physiology.run_intensity_bands(conn, runs, hr_max_value, hr_rest_value)
@@ -582,11 +639,29 @@ def _run(
         trend_series.append(
             ("Polarization index trend", "training", "a.u./30d", polarization)
         )
+        produced.append(
+            charts.marker_chart(
+                polarization,
+                "Polarization Index",
+                "a.u.",
+                "polarization_index.svg",
+                analytics_dir,
+            )
+        )
     # Durability: within-long-run efficiency fade (fatigue resistance).
     fade = durability.durability_series(conn, runs)
     if fade:
         trend_series.append(
             ("Durability (efficiency fade) trend", "training", "%/30d", fade)
+        )
+        produced.append(
+            charts.marker_chart(
+                fade,
+                "Durability (long-run efficiency fade)",
+                "% fade",
+                "durability.svg",
+                analytics_dir,
+            )
         )
     # Rolling r(t): how next-day HRV's coupling to training load drifts over time.
     coupling = rolling.rolling_correlation(
@@ -658,7 +733,6 @@ def _run(
     data_exports: list[Path] = []
     if save:
         scalars: list[Scalar] = []
-        mm_model = curves.fit(curves.mean_maximal_curve(conn, runs))
         if mm_model is not None:
             scalars.append(
                 Scalar("critical_speed_kmh", round(mm_model.cs_mps * 3.6, 2), "km/h")

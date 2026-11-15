@@ -232,6 +232,17 @@ def test_critical_speed_and_readiness_charts_write_png(tmp_path: Path) -> None:
     assert _wrote_png(charts.readiness_chart(days, tmp_path))
 
 
+def test_mean_maximal_curve_chart(tmp_path: Path) -> None:
+    from runlog.analyze.cs import CsModel, CsPoint
+
+    curve = [(120, 5.5), (300, 5.0), (600, 4.7), (1200, 4.4)]
+    model = CsModel(
+        cs_mps=4.2, d_prime_m=200.0, r=0.98, points=[CsPoint(1000.0, 200.0)]
+    )
+    assert _wrote_png(charts.mean_maximal_curve_chart(curve, model, tmp_path))
+    assert _wrote_png(charts.mean_maximal_curve_chart([], None, tmp_path))
+
+
 def test_charts_handle_empty_data(tmp_path: Path) -> None:
     assert _wrote_png(charts.pace_over_time_chart([], tmp_path))
     assert _wrote_png(

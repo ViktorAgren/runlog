@@ -1029,6 +1029,52 @@ def critical_speed_chart(model: CsModel | None, out_dir: Path) -> Path:
     return style.save(fig, out_dir, "critical_speed.svg")
 
 
+def mean_maximal_curve_chart(
+    curve: Sequence[tuple[int, float]], model: CsModel | None, out_dir: Path
+) -> Path:
+    """Mean-maximal speed over a log-duration grid, with the critical-speed line."""
+    fig, ax = style.figure(
+        "Mean-maximal speed curve",
+        "Fastest average speed held for each duration; the asymptote is Critical Speed",
+        "Duration (s, log scale)",
+        "Speed (km/h)",
+    )
+    if curve:
+        durations = [float(d) for d, _ in curve]
+        ax.plot(
+            durations,
+            [speed * 3.6 for _, speed in curve],
+            color=PRIMARY,
+            lw=2,
+            marker="o",
+            ms=4,
+            label="Best efforts",
+        )
+        ax.set_xscale("log")
+        if model is not None:
+            span = [
+                durations[0] * (durations[-1] / durations[0]) ** (i / 100)
+                for i in range(101)
+            ]
+            ax.plot(
+                span,
+                [(model.cs_mps + model.d_prime_m / t) * 3.6 for t in span],
+                color=ACCENT,
+                lw=1.8,
+                linestyle="--",
+                label="CS model",
+            )
+            ax.axhline(
+                model.cs_mps * 3.6,
+                color=GOOD,
+                linestyle=":",
+                lw=1.2,
+                label=f"CS {model.cs_mps * 3.6:.1f} km/h",
+            )
+        ax.legend(loc="upper right")
+    return style.save(fig, out_dir, "mean_maximal_curve.svg")
+
+
 def lactate_threshold_chart(
     series: Sequence[tuple[date, float, float]], out_dir: Path
 ) -> Path:
