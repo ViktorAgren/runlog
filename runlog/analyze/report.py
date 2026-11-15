@@ -35,6 +35,7 @@ from runlog.analyze import (
     records,
     report_model,
     response,
+    rolling,
     stats,
     streams,
     summary,
@@ -582,6 +583,12 @@ def _run(
         trend_series.append(
             ("Durability (efficiency fade) trend", "training", "%/30d", fade)
         )
+    # Rolling r(t): how next-day HRV's coupling to training load drifts over time.
+    coupling = rolling.rolling_correlation(
+        daily, metrics.daily_means(metrics.metric_series(conn, "hrv_sdnn"))
+    )
+    if coupling:
+        trend_series.append(("Load-HRV coupling trend", "cross", "r/30d", coupling))
     table = importance.build_table(
         _collect_candidates(trend_series, responses, readiness_r, life)
     )
