@@ -26,6 +26,7 @@ from runlog.analyze import (
     html_report,
     importance,
     lifestyle,
+    load,
     metrics,
     persist,
     physiology,
@@ -558,6 +559,14 @@ def _run(
             [(w.week_start, w.distance_km) for w in weekly],
         )
     )
+    # Load structure (Foster): monotony, strain, and week-over-week ramp rate.
+    for label, unit, points in (
+        ("Training monotony trend", "ratio/30d", load.monotony_series(daily)),
+        ("Training strain trend", "load/30d", load.strain_series(daily)),
+        ("Weekly load ramp trend", "%/30d", load.ramp_series(daily)),
+    ):
+        if points:
+            trend_series.append((label, "training", unit, points))
     table = importance.build_table(
         _collect_candidates(trend_series, responses, readiness_r, life)
     )
