@@ -137,9 +137,9 @@ def footnote(fig: Any, text: str) -> None:
 
 
 def save(fig: Any, out_dir: Path, name: str) -> Path:
-    """Write the figure to ``out_dir/name`` including any overflow annotations."""
-    path = out_dir / name
-    fig.savefig(path, bbox_inches="tight")
+    """Write the figure as a vector SVG (``name`` with its suffix forced to .svg)."""
+    path = (out_dir / name).with_suffix(".svg")
+    fig.savefig(path, format="svg", bbox_inches="tight")
     return path
 
 

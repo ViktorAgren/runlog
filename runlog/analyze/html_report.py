@@ -8,7 +8,6 @@ modern-dashboard CSS lives in the template.
 
 from __future__ import annotations
 
-import base64
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -32,9 +31,11 @@ def _env() -> Environment:
     )
 
 
-def _data_uri(path: Path) -> str:
-    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
-    return f"data:image/png;base64,{encoded}"
+def _inline_svg(path: Path) -> str:
+    """Return the figure's ``<svg>`` markup for inlining (drops the XML prolog)."""
+    text = path.read_text(encoding="utf-8")
+    start = text.find("<svg")
+    return text[start:] if start != -1 else text
 
 
 def render(model: ReportModel, out_dir: Path) -> Path:
@@ -43,7 +44,7 @@ def render(model: ReportModel, out_dir: Path) -> Path:
     sections: list[dict[str, Any]] = []
     for section in model.sections:
         figures = [
-            {"title": fig.title, "caption": fig.caption, "data_uri": _data_uri(path)}
+            {"title": fig.title, "caption": fig.caption, "svg": _inline_svg(path)}
             for fig in section.figures
             if (path := out_dir / fig.path).exists()
         ]

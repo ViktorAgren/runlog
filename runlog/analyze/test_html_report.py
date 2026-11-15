@@ -54,7 +54,7 @@ def _write_figure(out_dir: Path, rel: str) -> None:
 
 
 def test_render_embeds_figures_and_kpis(tmp_path: Path) -> None:
-    _write_figure(tmp_path, "analytics/pmc.png")
+    _write_figure(tmp_path, "analytics/pmc.svg")
     model = ReportModel(
         title="Running analytics report",
         subtitle="2025-01-01 to 2026-07-01 · 270 runs",
@@ -64,7 +64,7 @@ def test_render_embeds_figures_and_kpis(tmp_path: Path) -> None:
             Section(
                 "Fitness & form",
                 "Fitness/fatigue balance.",
-                [FigureRef("Fitness · Fatigue · Form", "analytics/pmc.png")],
+                [FigureRef("Fitness · Fatigue · Form", "analytics/pmc.svg")],
             )
         ],
         stats=StatsTable(
@@ -92,8 +92,8 @@ def test_render_embeds_figures_and_kpis(tmp_path: Path) -> None:
     checks = (
         "Fitness (CTL)" in html,
         "Fitness &amp; form" in html,  # autoescaped section title
-        'src="data:image/png;base64,' in html,
-        "analytics/pmc.png" not in html,  # path not referenced, only embedded
+        "<svg" in html,  # the figure is inlined as vector SVG
+        "analytics/pmc.svg" not in html,  # path not referenced, only embedded
         "What matters (FDR-corrected)" in html,
         '<table class="stats">' in html,
         'class="sig"' in html,  # the significant row carries the accent

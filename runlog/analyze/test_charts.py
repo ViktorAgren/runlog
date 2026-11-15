@@ -83,7 +83,7 @@ def test_hr_charts_write_png(tmp_path: Path) -> None:
 def test_marker_chart_writes_png(tmp_path: Path) -> None:
     daily = [(date(2026, 6, d), 50.0 + d) for d in range(1, 4)]
     assert _wrote_png(
-        charts.marker_chart(daily, "VO2max", "ml/kg/min", "vo2max.png", tmp_path)
+        charts.marker_chart(daily, "VO2max", "ml/kg/min", "vo2max.svg", tmp_path)
     )
 
 

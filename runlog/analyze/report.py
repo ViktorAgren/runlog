@@ -75,29 +75,29 @@ _UNCHARTED_MARKERS = frozenset({"spo2", "walking_asymmetry"})
 # each gated on having data so sources lacking the field emit no empty figure.
 _FormAccessor = Callable[[metrics.Run], "float | None"]
 _FORM_TRENDS: tuple[tuple[str, str, str, _FormAccessor], ...] = (
-    ("Running power over time", "Watts", "running_power.png", lambda r: r.avg_power_w),
+    ("Running power over time", "Watts", "running_power.svg", lambda r: r.avg_power_w),
     (
         "Stride length over time",
         "Metres",
-        "stride_length.png",
+        "stride_length.svg",
         lambda r: r.avg_stride_length_m,
     ),
     (
         "Vertical oscillation over time",
         "Centimetres",
-        "vertical_oscillation.png",
+        "vertical_oscillation.svg",
         lambda r: r.avg_vertical_oscillation_cm,
     ),
     (
         "Ground contact time over time",
         "Milliseconds",
-        "ground_contact.png",
+        "ground_contact.svg",
         lambda r: r.avg_ground_contact_ms,
     ),
     (
         "Running economy over time",
         "m/s per watt",
-        "running_economy.png",
+        "running_economy.svg",
         metrics.running_economy,
     ),
 )
@@ -374,7 +374,7 @@ def _run(
             )
         if daily and metric not in _UNCHARTED_MARKERS:
             produced.append(
-                charts.marker_chart(daily, title, ylabel, f"{metric}.png", recovery_dir)
+                charts.marker_chart(daily, title, ylabel, f"{metric}.svg", recovery_dir)
             )
 
     # All-sport training mix: every recorded workout (strength, walks, rides),
@@ -405,7 +405,7 @@ def _run(
         if daily_series[metric]:
             produced.append(
                 charts.marker_chart(
-                    daily_series[metric], title, ylabel, f"{metric}.png", lifestyle_dir
+                    daily_series[metric], title, ylabel, f"{metric}.svg", lifestyle_dir
                 )
             )
             trend_series.append(
@@ -437,7 +437,7 @@ def _run(
                 tdee_daily,
                 "Total daily energy expenditure",
                 "kcal",
-                "tdee.png",
+                "tdee.svg",
                 energy_dir,
             )
         )
@@ -451,7 +451,7 @@ def _run(
                 active_daily,
                 "Daily active energy",
                 "kcal",
-                "active_energy.png",
+                "active_energy.svg",
                 energy_dir,
             )
         )
@@ -466,7 +466,7 @@ def _run(
                 cost_daily,
                 f"Energy cost per km ({cost_source} calories)",
                 "kcal/km",
-                "energy_cost.png",
+                "energy_cost.svg",
                 energy_dir,
             )
         )

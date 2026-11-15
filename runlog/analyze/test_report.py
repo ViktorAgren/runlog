@@ -206,11 +206,11 @@ def test_report_run_writes_charts_and_summary(tmp_path: Path) -> None:
 
     names = {p.name for p in result.charts}
     assert {
-        "weekly_volume.png",
-        "vo2max.png",
-        "hr_histogram.png",
-        "walking_hr_avg.png",
-        "respiratory_rate.png",
+        "weekly_volume.svg",
+        "vo2max.svg",
+        "hr_histogram.svg",
+        "walking_hr_avg.svg",
+        "respiratory_rate.svg",
     } <= names
     assert all(p.exists() for p in result.charts)
     assert "Running summary" in result.summary_text
@@ -218,23 +218,23 @@ def test_report_run_writes_charts_and_summary(tmp_path: Path) -> None:
     assert "Resp rate" in result.summary_text
     # All-sport mix appears, and the strength session must NOT leak into the
     # running totals (5 km + 12 km runs only).
-    assert "sport_hours.png" in names
+    assert "sport_hours.svg" in names
     assert "Training mix (all sports)" in result.summary_text
     assert "Strength" in result.summary_text
     assert "Total distance 17.0 km" in result.summary_text
     # Lifestyle: steps chart lands in its own folder + summary block appears.
     assert any(
-        p.name == "steps.png" and p.parent.name == "lifestyle" for p in result.charts
+        p.name == "steps.svg" and p.parent.name == "lifestyle" for p in result.charts
     )
     assert "Lifestyle (passive daily patterns)" in result.summary_text
     # Full-coverage series chart into lifestyle/ as well.
     assert {
-        "physical_effort.png",
-        "walking_speed.png",
-        "flights_climbed.png",
+        "physical_effort.svg",
+        "walking_speed.svg",
+        "flights_climbed.svg",
     } <= names
     # Uncharted markers still produce no figure.
-    assert "spo2.png" not in names and "walking_asymmetry.png" not in names
+    assert "spo2.svg" not in names and "walking_asymmetry.svg" not in names
     # The what-matters panel appears once anything is scored.
     assert "What matters (FDR-corrected)" in result.summary_text
     # Without athlete demographics the energy section is absent, but says so

@@ -31,7 +31,7 @@ class Kpi:
 @dataclass(frozen=True)
 class FigureRef:
     title: str
-    path: str  # path relative to the report directory, e.g. "analytics/pmc.png"
+    path: str  # path relative to the report directory, e.g. "analytics/pmc.svg"
     caption: str = ""
 
 

@@ -163,7 +163,7 @@ def weekly_volume_chart(weekly: Sequence[WeeklyVolume], out_dir: Path) -> Path:
         ax.legend()
         style.footnote(fig, _count_note(sum(w.run_count for w in weekly)))
     style.date_axis(ax)
-    return style.save(fig, out_dir, "weekly_volume.png")
+    return style.save(fig, out_dir, "weekly_volume.svg")
 
 
 def monthly_by_year_chart(by_year: dict[int, list[float]], out_dir: Path) -> Path:
@@ -187,7 +187,7 @@ def monthly_by_year_chart(by_year: dict[int, list[float]], out_dir: Path) -> Pat
     ax.set_xticklabels(_MONTHS)
     if years:
         ax.legend(title="Year")
-    return style.save(fig, out_dir, "monthly_by_year.png")
+    return style.save(fig, out_dir, "monthly_by_year.svg")
 
 
 def distance_histogram(distances: Sequence[float], out_dir: Path) -> Path:
@@ -203,7 +203,7 @@ def distance_histogram(distances: Sequence[float], out_dir: Path) -> Path:
         ax.axvline(median, color=ACCENT, lw=2, label=f"median {median:.1f} km")
         ax.legend()
         style.footnote(fig, _count_note(len(distances)))
-    return style.save(fig, out_dir, "distance_histogram.png")
+    return style.save(fig, out_dir, "distance_histogram.svg")
 
 
 def training_heatmap_chart(heatmap: Heatmap, out_dir: Path) -> Path:
@@ -211,13 +211,13 @@ def training_heatmap_chart(heatmap: Heatmap, out_dir: Path) -> Path:
         "Training heatmap", "Distance by weekday over the weeks", "Week", "Weekday"
     )
     if heatmap.week_starts:
-        mesh = ax.pcolormesh(heatmap.matrix, cmap="YlGnBu")
+        mesh = ax.pcolormesh(heatmap.matrix, cmap="YlGnBu", rasterized=True)
         fig.colorbar(mesh, ax=ax, label="Distance (km)")
     ax.set_yticks([i + 0.5 for i in range(7)])
     ax.set_yticklabels(_WEEKDAYS)
     ax.invert_yaxis()
     ax.grid(visible=False)
-    return style.save(fig, out_dir, "training_heatmap.png")
+    return style.save(fig, out_dir, "training_heatmap.svg")
 
 
 def runs_per_week_chart(weekly: Sequence[WeeklyVolume], out_dir: Path) -> Path:
@@ -232,7 +232,7 @@ def runs_per_week_chart(weekly: Sequence[WeeklyVolume], out_dir: Path) -> Path:
         alpha=0.75,
     )
     style.date_axis(ax)
-    return style.save(fig, out_dir, "runs_per_week.png")
+    return style.save(fig, out_dir, "runs_per_week.svg")
 
 
 def cumulative_ytd_chart(
@@ -258,7 +258,7 @@ def cumulative_ytd_chart(
             )
     if by_year:
         ax.legend(title="Year")
-    return style.save(fig, out_dir, "cumulative_distance.png")
+    return style.save(fig, out_dir, "cumulative_distance.svg")
 
 
 # --- Pace -------------------------------------------------------------------
@@ -267,7 +267,7 @@ def cumulative_ytd_chart(
 def _pace_scatter(
     ax: Any, days: Sequence[Any], paces: Sequence[float], label: str = "Runs"
 ) -> None:
-    ax.scatter(days, paces, s=16, color=MUTED, alpha=0.6, label=label)
+    ax.scatter(days, paces, s=16, color=MUTED, alpha=0.6, label=label, rasterized=True)
     ax.plot(
         *_gap_broken(days, _rolling_median(paces)),
         color=PRIMARY,
@@ -292,7 +292,7 @@ def pace_over_time_chart(points: Sequence[PacePoint], out_dir: Path) -> Path:
         style.footnote(fig, _count_note(len(ordered)))
     _pace_axis(ax)
     style.date_axis(ax)
-    return style.save(fig, out_dir, "pace_over_time.png")
+    return style.save(fig, out_dir, "pace_over_time.svg")
 
 
 def grade_adjusted_pace_chart(points: Sequence[PacePoint], out_dir: Path) -> Path:
@@ -311,7 +311,7 @@ def grade_adjusted_pace_chart(points: Sequence[PacePoint], out_dir: Path) -> Pat
         ax.legend()
     _pace_axis(ax)
     style.date_axis(ax)
-    return style.save(fig, out_dir, "grade_adjusted_pace.png")
+    return style.save(fig, out_dir, "grade_adjusted_pace.svg")
 
 
 def best_effort_pace_chart(efforts: Sequence[EffortRecord], out_dir: Path) -> Path:
@@ -352,7 +352,7 @@ def best_effort_pace_chart(efforts: Sequence[EffortRecord], out_dir: Path) -> Pa
     ax.yaxis.set_major_formatter(FuncFormatter(_format_pace))
     if values:
         ax.set_ylim(min(values) * 0.85, max(values) * 1.08)
-    return style.save(fig, out_dir, "best_effort_pace.png")
+    return style.save(fig, out_dir, "best_effort_pace.svg")
 
 
 def race_prediction_chart(predictions: Sequence[RacePrediction], out_dir: Path) -> Path:
@@ -380,7 +380,7 @@ def race_prediction_chart(predictions: Sequence[RacePrediction], out_dir: Path) 
                 fontweight="bold",
                 color=SUBTLE,
             )
-    return style.save(fig, out_dir, "race_predictions.png")
+    return style.save(fig, out_dir, "race_predictions.svg")
 
 
 # --- Heart rate & effort ----------------------------------------------------
@@ -403,7 +403,15 @@ def hr_over_time_chart(points: Sequence[HrPoint], out_dir: Path) -> Path:
     if ordered:
         starts = [p.start for p in ordered]
         averages = [p.avg_hr for p in ordered]
-        ax.scatter(starts, averages, s=14, color=MUTED, alpha=0.45, label="Per run")
+        ax.scatter(
+            starts,
+            averages,
+            s=14,
+            color=MUTED,
+            alpha=0.45,
+            label="Per run",
+            rasterized=True,
+        )
         ax.plot(
             *_gap_broken(starts, _rolling_median(averages)),
             color=PRIMARY,
@@ -412,7 +420,7 @@ def hr_over_time_chart(points: Sequence[HrPoint], out_dir: Path) -> Path:
         )
         ax.legend()
     style.date_axis(ax)
-    return style.save(fig, out_dir, "hr_over_time.png")
+    return style.save(fig, out_dir, "hr_over_time.svg")
 
 
 def hr_histogram(
@@ -430,7 +438,7 @@ def hr_histogram(
     for zone in zones:
         ax.axvline(zone.low_bpm, color=SUBTLE, linestyle="--", linewidth=0.8)
         ax.text(zone.low_bpm, top, f" {zone.label}", color=SUBTLE, va="top", fontsize=8)
-    return style.save(fig, out_dir, "hr_histogram.png")
+    return style.save(fig, out_dir, "hr_histogram.svg")
 
 
 def hr_zones_chart(zones: Sequence[HrZone], hr_max: float, out_dir: Path) -> Path:
@@ -446,7 +454,7 @@ def hr_zones_chart(zones: Sequence[HrZone], hr_max: float, out_dir: Path) -> Pat
         color=list(ZONE_COLORS[: len(zones)]),
     )
     style.bar_value_labels(ax, bars, "{:.0f}")
-    return style.save(fig, out_dir, "hr_zones.png")
+    return style.save(fig, out_dir, "hr_zones.svg")
 
 
 def training_load_chart(load: Sequence[WeeklyLoad], out_dir: Path) -> Path:
@@ -466,7 +474,7 @@ def training_load_chart(load: Sequence[WeeklyLoad], out_dir: Path) -> Path:
             markersize=3,
         )
     style.date_axis(ax)
-    return style.save(fig, out_dir, "training_load.png")
+    return style.save(fig, out_dir, "training_load.svg")
 
 
 # --- Cadence, elevation, dynamics -------------------------------------------
@@ -483,7 +491,9 @@ def cadence_chart(points: Sequence[tuple[datetime, float]], out_dir: Path) -> Pa
     if ordered:
         days = [d for d, _ in ordered]
         values = [v for _, v in ordered]
-        ax.scatter(days, values, s=14, color=MUTED, alpha=0.5, label="Runs")
+        ax.scatter(
+            days, values, s=14, color=MUTED, alpha=0.5, label="Runs", rasterized=True
+        )
         ax.plot(
             *_gap_broken(days, _rolling_mean(values, 10)),
             color=PRIMARY,
@@ -492,7 +502,7 @@ def cadence_chart(points: Sequence[tuple[datetime, float]], out_dir: Path) -> Pa
         )
         ax.legend()
     style.date_axis(ax)
-    return style.save(fig, out_dir, "cadence.png")
+    return style.save(fig, out_dir, "cadence.svg")
 
 
 def elevation_by_month_chart(by_year: dict[int, list[float]], out_dir: Path) -> Path:
@@ -516,7 +526,7 @@ def elevation_by_month_chart(by_year: dict[int, list[float]], out_dir: Path) -> 
     ax.set_xticklabels(_MONTHS)
     if years:
         ax.legend(title="Year")
-    return style.save(fig, out_dir, "elevation_by_month.png")
+    return style.save(fig, out_dir, "elevation_by_month.svg")
 
 
 def marker_chart(
@@ -532,7 +542,9 @@ def marker_chart(
     if daily:
         days = [d for d, _ in daily]
         values = [v for _, v in daily]
-        ax.scatter(days, values, s=14, color=MUTED, alpha=0.4, label="Daily")
+        ax.scatter(
+            days, values, s=14, color=MUTED, alpha=0.4, label="Daily", rasterized=True
+        )
         style.trend_annotation(ax, list(daily))
         style.latest_callout(ax, days[-1], values[-1], style.sig_value(values[-1]))
         ax.legend(loc="lower left")
@@ -558,7 +570,7 @@ def energy_breakdown_chart(days: Sequence[EnergyDay], out_dir: Path) -> Path:
         style.latest_callout(ax, xs[-1], tdee[-1], style.sig_value(tdee[-1]))
         ax.legend(loc="upper left")
     style.date_axis(ax)
-    return style.save(fig, out_dir, "energy_breakdown.png")
+    return style.save(fig, out_dir, "energy_breakdown.svg")
 
 
 def sport_hours_chart(weekly: Sequence[WeeklySportHours], out_dir: Path) -> Path:
@@ -590,7 +602,7 @@ def sport_hours_chart(weekly: Sequence[WeeklySportHours], out_dir: Path) -> Path
     if labels:
         ax.legend(title="Sport")
     style.date_axis(ax)
-    return style.save(fig, out_dir, "sport_hours.png")
+    return style.save(fig, out_dir, "sport_hours.svg")
 
 
 # --- High-level analytics ---------------------------------------------------
@@ -641,7 +653,7 @@ def pmc_chart(points: Sequence[PmcPoint], out_dir: Path) -> Path:
         extra = ax2.get_legend_handles_labels()
         ax.legend(handles[0] + extra[0], handles[1] + extra[1], loc="upper left")
     style.date_axis(ax)
-    return style.save(fig, out_dir, "pmc_fitness_form.png")
+    return style.save(fig, out_dir, "pmc_fitness_form.svg")
 
 
 def acwr_chart(series: Sequence[tuple[date, float]], out_dir: Path) -> Path:
@@ -658,7 +670,7 @@ def acwr_chart(series: Sequence[tuple[date, float]], out_dir: Path) -> Path:
         style.latest_callout(ax, series[-1][0], series[-1][1], f"{series[-1][1]:.2f}")
     ax.legend()
     style.date_axis(ax)
-    return style.save(fig, out_dir, "acwr.png")
+    return style.save(fig, out_dir, "acwr.svg")
 
 
 def efficiency_trend_chart(
@@ -708,7 +720,7 @@ def efficiency_trend_chart(
             },
         )
     style.date_axis(ax)
-    return style.save(fig, out_dir, "efficiency_factor.png")
+    return style.save(fig, out_dir, "efficiency_factor.svg")
 
 
 def decoupling_chart(series: Sequence[tuple[date, float]], out_dir: Path) -> Path:
@@ -724,7 +736,7 @@ def decoupling_chart(series: Sequence[tuple[date, float]], out_dir: Path) -> Pat
         ax.bar([d for d, _ in series], [v for _, v in series], width=4, color=colors)
     ax.legend()
     style.date_axis(ax)
-    return style.save(fig, out_dir, "aerobic_decoupling.png")
+    return style.save(fig, out_dir, "aerobic_decoupling.svg")
 
 
 def best_effort_progression_chart(
@@ -749,7 +761,7 @@ def best_effort_progression_chart(
         ax.legend(title="Distance")
     _pace_axis(ax)
     style.date_axis(ax)
-    return style.save(fig, out_dir, "best_effort_progression.png")
+    return style.save(fig, out_dir, "best_effort_progression.svg")
 
 
 def intensity_distribution_chart(dist: IntensityDistribution, out_dir: Path) -> Path:
@@ -788,7 +800,7 @@ def intensity_distribution_chart(dist: IntensityDistribution, out_dir: Path) -> 
     ax.set_xlim(0, 100)
     ax.grid(visible=False)
     ax.legend(ncol=3, loc="upper center", bbox_to_anchor=(0.5, 1.18))
-    return style.save(fig, out_dir, "intensity_distribution.png")
+    return style.save(fig, out_dir, "intensity_distribution.svg")
 
 
 def anomaly_timeline_chart(report: AnomalyReport, out_dir: Path) -> Path:
@@ -812,7 +824,7 @@ def anomaly_timeline_chart(report: AnomalyReport, out_dir: Path) -> Path:
         if row is not None:
             ax.scatter(anomaly.day, row, s=44, color=BAD, alpha=0.75, zorder=3)
     style.date_axis(ax)
-    return style.save(fig, out_dir, "anomaly_timeline.png")
+    return style.save(fig, out_dir, "anomaly_timeline.svg")
 
 
 # Record lanes bottom-to-top with display labels.
@@ -870,7 +882,7 @@ def records_chart(events: Sequence[RecordEvent], out_dir: Path) -> Path:
                 color=SUBTLE,
             )
     style.date_axis(ax)
-    return style.save(fig, out_dir, "records.png")
+    return style.save(fig, out_dir, "records.svg")
 
 
 def weekday_profile_chart(profile: WeekdayProfile, out_dir: Path) -> Path:
@@ -908,7 +920,7 @@ def weekday_profile_chart(profile: WeekdayProfile, out_dir: Path) -> Path:
         ax2.set_ylabel("Sleep (h)")
     ax.set_xticks(list(xs))
     ax.set_xticklabels(_WEEKDAYS)
-    return style.save(fig, out_dir, "weekday_profile.png")
+    return style.save(fig, out_dir, "weekday_profile.svg")
 
 
 # Display labels for the dose-response chart / summary, keyed by metric type.
@@ -960,7 +972,7 @@ def load_response_chart(responses: Sequence[MarkerResponse], out_dir: Path) -> P
         style.footnote(
             fig, f"n = {min(ns)}-{max(ns)} paired days; load = all-sport TRIMP"
         )
-    return style.save(fig, out_dir, "load_response.png")
+    return style.save(fig, out_dir, "load_response.svg")
 
 
 def critical_speed_chart(model: CsModel | None, out_dir: Path) -> Path:
@@ -1014,7 +1026,7 @@ def critical_speed_chart(model: CsModel | None, out_dir: Path) -> Path:
             },
         )
         ax.legend(loc="upper right")
-    return style.save(fig, out_dir, "critical_speed.png")
+    return style.save(fig, out_dir, "critical_speed.svg")
 
 
 def lactate_threshold_chart(
@@ -1040,7 +1052,7 @@ def lactate_threshold_chart(
         )
         ax.legend(loc="lower right")
     style.date_axis(ax)
-    return style.save(fig, out_dir, "lactate_thresholds.png")
+    return style.save(fig, out_dir, "lactate_thresholds.svg")
 
 
 def readiness_chart(days: Sequence[ReadinessDay], out_dir: Path) -> Path:
@@ -1060,4 +1072,4 @@ def readiness_chart(days: Sequence[ReadinessDay], out_dir: Path) -> Path:
     ax.set_ylim(0, 100)
     ax.legend(loc="lower left")
     style.date_axis(ax)
-    return style.save(fig, out_dir, "readiness.png")
+    return style.save(fig, out_dir, "readiness.svg")

@@ -67,7 +67,7 @@ def test_trend_annotation_two_points_falls_back_to_slope_only() -> None:
 
 def test_save_writes_png(tmp_path: Path) -> None:
     fig, _ax = style.figure("t")
-    path = style.save(fig, tmp_path, "t.png")
+    path = style.save(fig, tmp_path, "t.svg")
     assert path.exists() and path.stat().st_size > 0
 
 

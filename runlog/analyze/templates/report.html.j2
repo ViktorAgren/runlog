@@ -50,6 +50,8 @@
   figure { margin: 0; background: var(--card); border: 1px solid var(--line);
     border-radius: 12px; padding: 12px; }
   figure img { width: 100%; height: auto; display: block; border-radius: 6px; }
+  figure .svg-fig { width: 100%; }
+  figure .svg-fig svg { width: 100%; height: auto; display: block; }
   figcaption { color: var(--subtle); font-size: 12.5px; margin-top: 8px; }
   footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line);
     color: var(--muted); font-size: 12px; }
@@ -139,7 +141,7 @@
       <div class="figs">
         {% for fig in section.figures %}
         <figure>
-          <img src="{{ fig.data_uri }}" alt="{{ fig.title }}">
+          <div class="svg-fig">{{ fig.svg|safe }}</div>
           {% if fig.caption %}<figcaption>{{ fig.caption }}</figcaption>{% endif %}
         </figure>
         {% endfor %}
