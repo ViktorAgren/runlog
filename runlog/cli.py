@@ -379,6 +379,20 @@ def _cmd_plan_review(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_serve(args: argparse.Namespace) -> int:
+    try:
+        import uvicorn
+
+        from runlog.web import create_app
+    except ImportError:
+        print("The JSON API needs the web extra: pip install 'runlog[web]'.")
+        return 1
+
+    paths = resolve_paths()
+    uvicorn.run(create_app(paths.db_path), host=args.host, port=args.port)
+    return 0
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="runlog", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -532,6 +546,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="print the review prompt instead of calling the API (no key/credits)",
     )
     review_cmd.set_defaults(func=_cmd_plan_review)
+
+    serve_cmd = sub.add_parser("serve", help="run the read-only JSON API (web extra)")
+    serve_cmd.add_argument("--host", default="127.0.0.1", help="bind host")
+    serve_cmd.add_argument("--port", type=int, default=8000, help="bind port")
+    serve_cmd.set_defaults(func=_cmd_serve)
     return parser
 
 

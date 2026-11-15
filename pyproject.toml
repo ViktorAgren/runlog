@@ -30,6 +30,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# The JSON API (`runlog serve`); optional so the core install stays light.
+web = [
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+]
 dev = [
     "pytest>=8.0",
     # Gate tools pinned exactly so local and CI never drift: an unpinned linter
@@ -39,6 +44,11 @@ dev = [
     "mypy==2.4.1",
     "ruff==0.17.5",
     "types-requests>=2.31",
+    # The API is type-checked and tested in CI, so its deps belong in dev too
+    # (httpx backs fastapi's TestClient).
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "httpx>=0.27",
 ]
 
 [project.scripts]

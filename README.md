@@ -195,6 +195,26 @@ Same dry-run/API model as `plan`. Writes markdown to `data/plans/`.
 | `--model NAME` | `claude-opus-4-8` | Claude model to use |
 | `--dry-run` | off | Print the review prompt instead of calling the API (no key/credits) |
 
+### `serve`
+
+Runs a small read-only JSON API over the same analysis layer — a foundation for
+an interactive web UI (date-range filtering, sorting) the static report can't
+do. Needs the optional `web` extra:
+
+```bash
+pip install -e '.[web]'
+python3 -m runlog serve            # http://127.0.0.1:8000  (--host / --port)
+```
+
+Endpoints: `GET /api/activities`, `/api/activities/{id}`, `/api/weekly-volume`,
+`/api/pmc`, `/api/readiness`. Interactive docs at `/docs`. Reads `data/runlog.db`
+and the athlete profile; it never writes.
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--host HOST` | `127.0.0.1` | Bind address |
+| `--port PORT` | `8000` | Bind port |
+
 ---
 
 ## How it works
