@@ -20,6 +20,7 @@ from runlog.analyze import (
     anomaly,
     charts,
     cs,
+    curves,
     energy,
     forecast,
     html_report,
@@ -37,7 +38,7 @@ from runlog.analyze import (
     summary,
 )
 from runlog.analyze.report_model import FigureRef, Kpi, ReportModel, Section
-from runlog.analyze.series import from_trends
+from runlog.analyze.series import Scalar, from_trends
 from runlog.db import queries, store
 
 if TYPE_CHECKING:
@@ -620,7 +621,16 @@ def _run(
     # so the timeseries are queryable/exportable without a recompute.
     data_exports: list[Path] = []
     if save:
-        persist.persist(conn, from_trends(trend_series), [], datetime.now().isoformat())
+        scalars: list[Scalar] = []
+        mm_model = curves.fit(curves.mean_maximal_curve(conn, runs))
+        if mm_model is not None:
+            scalars.append(
+                Scalar("critical_speed_kmh", round(mm_model.cs_mps * 3.6, 2), "km/h")
+            )
+            scalars.append(Scalar("d_prime_m", round(mm_model.d_prime_m), "m"))
+        persist.persist(
+            conn, from_trends(trend_series), scalars, datetime.now().isoformat()
+        )
         data_exports = persist.export(conn, out_dir)
 
     span = f"{overall.first_run} to {overall.last_run}"
