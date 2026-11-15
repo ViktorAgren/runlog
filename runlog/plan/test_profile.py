@@ -86,6 +86,15 @@ def test_build_profile_derives_vdot_and_zones(conn: sqlite3.Connection) -> None:
     profile = build_profile(conn, hr_max=190.0)
 
     assert profile.hr_max == 190.0
+
+
+def test_build_profile_honors_hr_rest_override(conn: sqlite3.Connection) -> None:
+    _add_run(conn, datetime(2026, 6, 1, 7, tzinfo=UTC))
+    # No resting-HR data is stored, so without an override hr_rest would fall
+    # back to the median default; the explicit value must win instead.
+    profile = build_profile(conn, hr_max=190.0, hr_rest=44.0)
+
+    assert profile.hr_rest == 44.0
     assert profile.vdot is not None  # computed from a 5k effort
     kinds = [z.kind for z in profile.zones]
     assert kinds == ["Recovery", "Easy", "Marathon", "Threshold", "Interval", "Rep"]

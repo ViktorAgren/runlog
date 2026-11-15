@@ -112,6 +112,7 @@ def _latest(series: Sequence[tuple[datetime, float]]) -> float | None:
 def build_profile(
     conn: sqlite3.Connection,
     hr_max: float | None = None,
+    hr_rest: float | None = None,
     today: date | None = None,
 ) -> AthleteProfile:
     """Assemble an :class:`AthleteProfile`.
@@ -132,8 +133,8 @@ def build_profile(
 
     hr_samples = metrics.hr_samples(conn, [r.activity_id for r in runs])
     hr_max_value = hr_max if hr_max else metrics.estimated_hr_max(hr_samples)
-    hr_rest = _median_resting_hr(conn)
-    daily_load = analytics.daily_trimp(runs, hr_max_value, hr_rest)
+    hr_rest_value = hr_rest if hr_rest is not None else _median_resting_hr(conn)
+    daily_load = analytics.daily_trimp(runs, hr_max_value, hr_rest_value)
     pmc = analytics.performance_management(daily_load)
     acwr = analytics.acwr_series(daily_load)
     ef_trend = analytics.linear_trend(analytics.efficiency_factor(runs))
@@ -147,7 +148,7 @@ def build_profile(
     best_5k = best.get("5k") or predictions.get("5k")
     vdot = targets.vdot_from_effort(5000, best_5k) if best_5k else None
     zones = (
-        targets.build_training_zones(vdot, hr_max_value, hr_rest)
+        targets.build_training_zones(vdot, hr_max_value, hr_rest_value)
         if vdot is not None
         else []
     )
@@ -175,7 +176,7 @@ def build_profile(
         vo2max=_latest(metrics.metric_series(conn, "vo2max")),
         resting_hr=_latest(metrics.metric_series(conn, "resting_hr")),
         hr_max=hr_max_value,
-        hr_rest=hr_rest,
+        hr_rest=hr_rest_value,
         vdot=round(vdot, 1) if vdot is not None else None,
         zones=zones,
         advanced=build_advanced_fitness(conn, runs),

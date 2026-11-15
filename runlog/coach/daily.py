@@ -159,11 +159,12 @@ def build_today(
     schedule: PlanSchedule | None,
     today: date,
     hr_max: float | None = None,
+    hr_rest: float | None = None,
 ) -> TodayCard:
     """The morning card: readiness, yesterday's strain, plan, guidance."""
     runs = metrics.canonical_run_activities(conn)
     hr_max_value = _resolve_hr_max(conn, runs, hr_max)
-    hr_rest = metrics.resting_hr_median(conn)
+    hr_rest_value = hr_rest if hr_rest is not None else metrics.resting_hr_median(conn)
 
     ready_days = readiness.readiness_series(conn)
     latest = ready_days[-1] if ready_days else None
@@ -171,7 +172,7 @@ def build_today(
         z <= _RED_FLAG_Z for z in latest.contributors.values()
     )
 
-    daily = analytics.daily_trimp(runs, hr_max_value, hr_rest)
+    daily = analytics.daily_trimp(runs, hr_max_value, hr_rest_value)
     trimp_by_day = dict(daily)
     yesterday_trimp = trimp_by_day.get(today - timedelta(days=1))
     window = [
@@ -266,14 +267,16 @@ def build_last(
     schedule: PlanSchedule | None,
     today: date,
     hr_max: float | None = None,
+    hr_rest: float | None = None,
 ) -> LastCard | None:
     """Post-run card for the most recent run; None when there are no runs."""
     runs = metrics.canonical_run_activities(conn)
     if not runs:
         return None
     hr_max_value = _resolve_hr_max(conn, runs, hr_max)
+    hr_rest_value = hr_rest if hr_rest is not None else metrics.resting_hr_median(conn)
     run = max(runs, key=lambda r: r.start)
-    detail = progress.workout_detail(conn, run, hr_max_value)
+    detail = progress.workout_detail(conn, run, hr_max_value, hr_rest_value)
     km_splits = tuple(
         streams.km_split_paces(streams.full_stream(conn, run.activity_id))
     )

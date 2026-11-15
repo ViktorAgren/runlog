@@ -1,0 +1,16 @@
+# Athlete profile — copy to data/athlete.toml and fill in what you know.
+#
+# Every command reads this file, so HR zones and the energy section are
+# grounded in your real numbers without passing flags each time. Every key is
+# optional and falls back to a value derived from your data; --hr-max still
+# overrides hr_max for a single run.
+
+# HR anchors for the Karvonen zones (used by report, today, last, plan, plan-review).
+hr_max = 190   # your true max HR; default: the highest recorded workout sample
+hr_rest = 50   # your resting HR; default: the median of ingested resting-HR data
+
+# Demographics for the energy section (BMR/TDEE). All three are required for
+# the estimate, or the energy section is omitted.
+sex = "male"            # "male" or "female"
+height_cm = 177
+birth_date = 1999-06-07

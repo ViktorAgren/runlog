@@ -7,6 +7,8 @@ overridable with ``RUNLOG_DATA_DIR``): the raw landing zone and the SQLite DB.
 from __future__ import annotations
 
 import os
+import tomllib
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -105,23 +107,104 @@ class Athlete:
         return day.year - self.birth_date.year - (0 if had_birthday else 1)
 
 
-def load_athlete() -> Athlete | None:
-    """Load athlete demographics from the environment / ``.env``.
+@dataclass(frozen=True)
+class AthleteConfig:
+    """Persisted athlete settings read by every command.
 
-    Returns ``None`` when any field is unset or the sex is unrecognized, so the
-    energy-expenditure feature degrades gracefully instead of raising.
+    Demographics (for the energy model) plus the HR anchors (for the zone
+    math). Any field may be unset; callers fall back to a data-derived default
+    at the point of use.
+    """
+
+    sex: Sex | None = None
+    height_cm: float | None = None
+    birth_date: date | None = None
+    hr_max: float | None = None
+    hr_rest: float | None = None
+
+    def demographics(self) -> Athlete | None:
+        """The energy model needs all three demographics, or it is skipped."""
+        if self.sex is None or self.height_cm is None or self.birth_date is None:
+            return None
+        return Athlete(
+            sex=self.sex, height_cm=self.height_cm, birth_date=self.birth_date
+        )
+
+
+def _data_dir(paths: Paths | None) -> Path:
+    """Where athlete.toml lives, resolved without creating the directory."""
+    if paths is not None:
+        return paths.data_dir
+    env = os.environ.get("RUNLOG_DATA_DIR")
+    return Path(env) if env else Path.cwd() / "data"
+
+
+def _load_athlete_toml(paths: Paths | None) -> Mapping[str, object]:
+    path = _data_dir(paths) / "athlete.toml"
+    if not path.exists():
+        return {}
+    with path.open("rb") as handle:
+        return tomllib.load(handle)
+
+
+def _pick(toml: Mapping[str, object], key: str, env_key: str) -> object:
+    """Prefer the athlete.toml value, else the environment variable."""
+    if key in toml:
+        return toml[key]
+    return os.environ.get(env_key)
+
+
+def _as_sex(value: object) -> Sex | None:
+    if isinstance(value, str):
+        match value.strip().lower():
+            case "male":
+                return "male"
+            case "female":
+                return "female"
+    return None
+
+
+def _as_float(value: object) -> float | None:
+    if isinstance(value, bool):
+        return None  # bool is an int subclass; a true/false HR is a mistake
+    if isinstance(value, int | float):
+        return float(value)
+    if isinstance(value, str) and value.strip():
+        try:
+            return float(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _as_date(value: object) -> date | None:
+    if isinstance(value, date):
+        return value  # tomllib parses a bare YYYY-MM-DD to a date
+    if isinstance(value, str) and value.strip():
+        try:
+            return date.fromisoformat(value.strip())
+        except ValueError:
+            return None
+    return None
+
+
+def load_athlete_config(paths: Paths | None = None) -> AthleteConfig:
+    """Load athlete settings from ``data/athlete.toml``, then the environment.
+
+    Every field is optional and falls back to a data-derived default at the
+    point of use, so a missing file or key degrades gracefully.
     """
     load_dotenv()
-    sex = os.environ.get("RUNLOG_ATHLETE_SEX", "").strip().lower()
-    height = os.environ.get("RUNLOG_ATHLETE_HEIGHT_CM", "").strip()
-    birth = os.environ.get("RUNLOG_ATHLETE_BIRTH_DATE", "").strip()
-    if sex not in ("male", "female") or not height or not birth:
-        return None
-    try:
-        return Athlete(
-            sex=sex,  # type: ignore[arg-type]
-            height_cm=float(height),
-            birth_date=date.fromisoformat(birth),
-        )
-    except ValueError:
-        return None
+    toml = _load_athlete_toml(paths)
+    return AthleteConfig(
+        sex=_as_sex(_pick(toml, "sex", "RUNLOG_ATHLETE_SEX")),
+        height_cm=_as_float(_pick(toml, "height_cm", "RUNLOG_ATHLETE_HEIGHT_CM")),
+        birth_date=_as_date(_pick(toml, "birth_date", "RUNLOG_ATHLETE_BIRTH_DATE")),
+        hr_max=_as_float(_pick(toml, "hr_max", "RUNLOG_HR_MAX")),
+        hr_rest=_as_float(_pick(toml, "hr_rest", "RUNLOG_HR_REST")),
+    )
+
+
+def load_athlete(paths: Paths | None = None) -> Athlete | None:
+    """Athlete demographics for the energy model, or None when incomplete."""
+    return load_athlete_config(paths).demographics()

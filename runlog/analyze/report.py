@@ -244,6 +244,7 @@ def run(
     since: date | None = None,
     min_distance_km: float = metrics.MIN_DISTANCE_KM,
     hr_max: float | None = None,
+    hr_rest: float | None = None,
     athlete: Athlete | None = None,
 ) -> ReportResult:
     """Compute all metrics, render charts into ``out_dir``, return the summary."""
@@ -260,7 +261,7 @@ def run(
     # the HR-max estimate — never passive/resting HR.
     hr = metrics.hr_samples(conn, [r.activity_id for r in runs])
     hr_max_value = hr_max if hr_max else metrics.estimated_hr_max(hr)
-    hr_rest_value = metrics.resting_hr_median(conn)
+    hr_rest_value = hr_rest if hr_rest is not None else metrics.resting_hr_median(conn)
     zones = metrics.hr_zone_seconds(hr, hr_max_value, hr_rest_value)
 
     # Training charts (running workouts only) and passive recovery charts go in
@@ -431,8 +432,7 @@ def run(
     # used only as a scalar constant in the TRIMP formula (not plotted here).
     analytics_dir = out_dir / "analytics"
     analytics_dir.mkdir(parents=True, exist_ok=True)
-    hr_rest = metrics.resting_hr_median(conn)
-    daily = analytics.daily_trimp(runs, hr_max_value, hr_rest)
+    daily = analytics.daily_trimp(runs, hr_max_value, hr_rest_value)
     pmc = analytics.performance_management(daily)
     acwr = analytics.acwr_series(daily)
     efficiency = analytics.efficiency_factor(runs)
@@ -485,7 +485,7 @@ def run(
         produced.append(charts.readiness_chart(readiness_days, analytics_dir))
 
     # Dose-response: how all-sport training load moves next-day recovery.
-    responses = response.load_response(conn, hr_max_value, hr_rest, since=since)
+    responses = response.load_response(conn, hr_max_value, hr_rest_value, since=since)
     if responses:
         produced.append(charts.load_response_chart(responses, analytics_dir))
 

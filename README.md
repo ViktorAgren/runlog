@@ -35,10 +35,12 @@ Requires Python ≥ 3.11. Run everything as `python3 -m runlog <command>` (or ju
   - `STRAVA_CLIENT_ID` / `STRAVA_CLIENT_SECRET` / `STRAVA_REFRESH_TOKEN` — for
     the Strava API (`strava auth` / `strava sync`). Not needed for bulk import.
   - `ANTHROPIC_API_KEY` — for `plan` (unless you use `--dry-run`).
-- **Athlete demographics** (optional) — `RUNLOG_ATHLETE_SEX`,
-  `RUNLOG_ATHLETE_HEIGHT_CM`, `RUNLOG_ATHLETE_BIRTH_DATE`. All three are needed
-  to estimate energy expenditure; without them the report simply omits the
-  energy section.
+- **Athlete profile** (optional) — copy `athlete.toml.example` to
+  `data/athlete.toml`. Every command reads it: `hr_max` / `hr_rest` anchor the
+  HR zones (so you no longer pass `--hr-max` each time; the flag still overrides
+  for a single run), and `sex` / `height_cm` / `birth_date` feed the energy
+  section (all three needed, or it is omitted). The same keys also work as
+  `RUNLOG_*` environment variables if you prefer `.env`.
 
 ## Quick start
 
@@ -48,11 +50,11 @@ python3 -m runlog strava import-bulk ~/Downloads/export.zip  # 2. import Strava
 python3 -m runlog apple import ~/Downloads/export.zip        # 2. import Apple
 python3 -m runlog link                                       # 3. de-dupe across sources
 python3 -m runlog status                                     # 4. verify
-python3 -m runlog report --hr-max 190                        # 5. charts + HTML + analytics
+python3 -m runlog report                                     # 5. charts + HTML + analytics
 python3 -m runlog plan --goal 5k --date 2026-09-01 \
-        --days mon,wed,sat --hr-max 190 --dry-run            # 6. training plan
+        --days mon,wed,sat --dry-run                         # 6. training plan
 python3 -m runlog plan-review --plan data/plans/plan-5k-2026-09-01.md \
-        --start 2026-07-01 --hr-max 190 --dry-run            # 7. follow up mid-block
+        --start 2026-07-01 --dry-run                         # 7. follow up mid-block
 ```
 
 Already set up? `runlog sync` refreshes everything in order (Strava → Apple →
@@ -143,7 +145,7 @@ recovery markers, lifestyle patterns, and load-vs-recovery response.
 | `--weeks N` | `6` | How many recent weeks to list in the terminal summary |
 | `--since DATE` | all history | ISO date; only analyze runs on/after it |
 | `--min-distance KM` | `1.0` | Drop runs shorter than this (removes accidental/aborted starts) |
-| `--hr-max BPM` | highest recorded | Your true max HR, for accurate HR zones |
+| `--hr-max BPM` | `athlete.toml`, else highest recorded | Your true max HR, for accurate HR zones |
 
 ### `today` / `last`
 
@@ -172,7 +174,7 @@ markdown to `data/plans/` and prints it. Needs `ANTHROPIC_API_KEY` unless
 | `--target-time T` | — | Optional goal finish time, e.g. `12:00` |
 | `--max-distance KM` | — | Cap on any single run |
 | `--max-time MIN` | — | Cap on any single run's duration |
-| `--hr-max BPM` | highest recorded | Your true max HR (anchors the Karvonen HR zones) |
+| `--hr-max BPM` | `athlete.toml`, else highest recorded | Your true max HR (anchors the Karvonen HR zones) |
 | `--out PATH` | `data/plans/plan-<goal>-<date>.md` | Output markdown path |
 | `--model NAME` | `claude-opus-4-8` | Claude model (e.g. `claude-sonnet-4-6`) |
 | `--dry-run` | off | Print the grounded prompt instead of calling the API (no key/credits) |
@@ -188,7 +190,7 @@ Same dry-run/API model as `plan`. Writes markdown to `data/plans/`.
 | --- | --- | --- |
 | `--plan PATH` (**required**) | — | The plan markdown file to review against |
 | `--start DATE` (**required**) | — | The date the plan block began, `YYYY-MM-DD` |
-| `--hr-max BPM` | highest recorded | Your true max HR (anchors the HR zones) |
+| `--hr-max BPM` | `athlete.toml`, else highest recorded | Your true max HR (anchors the HR zones) |
 | `--out PATH` | `data/plans/review-<plan>-<today>.md` | Output markdown path |
 | `--model NAME` | `claude-opus-4-8` | Claude model to use |
 | `--dry-run` | off | Print the review prompt instead of calling the API (no key/credits) |

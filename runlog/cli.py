@@ -32,7 +32,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from runlog.config import load_athlete, load_strava_credentials, resolve_paths
+from runlog.config import load_athlete_config, load_strava_credentials, resolve_paths
 from runlog.db import store
 from runlog.ingest import apple_ingest, link, runna_ingest, strava_ingest
 from runlog.sources.strava import auth
@@ -40,8 +40,17 @@ from runlog.sources.strava import auth
 if TYPE_CHECKING:
     import sqlite3
 
-    from runlog.config import Paths
+    from runlog.config import AthleteConfig, Paths
     from runlog.plan.schedule import PlanSchedule
+
+
+def _hr_from(
+    args: argparse.Namespace, cfg: AthleteConfig
+) -> tuple[float | None, float | None]:
+    """HR max/rest to pass down: an explicit --hr-max flag overrides the profile."""
+    hr_max = args.hr_max if args.hr_max is not None else cfg.hr_max
+    return hr_max, cfg.hr_rest
+
 
 _REDIRECT_URI = "http://localhost"
 
@@ -188,16 +197,19 @@ def _cmd_report(args: argparse.Namespace) -> int:
     from runlog.analyze import report
 
     paths = resolve_paths()
+    cfg = load_athlete_config(paths)
     out_dir = Path(args.out) if args.out else paths.data_dir / "reports"
     since = date.fromisoformat(args.since) if args.since else None
+    hr_max, hr_rest = _hr_from(args, cfg)
     result = report.run(
         paths.db_path,
         out_dir,
         recent_weeks=args.weeks,
         since=since,
         min_distance_km=args.min_distance,
-        hr_max=args.hr_max,
-        athlete=load_athlete(),
+        hr_max=hr_max,
+        hr_rest=hr_rest,
+        athlete=cfg.demographics(),
     )
     print(result.summary_text)
     print(f"\nCharts written to {out_dir}:")
@@ -222,8 +234,13 @@ def _cmd_today(args: argparse.Namespace) -> int:
     from runlog.coach import daily, render
 
     conn = _open_db()
+    hr_max, hr_rest = _hr_from(args, load_athlete_config())
     card = daily.build_today(
-        conn, _resolve_schedule(args.plan), date.today(), hr_max=args.hr_max
+        conn,
+        _resolve_schedule(args.plan),
+        date.today(),
+        hr_max=hr_max,
+        hr_rest=hr_rest,
     )
     print(render.render_today(card))
     return 0
@@ -233,8 +250,13 @@ def _cmd_last(args: argparse.Namespace) -> int:
     from runlog.coach import daily, render
 
     conn = _open_db()
+    hr_max, hr_rest = _hr_from(args, load_athlete_config())
     card = daily.build_last(
-        conn, _resolve_schedule(args.plan), date.today(), hr_max=args.hr_max
+        conn,
+        _resolve_schedule(args.plan),
+        date.today(),
+        hr_max=hr_max,
+        hr_rest=hr_rest,
     )
     if card is None:
         print("No runs in the database yet.")
@@ -271,7 +293,8 @@ def _cmd_plan(args: argparse.Namespace) -> int:
     )
     conn = store.connect(paths.db_path)
     store.init_db(conn)
-    profile = build_profile(conn, hr_max=args.hr_max)
+    hr_max, hr_rest = _hr_from(args, load_athlete_config(paths))
+    profile = build_profile(conn, hr_max=hr_max, hr_rest=hr_rest)
 
     if args.dry_run:
         from runlog.plan.prompt import dry_run_text
@@ -321,8 +344,9 @@ def _cmd_plan_review(args: argparse.Namespace) -> int:
     paths = resolve_paths()
     conn = store.connect(paths.db_path)
     store.init_db(conn)
-    profile = build_profile(conn, hr_max=args.hr_max)
-    progress = build_progress(conn, start, hr_max=args.hr_max)
+    hr_max, hr_rest = _hr_from(args, load_athlete_config(paths))
+    profile = build_profile(conn, hr_max=hr_max, hr_rest=hr_rest)
+    progress = build_progress(conn, start, hr_max=hr_max, hr_rest=hr_rest)
 
     if args.dry_run:
         print(review_dry_run_text(plan_md, progress, profile))
@@ -427,7 +451,7 @@ def _build_parser() -> argparse.ArgumentParser:
     report_cmd.add_argument(
         "--hr-max",
         type=float,
-        help="your max heart rate for HR zones (default: highest recorded)",
+        help="max HR for zones (overrides athlete.toml; default: highest recorded)",
     )
     report_cmd.set_defaults(func=_cmd_report)
 
@@ -435,7 +459,9 @@ def _build_parser() -> argparse.ArgumentParser:
     today_cmd.add_argument(
         "--plan", help="plan markdown path (default: newest in data/plans)"
     )
-    today_cmd.add_argument("--hr-max", type=float, help="your true max HR")
+    today_cmd.add_argument(
+        "--hr-max", type=float, help="your true max HR (overrides athlete.toml)"
+    )
     today_cmd.set_defaults(func=_cmd_today)
 
     last_cmd = sub.add_parser(
@@ -444,7 +470,9 @@ def _build_parser() -> argparse.ArgumentParser:
     last_cmd.add_argument(
         "--plan", help="plan markdown path (default: newest in data/plans)"
     )
-    last_cmd.add_argument("--hr-max", type=float, help="your true max HR")
+    last_cmd.add_argument(
+        "--hr-max", type=float, help="your true max HR (overrides athlete.toml)"
+    )
     last_cmd.set_defaults(func=_cmd_last)
 
     plan_cmd = sub.add_parser("plan", help="generate an AI training plan")
@@ -464,7 +492,7 @@ def _build_parser() -> argparse.ArgumentParser:
     plan_cmd.add_argument("--max-distance", type=float, help="max km per run")
     plan_cmd.add_argument("--max-time", type=int, help="max minutes per run")
     plan_cmd.add_argument(
-        "--hr-max", type=float, help="your true max HR (anchors the HR zones)"
+        "--hr-max", type=float, help="your true max HR (overrides athlete.toml)"
     )
     plan_cmd.add_argument("--out", help="output markdown path")
     plan_cmd.add_argument(
@@ -487,7 +515,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--start", required=True, help="date the plan block began, YYYY-MM-DD"
     )
     review_cmd.add_argument(
-        "--hr-max", type=float, help="your true max HR (anchors the HR zones)"
+        "--hr-max", type=float, help="your true max HR (overrides athlete.toml)"
     )
     review_cmd.add_argument("--out", help="output markdown path")
     review_cmd.add_argument(

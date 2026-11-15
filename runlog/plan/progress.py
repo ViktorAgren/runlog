@@ -296,6 +296,7 @@ def build_progress(
     conn: sqlite3.Connection,
     start: date,
     hr_max: float | None = None,
+    hr_rest: float | None = None,
     today: date | None = None,
 ) -> ProgressReport:
     """Summarize training between ``start`` and ``today`` for a plan follow-up."""
@@ -309,17 +310,19 @@ def build_progress(
 
     hr_samples = metrics.hr_samples(conn, [r.activity_id for r in all_runs])
     hr_max_value = hr_max if hr_max else metrics.estimated_hr_max(hr_samples)
-    hr_rest = metrics.resting_hr_median(conn)
-    daily_load = analytics.daily_trimp(all_runs, hr_max_value, hr_rest)
+    hr_rest_value = hr_rest if hr_rest is not None else metrics.resting_hr_median(conn)
+    daily_load = analytics.daily_trimp(all_runs, hr_max_value, hr_rest_value)
     pmc = analytics.performance_management(daily_load)
     acwr = analytics.acwr_series(daily_load)
     ef_trend = analytics.linear_trend(analytics.efficiency_factor(window))
     intensity = physiology.training_intensity_distribution(
-        conn, window, hr_max_value, hr_rest
+        conn, window, hr_max_value, hr_rest_value
     )
     flags = anomaly.analyze(conn, window, since=start)
     best = _plausible_best_efforts(analytics.best_effort_progressions(conn, window))
-    workouts = [workout_detail(conn, run, hr_max_value, hr_rest) for run in window]
+    workouts = [
+        workout_detail(conn, run, hr_max_value, hr_rest_value) for run in window
+    ]
 
     return ProgressReport(
         start=start,
