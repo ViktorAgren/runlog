@@ -1055,6 +1055,32 @@ def pace_hr_density_chart(pairs: Sequence[tuple[float, float]], out_dir: Path) -
     return style.save(fig, out_dir, "pace_hr_density.svg")
 
 
+def regression_trend_chart(
+    points: Sequence[tuple[date, float]],
+    title: str,
+    subtitle: str,
+    ylabel: str,
+    name: str,
+    out_dir: Path,
+) -> Path:
+    """Observed points with an OLS fit and 95% confidence + prediction bands."""
+    fig, ax = style.figure(title, subtitle, ylabel=ylabel)
+    if points:
+        ax.scatter(
+            [d for d, _ in points],
+            [v for _, v in points],
+            s=16,
+            color=MUTED,
+            alpha=0.6,
+            label="Observed",
+            rasterized=True,
+        )
+        style.regression_band(ax, points)
+        style.date_axis(ax)
+        ax.legend(loc="best")
+    return style.save(fig, out_dir, name)
+
+
 def correlation_heatmap_chart(
     labels: Sequence[str], matrix: Sequence[Sequence[float | None]], out_dir: Path
 ) -> Path:

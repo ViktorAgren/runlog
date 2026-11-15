@@ -17,6 +17,7 @@ import statistics
 from typing import TYPE_CHECKING, Any
 
 import matplotlib
+import numpy as np
 
 matplotlib.use("Agg")
 from matplotlib import dates as mdates  # noqa: E402  (must follow use("Agg"))
@@ -190,6 +191,47 @@ def trend_annotation(
         bbox={"boxstyle": "round,pad=0.3", "fc": "white", "ec": GRID, "alpha": 0.9},
     )
     return trend
+
+
+def regression_band(
+    ax: Any, points: Sequence[tuple[date, float]], color: str = ACCENT
+) -> None:
+    """OLS fit with a 95% confidence band (mean) and a 95% prediction band (new obs)."""
+    if len(points) < 3:
+        return
+    days = [day for day, _ in points]
+    x = np.array([_MDATES.date2num(day) for day in days], dtype=float)
+    y = np.array([value for _, value in points], dtype=float)
+    n = len(x)
+    slope, intercept = (float(c) for c in np.polyfit(x, y, 1))
+    fit = intercept + slope * x
+    xbar = float(x.mean())
+    sxx = float(np.sum((x - xbar) ** 2))
+    if sxx == 0:
+        return
+    resid_se = math.sqrt(float(np.sum((y - fit) ** 2)) / (n - 2))
+    tval = stats.students_t_ppf(0.975, n - 2)
+    se_fit = resid_se * np.sqrt(1 / n + (x - xbar) ** 2 / sxx)
+    se_pred = resid_se * np.sqrt(1 + 1 / n + (x - xbar) ** 2 / sxx)
+    ax.fill_between(
+        days,
+        fit - tval * se_pred,
+        fit + tval * se_pred,
+        color=color,
+        alpha=0.08,
+        lw=0,
+        label="95% prediction",
+    )
+    ax.fill_between(
+        days,
+        fit - tval * se_fit,
+        fit + tval * se_fit,
+        color=color,
+        alpha=0.22,
+        lw=0,
+        label="95% CI",
+    )
+    ax.plot(days, fit, color=color, lw=2, zorder=5, label="OLS fit")
 
 
 def reference_band(

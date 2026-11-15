@@ -232,6 +232,16 @@ def test_critical_speed_and_readiness_charts_write_png(tmp_path: Path) -> None:
     assert _wrote_png(charts.readiness_chart(days, tmp_path))
 
 
+def test_regression_trend_chart_with_bands(tmp_path: Path) -> None:
+    pts = [(date(2026, 1, d), 50.0 + d * 0.1) for d in range(1, 15)]
+    assert _wrote_png(
+        charts.regression_trend_chart(pts, "VDOT", "sub", "VDOT", "reg.svg", tmp_path)
+    )
+    assert _wrote_png(
+        charts.regression_trend_chart([], "VDOT", "sub", "VDOT", "reg.svg", tmp_path)
+    )
+
+
 def test_correlation_heatmap_chart(tmp_path: Path) -> None:
     labels = ["load", "hrv"]
     matrix: list[list[float | None]] = [[1.0, -0.4], [-0.4, 1.0]]

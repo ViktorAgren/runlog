@@ -561,9 +561,10 @@ def _run(
             ("VDOT (from critical speed) trend", "training", "/30d", vdot_points)
         )
         produced.append(
-            charts.marker_chart(
+            charts.regression_trend_chart(
                 vdot_points,
                 "VDOT (modelled race fitness)",
+                "Rolling critical-speed fits, with 95% CI + prediction bands",
                 "VDOT",
                 "vdot.svg",
                 analytics_dir,
