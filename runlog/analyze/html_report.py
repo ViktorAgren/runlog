@@ -14,10 +14,22 @@ from typing import TYPE_CHECKING, Any
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from runlog.analyze import svg
+
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from runlog.analyze.activities_view import ActivityDetail
     from runlog.analyze.report_model import ReportModel
 
 _TEMPLATE_DIR = Path(__file__).parent / "templates"
+
+
+def _env() -> Environment:
+    return Environment(
+        loader=FileSystemLoader(str(_TEMPLATE_DIR)),
+        autoescape=select_autoescape(["html", "j2"]),
+    )
 
 
 def _data_uri(path: Path) -> str:
@@ -27,11 +39,7 @@ def _data_uri(path: Path) -> str:
 
 def render(model: ReportModel, out_dir: Path) -> Path:
     """Write ``out_dir/report.html`` with every figure embedded, return its path."""
-    env = Environment(
-        loader=FileSystemLoader(str(_TEMPLATE_DIR)),
-        autoescape=select_autoescape(["html", "j2"]),
-    )
-    template = env.get_template("report.html.j2")
+    template = _env().get_template("report.html.j2")
     sections: list[dict[str, Any]] = []
     for section in model.sections:
         figures = [
@@ -51,3 +59,29 @@ def render(model: ReportModel, out_dir: Path) -> Path:
     report_path = out_dir / "report.html"
     report_path.write_text(html, encoding="utf-8")
     return report_path
+
+
+def render_activity_pages(
+    details: Sequence[ActivityDetail], out_dir: Path
+) -> list[Path]:
+    """Write ``out_dir/activities/<id>.html`` per workout, return the paths."""
+    template = _env().get_template("activity.html.j2")
+    activities_dir = out_dir / "activities"
+    activities_dir.mkdir(parents=True, exist_ok=True)
+    written: list[Path] = []
+    for detail in details:
+        charts = [
+            svg.line_chart(
+                chart.points,
+                title=chart.title,
+                unit=chart.unit,
+                color=chart.color,
+                y_format=chart.y_format,
+            )
+            for chart in detail.charts
+        ]
+        html = template.render(detail=detail, charts=charts)
+        page = activities_dir / f"{detail.activity_id}.html"
+        page.write_text(html, encoding="utf-8")
+        written.append(page)
+    return written

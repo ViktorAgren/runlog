@@ -18,12 +18,17 @@
     line-height: 1.5;
   }
   .wrap { max-width: 1100px; margin: 0 auto; padding: 32px 24px 64px; }
-  header { border-bottom: 1px solid var(--line); padding-bottom: 20px; margin-bottom: 28px; }
+  header { border-bottom: 1px solid var(--line); padding-bottom: 20px; margin-bottom: 20px; }
   h1 { font-size: 28px; margin: 0 0 4px; letter-spacing: -0.02em; }
   .sub { color: var(--subtle); font-size: 15px; }
   .gen { color: var(--muted); font-size: 12px; margin-top: 6px; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 20px; }
+  .tab { appearance: none; border: 1px solid var(--line); background: var(--card);
+    color: var(--subtle); font-size: 14px; font-weight: 600; padding: 8px 18px;
+    border-radius: 999px; cursor: pointer; }
+  .tab.active { background: var(--primary); color: #fff; border-color: var(--primary); }
   .kpis {
-    display: grid; gap: 14px; margin: 28px 0 8px;
+    display: grid; gap: 14px; margin: 8px 0;
     grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
   }
   .kpi {
@@ -59,6 +64,27 @@
   table.stats tr.sig td:first-child { border-left: 3px solid var(--good); }
   table.stats tr:last-child td { border-bottom: none; }
   .stats-caption { color: var(--subtle); font-size: 12.5px; margin: 6px 0 14px; }
+  .acts-layout { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+    gap: 18px; align-items: start; }
+  @media (max-width: 900px) { .acts-layout { grid-template-columns: 1fr; } }
+  .acts-scroll { max-height: 78vh; overflow: auto; border: 1px solid var(--line);
+    border-radius: 12px; background: var(--card); }
+  table.acts { border-collapse: collapse; width: 100%; font-size: 13px; }
+  table.acts th { position: sticky; top: 0; background: var(--card); text-align: left;
+    color: var(--subtle); font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em;
+    padding: 9px 10px; border-bottom: 1px solid var(--line); cursor: pointer; white-space: nowrap; }
+  table.acts td { padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  table.acts td.num { font-variant-numeric: tabular-nums; }
+  table.acts tbody tr { cursor: pointer; }
+  table.acts tbody tr:hover { background: #f1f5f9; }
+  table.acts tbody tr.sel { background: #dbeafe; }
+  .detail-frame { width: 100%; height: 78vh; border: 1px solid var(--line);
+    border-radius: 12px; background: var(--card); position: sticky; top: 16px; }
+  .hint { color: var(--muted); font-size: 12.5px; padding: 10px 2px; }
+  .filters { display: flex; gap: 16px; margin-bottom: 10px; align-items: center;
+    font-size: 13px; color: var(--subtle); }
+  .filters select { font-size: 13px; padding: 4px 8px; border: 1px solid var(--line);
+    border-radius: 8px; background: var(--card); color: var(--ink); margin-left: 4px; }
 </style>
 </head>
 <body>
@@ -69,53 +95,169 @@
     <div class="gen">Generated {{ model.generated_at }}</div>
   </header>
 
-  {% if model.kpis %}
-  <div class="kpis">
-    {% for kpi in model.kpis %}
-    <div class="kpi {{ kpi.tone }}">
-      <div class="k-label">{{ kpi.label }}</div>
-      <div class="k-value">{{ kpi.value }}{% if kpi.unit %}<span class="k-unit">{{ kpi.unit }}</span>{% endif %}</div>
-      {% if kpi.context %}<div class="k-context">{{ kpi.context }}</div>{% endif %}
+  <nav class="tabs">
+    <button class="tab active" data-tab="overview" onclick="showTab('overview')">Overview</button>
+    <button class="tab" data-tab="activities" onclick="showTab('activities')">Activities</button>
+  </nav>
+
+  <div id="overview" class="panel">
+    {% if model.kpis %}
+    <div class="kpis">
+      {% for kpi in model.kpis %}
+      <div class="kpi {{ kpi.tone }}">
+        <div class="k-label">{{ kpi.label }}</div>
+        <div class="k-value">{{ kpi.value }}{% if kpi.unit %}<span class="k-unit">{{ kpi.unit }}</span>{% endif %}</div>
+        {% if kpi.context %}<div class="k-context">{{ kpi.context }}</div>{% endif %}
+      </div>
+      {% endfor %}
     </div>
+    {% endif %}
+
+    {% if model.stats %}
+    <section>
+      <h2>What matters (FDR-corrected)</h2>
+      <p class="stats-caption">{{ model.stats.caption }}</p>
+      <table class="stats">
+        <tr><th>Finding</th><th>Lane</th><th>Effect</th><th>95% CI</th>
+            <th>p</th><th>q</th><th>n</th></tr>
+        {% for row in model.stats.rows %}
+        <tr{% if row.significant %} class="sig"{% endif %}>
+          <td>{{ row.label }}</td><td>{{ row.lane }}</td>
+          <td class="num">{{ row.effect }}</td><td class="num">{{ row.ci }}</td>
+          <td class="num">{{ row.p }}</td><td class="num">{{ row.q }}</td>
+          <td class="num">{{ row.n }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+    </section>
+    {% endif %}
+
+    {% for section in sections %}
+    <section>
+      <h2>{{ section.title }}</h2>
+      {% if section.narrative %}<p class="narrative">{{ section.narrative }}</p>{% endif %}
+      <div class="figs">
+        {% for fig in section.figures %}
+        <figure>
+          <img src="{{ fig.data_uri }}" alt="{{ fig.title }}">
+          {% if fig.caption %}<figcaption>{{ fig.caption }}</figcaption>{% endif %}
+        </figure>
+        {% endfor %}
+      </div>
+    </section>
     {% endfor %}
   </div>
-  {% endif %}
 
-  {% if model.stats %}
-  <section>
-    <h2>What matters (FDR-corrected)</h2>
-    <p class="stats-caption">{{ model.stats.caption }}</p>
-    <table class="stats">
-      <tr><th>Finding</th><th>Lane</th><th>Effect</th><th>95% CI</th>
-          <th>p</th><th>q</th><th>n</th></tr>
-      {% for row in model.stats.rows %}
-      <tr{% if row.significant %} class="sig"{% endif %}>
-        <td>{{ row.label }}</td><td>{{ row.lane }}</td>
-        <td class="num">{{ row.effect }}</td><td class="num">{{ row.ci }}</td>
-        <td class="num">{{ row.p }}</td><td class="num">{{ row.q }}</td>
-        <td class="num">{{ row.n }}</td>
-      </tr>
-      {% endfor %}
-    </table>
-  </section>
-  {% endif %}
-
-  {% for section in sections %}
-  <section>
-    <h2>{{ section.title }}</h2>
-    {% if section.narrative %}<p class="narrative">{{ section.narrative }}</p>{% endif %}
-    <div class="figs">
-      {% for fig in section.figures %}
-      <figure>
-        <img src="{{ fig.data_uri }}" alt="{{ fig.title }}">
-        {% if fig.caption %}<figcaption>{{ fig.caption }}</figcaption>{% endif %}
-      </figure>
-      {% endfor %}
+  <div id="activities" class="panel" hidden>
+    {% if model.activities %}
+    <div class="acts-layout">
+      <div>
+        <div class="filters">
+          <label>Show
+            <select id="f-indoor" onchange="applyFilters()">
+              <option value="">all</option>
+              <option value="out">outdoor</option>
+              <option value="in">indoor</option>
+            </select>
+          </label>
+          <label>Type
+            <select id="f-session" onchange="applyFilters()">
+              <option value="">all</option>
+              {% for s in model.activities|map(attribute='session')|unique|sort %}
+              <option value="{{ s }}">{{ s }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        </div>
+        <div class="acts-scroll">
+          <table class="acts" id="acts">
+            <thead><tr>
+              <th onclick="sortActs(0,'t')">Date</th>
+              <th>Day</th>
+              <th onclick="sortActs(2,'t')">Type</th>
+              <th onclick="sortActs(3,'t')">Session</th>
+              <th onclick="sortActs(4,'t')">Source</th>
+              <th onclick="sortActs(5,'n')">Dist</th>
+              <th onclick="sortActs(6,'n')">Time</th>
+              <th onclick="sortActs(7,'n')">Pace</th>
+              <th onclick="sortActs(8,'n')">Avg HR</th>
+              <th>Max HR</th><th>Cad</th><th>Elev</th><th>kcal</th>
+            </tr></thead>
+            <tbody>
+            {% for a in model.activities %}
+            <tr data-indoor="{{ 1 if a.indoor else 0 }}" data-session="{{ a.session }}" onclick="openActivity('{{ a.page }}', this)">
+              <td>{{ a.date }}</td>
+              <td>{{ a.weekday }}</td>
+              <td>{{ a.sport }}</td>
+              <td>{{ a.session }}</td>
+              <td>{{ a.source }}</td>
+              <td class="num" data-sort="{{ a.distance_km }}">{{ '%.2f'|format(a.distance_km) }}</td>
+              <td class="num" data-sort="{{ a.duration_s }}">{{ a.duration_disp }}</td>
+              <td class="num" data-sort="{{ a.pace_s }}">{{ a.pace_disp }}</td>
+              <td class="num" data-sort="{{ a.avg_hr or 0 }}">{{ a.avg_hr if a.avg_hr is not none else '-' }}</td>
+              <td class="num">{{ a.max_hr if a.max_hr is not none else '-' }}</td>
+              <td class="num">{{ a.cadence if a.cadence is not none else '-' }}</td>
+              <td class="num">{{ a.elevation_m if a.elevation_m is not none else '-' }}</td>
+              <td class="num">{{ a.calories if a.calories is not none else '-' }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div class="hint" id="acts-hint">{{ model.activities|length }} runs · click a row to open its timeline · click a column to sort</div>
+      </div>
+      <iframe id="detail-frame" class="detail-frame" title="workout detail"></iframe>
     </div>
-  </section>
-  {% endfor %}
+    {% else %}
+    <p class="narrative">No activities to list.</p>
+    {% endif %}
+  </div>
 
   <footer>runlog · self-contained analytics report · figures embedded inline</footer>
 </div>
+<script>
+  function showTab(id) {
+    document.querySelectorAll('.panel').forEach(function (p) { p.hidden = p.id !== id; });
+    document.querySelectorAll('.tab').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.tab === id);
+    });
+  }
+  function openActivity(page, row) {
+    var frame = document.getElementById('detail-frame');
+    if (frame) frame.src = page;
+    document.querySelectorAll('#acts tbody tr').forEach(function (r) { r.classList.remove('sel'); });
+    row.classList.add('sel');
+  }
+  function applyFilters() {
+    var ind = document.getElementById('f-indoor').value;
+    var ses = document.getElementById('f-session').value;
+    var shown = 0;
+    document.querySelectorAll('#acts tbody tr').forEach(function (r) {
+      var okInd = !ind || (ind === 'in') === (r.dataset.indoor === '1');
+      var okSes = !ses || r.dataset.session === ses;
+      r.hidden = !(okInd && okSes);
+      if (!r.hidden) shown++;
+    });
+    var h = document.getElementById('acts-hint');
+    if (h) h.textContent = shown + ' runs · click a row to open its timeline';
+  }
+  var sortDir = {};
+  function sortActs(col, type) {
+    var body = document.querySelector('#acts tbody');
+    if (!body) return;
+    var dir = sortDir[col] = -(sortDir[col] || 1);
+    var rows = Array.prototype.slice.call(body.rows);
+    rows.sort(function (a, b) {
+      var x, y;
+      if (type === 'n') {
+        x = parseFloat(a.cells[col].dataset.sort); y = parseFloat(b.cells[col].dataset.sort);
+      } else {
+        x = a.cells[col].textContent; y = b.cells[col].textContent;
+      }
+      if (x < y) return dir; if (x > y) return -dir; return 0;
+    });
+    rows.forEach(function (r) { body.appendChild(r); });
+  }
+</script>
 </body>
 </html>

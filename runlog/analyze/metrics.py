@@ -98,6 +98,7 @@ class Run:
     quality_flags: str | None = None
     sport_type: str = "Run"
     calories: float | None = None
+    is_indoor: bool = False
 
     @property
     def distance_km(self) -> float | None:
@@ -136,7 +137,7 @@ def canonical_run_activities(
                avg_pace_s_per_km, avg_hr, max_hr, avg_cadence, elevation_gain_m,
                relative_effort, grade_adj_distance_m, avg_power_w,
                avg_stride_length_m, avg_vertical_oscillation_cm,
-               avg_ground_contact_ms, quality_flags, calories
+               avg_ground_contact_ms, quality_flags, calories, is_indoor
         FROM activities
         WHERE {where}
         ORDER BY start_time_utc
@@ -175,6 +176,7 @@ def canonical_run_activities(
                 quality_flags=row["quality_flags"],
                 sport_type=row["sport_type"],
                 calories=row["calories"],
+                is_indoor=bool(row["is_indoor"]),
             )
         )
     return runs
@@ -911,6 +913,21 @@ def hr_zone_index(fraction: float) -> int | None:
         if low <= fraction < high:
             return index
     return None
+
+
+def hr_zone_bounds(
+    hr_max: float, hr_rest: float = 0.0
+) -> list[tuple[str, int, int | None]]:
+    """(label, low_bpm, high_bpm) per Karvonen zone; high is None for Z5 (open)."""
+    reserve = hr_max - hr_rest
+    return [
+        (
+            label,
+            round(hr_rest + low * reserve),
+            None if high >= 10 else round(hr_rest + high * reserve),
+        )
+        for label, low, high in _HR_ZONES
+    ]
 
 
 def hr_reserve_fraction(hr: float, hr_max: float, hr_rest: float) -> float | None:

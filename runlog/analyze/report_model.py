@@ -10,6 +10,10 @@ makes the report content unit-testable without touching matplotlib or jinja2.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from runlog.analyze.activities_view import ActivityRow
 
 # Tone drives the KPI card accent in the template.
 Tone = str  # "neutral" | "good" | "warn" | "bad"
@@ -66,6 +70,7 @@ class ReportModel:
     kpis: list[Kpi]
     sections: list[Section]
     stats: StatsTable | None = None
+    activities: list[ActivityRow] = field(default_factory=list)
 
 
 def acwr_tone(acwr: float) -> Tone:

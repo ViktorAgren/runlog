@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ detail.title }}</title>
+<style>
+  :root { --ink:#0f172a; --subtle:#64748b; --muted:#94a3b8; --line:#e2e8f0;
+    --bg:#f8fafc; --card:#fff; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    line-height:1.5; }
+  .wrap { max-width:880px; margin:0 auto; padding:24px 20px 48px; }
+  .back { color:var(--subtle); font-size:13px; text-decoration:none; }
+  .back:hover { color:var(--ink); }
+  h1 { font-size:22px; margin:10px 0 2px; letter-spacing:-0.01em; }
+  .sub { color:var(--subtle); font-size:14px; margin-bottom:16px; }
+  h2 { font-size:16px; margin:26px 0 10px; }
+  .chips { display:grid; gap:10px; grid-template-columns:repeat(auto-fill,minmax(150px,1fr));
+    margin-bottom:8px; }
+  .chip { background:var(--card); border:1px solid var(--line); border-radius:10px;
+    padding:9px 12px; }
+  .chip .cl { display:block; color:var(--subtle); font-size:11px; text-transform:uppercase;
+    letter-spacing:0.03em; }
+  .chip .cv { font-size:17px; font-weight:600; }
+  .charts { display:grid; gap:14px; margin-top:16px; }
+  svg.chart { width:100%; height:auto; background:var(--card); border:1px solid var(--line);
+    border-radius:8px; }
+  .chart-empty { background:var(--card); border:1px solid var(--line); border-radius:8px;
+    padding:14px; color:var(--muted); font-size:13px; }
+  .grid { stroke:var(--line); stroke-width:1; }
+  .ylab { fill:var(--muted); font-size:10px; text-anchor:end; }
+  .xlab { fill:var(--muted); font-size:10px; }
+  .ctitle { fill:var(--ink); font-size:12px; font-weight:600; }
+  table.laps { border-collapse:collapse; width:100%; font-size:13px; background:var(--card);
+    border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  table.laps th { text-align:left; color:var(--subtle); font-size:11px; text-transform:uppercase;
+    letter-spacing:0.03em; padding:8px 12px; border-bottom:1px solid var(--line); }
+  table.laps td { padding:7px 12px; border-bottom:1px solid var(--line);
+    font-variant-numeric:tabular-nums; }
+  table.laps tr:last-child td { border-bottom:none; }
+  .zones { display:grid; gap:8px; }
+  .zone { background:var(--card); border:1px solid var(--line); border-radius:8px;
+    padding:8px 12px; border-left:4px solid var(--muted); }
+  .zone.z1 { border-left-color:#94a3b8; } .zone.z2 { border-left-color:#16a34a; }
+  .zone.z3 { border-left-color:#eab308; } .zone.z4 { border-left-color:#f97316; }
+  .zone.z5 { border-left-color:#dc2626; }
+  .zhead { font-size:13px; display:flex; justify-content:space-between; gap:10px; }
+  .zbar { background:var(--line); border-radius:999px; height:7px; margin:5px 0;
+    overflow:hidden; }
+  .zbar span { display:block; height:100%; background:currentColor; }
+  .zone.z1 .zbar span { background:#94a3b8; } .zone.z2 .zbar span { background:#16a34a; }
+  .zone.z3 .zbar span { background:#eab308; } .zone.z4 .zbar span { background:#f97316; }
+  .zone.z5 .zbar span { background:#dc2626; }
+  .zsub { color:var(--subtle); font-size:11.5px; }
+  .thresholds { display:flex; flex-wrap:wrap; gap:14px; margin:12px 0 4px; }
+  .thr { font-size:13px; color:var(--ink); }
+  .thr.muted { color:var(--muted); font-size:12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="../report.html">&larr; back to report</a>
+  <h1>{{ detail.title }}</h1>
+  <div class="sub">{{ detail.subtitle }}</div>
+
+  <div class="chips">
+    {% for label, value in detail.header %}
+    <div class="chip"><span class="cl">{{ label }}</span><span class="cv">{{ value }}</span></div>
+    {% endfor %}
+  </div>
+
+  {% if detail.zones %}
+  <h2>Heart-rate zones</h2>
+  <div class="zones">
+    {% for z in detail.zones %}
+    <div class="zone z{{ loop.index }}">
+      <div class="zhead"><b>{{ z.label }} · {{ z.name }}</b>
+        <span class="zsub">{{ z.bpm_range }} bpm</span></div>
+      <div class="zbar"><span style="width: {{ z.pct }}%"></span></div>
+      <div class="zsub">{{ z.pct }}% · {{ z.seconds // 60 }} min</div>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="thresholds">
+    {% for label, value in detail.thresholds %}
+    <span class="thr">{{ label }}: <b>{{ value }}</b></span>
+    {% endfor %}
+    <span class="thr muted">Zones &amp; thresholds are Karvonen (%HR-reserve) estimates.</span>
+  </div>
+  {% endif %}
+
+  <div class="charts">
+    {% for chart in charts %}{{ chart|safe }}{% endfor %}
+  </div>
+
+  {% if detail.laps %}
+  <h2>Laps &amp; intervals</h2>
+  <table class="laps">
+    <thead><tr><th>#</th><th>Dist (km)</th><th>Time</th><th>Pace</th>
+      <th>Avg HR</th><th>Max HR</th></tr></thead>
+    <tbody>
+    {% for lap in detail.laps %}
+    <tr><td>{{ lap.index }}</td><td>{{ lap.distance_disp }}</td><td>{{ lap.time_disp }}</td>
+      <td>{{ lap.pace_disp }}</td><td>{{ lap.avg_hr if lap.avg_hr is not none else '-' }}</td>
+      <td>{{ lap.max_hr if lap.max_hr is not none else '-' }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+</body>
+</html>

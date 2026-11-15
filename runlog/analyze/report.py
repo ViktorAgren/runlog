@@ -10,11 +10,12 @@ from __future__ import annotations
 
 import statistics
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING
 
 from runlog.analyze import (
+    activities_view,
     analytics,
     anomaly,
     charts,
@@ -100,6 +101,7 @@ class ReportResult:
     charts: list[Path]
     summary_text: str
     report_html: Path | None = None
+    activity_pages: list[Path] = field(default_factory=list)
 
 
 # Report sections for the HTML dashboard: (title, narrative, figure stems).
@@ -566,6 +568,12 @@ def run(
     if quarantined:
         text += f"\n\n{quarantined} run(s) quarantined (data errors, excluded)."
 
+    # Activities tab: a row per run, plus a full-resolution detail page each.
+    activity_rows, activity_details = activities_view.build_activities(
+        conn, runs, hr_max_value, hr_rest_value
+    )
+    activity_pages = html_report.render_activity_pages(activity_details, out_dir)
+
     span = f"{overall.first_run} to {overall.last_run}"
     model = ReportModel(
         title="Running analytics report",
@@ -586,9 +594,15 @@ def run(
         ),
         sections=_build_sections(produced, out_dir),
         stats=_stats_table(table),
+        activities=activity_rows,
     )
     report_html = html_report.render(model, out_dir)
-    return ReportResult(charts=produced, summary_text=text, report_html=report_html)
+    return ReportResult(
+        charts=produced,
+        summary_text=text,
+        report_html=report_html,
+        activity_pages=activity_pages,
+    )
 
 
 def _build_kpis(
