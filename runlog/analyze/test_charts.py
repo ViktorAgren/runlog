@@ -232,6 +232,39 @@ def test_critical_speed_and_readiness_charts_write_png(tmp_path: Path) -> None:
     assert _wrote_png(charts.readiness_chart(days, tmp_path))
 
 
+def _activity_row(session: str, pace_s: float) -> object:
+    from runlog.analyze.activities_view import ActivityRow
+
+    return ActivityRow(
+        activity_id=1,
+        page="",
+        date="2026-01-01",
+        weekday="Mon",
+        sport="Run",
+        indoor=False,
+        session=session,
+        source="strava",
+        distance_km=10.0,
+        duration_s=3000,
+        duration_disp="50:00",
+        pace_s=pace_s,
+        pace_disp="5:00/km",
+        avg_hr=150,
+        max_hr=170,
+        cadence=160,
+        elevation_m=10,
+        calories=500,
+    )
+
+
+def test_pace_by_session_chart(tmp_path: Path) -> None:
+    rows = [_activity_row("Easy", 330.0 + i) for i in range(5)] + [
+        _activity_row("Threshold", 250.0 + i) for i in range(5)
+    ]
+    assert _wrote_png(charts.pace_by_session_chart(rows, tmp_path))  # type: ignore[arg-type]
+    assert _wrote_png(charts.pace_by_session_chart([], tmp_path))
+
+
 def test_regression_trend_chart_with_bands(tmp_path: Path) -> None:
     pts = [(date(2026, 1, d), 50.0 + d * 0.1) for d in range(1, 15)]
     assert _wrote_png(

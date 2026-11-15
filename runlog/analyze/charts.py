@@ -35,6 +35,7 @@ if TYPE_CHECKING:
     from datetime import date, datetime
     from pathlib import Path
 
+    from runlog.analyze.activities_view import ActivityRow
     from runlog.analyze.analytics import (
         BestEffortProgression,
         EffortRecord,
@@ -1053,6 +1054,39 @@ def pace_hr_density_chart(pairs: Sequence[tuple[float, float]], out_dir: Path) -
         bar.set_label("samples", color=SUBTLE, fontsize=9)
         bar.ax.tick_params(labelsize=8, colors=SUBTLE)
     return style.save(fig, out_dir, "pace_hr_density.svg")
+
+
+def pace_by_session_chart(rows: Sequence[ActivityRow], out_dir: Path) -> Path:
+    """Violin distribution of average pace per run, by detected session type."""
+    by_session: dict[str, list[float]] = {}
+    for row in rows:
+        if row.pace_s and row.pace_s > 0:
+            by_session.setdefault(row.session, []).append(row.pace_s)
+    groups = sorted(
+        ((s, paces) for s, paces in by_session.items() if len(paces) >= 3),
+        key=lambda item: statistics.median(item[1]),
+    )
+    fig, ax = style.figure(
+        "Pace by session type",
+        "Distribution of average pace per run, by detected session",
+        ylabel="Pace (min/km)",
+    )
+    if groups:
+        parts = ax.violinplot(
+            [paces for _, paces in groups], showmedians=True, widths=0.8
+        )
+        for body in parts["bodies"]:
+            body.set_facecolor(PRIMARY)
+            body.set_alpha(0.35)
+            body.set_edgecolor(PRIMARY)
+        for key in ("cmedians", "cbars", "cmins", "cmaxes"):
+            if key in parts:
+                parts[key].set_color(SUBTLE)
+        ax.set_xticks(range(1, len(groups) + 1))
+        ax.set_xticklabels([s for s, _ in groups], rotation=20, ha="right", fontsize=9)
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: _format_pace(v)))
+        ax.invert_yaxis()  # faster paces at the top
+    return style.save(fig, out_dir, "pace_by_session.svg")
 
 
 def regression_trend_chart(

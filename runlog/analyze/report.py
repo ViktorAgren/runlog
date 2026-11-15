@@ -138,6 +138,7 @@ _SECTION_SPEC: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         "Pace trends, elevation-adjusted pace, best efforts, and race projections.",
         (
             "pace_over_time",
+            "pace_by_session",
             "grade_adjusted_pace",
             "best_effort_pace",
             "best_effort_progression",
@@ -225,6 +226,7 @@ _TITLE_OVERRIDES = {
     "pace_hr_density": "Heart rate vs speed (density)",
     "hr_zones": "Time in HR zones",
     "hr_histogram": "HR distribution",
+    "pace_by_session": "Pace distribution by session type",
     "grade_adjusted_pace": "Grade-adjusted pace",
     "efficiency_factor": "Aerobic efficiency factor",
     "critical_speed": "Critical speed",
@@ -760,6 +762,7 @@ def _run(
         conn, runs, hr_max_value, hr_rest_value
     )
     activity_pages = html_report.render_activity_pages(activity_details, out_dir)
+    produced.append(charts.pace_by_session_chart(activity_rows, training_dir))
 
     # Persist every computed series to the derived store and export tidy CSVs,
     # so the timeseries are queryable/exportable without a recompute.
