@@ -1029,6 +1029,30 @@ def critical_speed_chart(model: CsModel | None, out_dir: Path) -> Path:
     return style.save(fig, out_dir, "critical_speed.svg")
 
 
+def pace_hr_density_chart(pairs: Sequence[tuple[float, float]], out_dir: Path) -> Path:
+    """2D density (hexbin) of heart rate against speed across every run's stream."""
+    fig, ax = style.figure(
+        "Heart rate vs speed",
+        "Point density over every run's stream — the aerobic cost of pace",
+        "Speed (km/h)",
+        "Heart rate (bpm)",
+    )
+    if pairs:
+        hexes = ax.hexbin(
+            [p[0] for p in pairs],
+            [p[1] for p in pairs],
+            gridsize=42,
+            cmap="YlGnBu",
+            mincnt=1,
+            linewidths=0.2,
+            rasterized=True,
+        )
+        bar = fig.colorbar(hexes, ax=ax, pad=0.01)
+        bar.set_label("samples", color=SUBTLE, fontsize=9)
+        bar.ax.tick_params(labelsize=8, colors=SUBTLE)
+    return style.save(fig, out_dir, "pace_hr_density.svg")
+
+
 def mean_maximal_curve_chart(
     curve: Sequence[tuple[int, float]], model: CsModel | None, out_dir: Path
 ) -> Path:

@@ -150,6 +150,7 @@ _SECTION_SPEC: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         "Effort, running form, and how your body responds to load.",
         (
             "hr_over_time",
+            "pace_hr_density",
             "hr_zones",
             "hr_histogram",
             "training_load",
@@ -220,6 +221,7 @@ _TITLE_OVERRIDES = {
     "pmc_fitness_form": "Fitness · Fatigue · Form",
     "acwr": "Acute:chronic workload ratio",
     "hr_over_time": "Heart rate over time",
+    "pace_hr_density": "Heart rate vs speed (density)",
     "hr_zones": "Time in HR zones",
     "hr_histogram": "HR distribution",
     "grade_adjusted_pace": "Grade-adjusted pace",
@@ -350,6 +352,7 @@ def _run(
         charts.best_effort_pace_chart(efforts, training_dir),
         charts.race_prediction_chart(predictions, training_dir),
         charts.hr_over_time_chart(metrics.hr_over_time(runs), training_dir),
+        charts.pace_hr_density_chart(streams.speed_hr_pairs(conn, runs), training_dir),
         charts.hr_histogram(hr, training_dir, zones),
         charts.hr_zones_chart(zones, hr_max_value, training_dir),
         charts.training_load_chart(

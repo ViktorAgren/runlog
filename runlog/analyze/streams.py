@@ -265,3 +265,15 @@ def run_stream_series(
         if reading is not None:
             series.append((run.start.date(), reading))
     return series
+
+
+def speed_hr_pairs(
+    conn: sqlite3.Connection, runs: Sequence[Run]
+) -> list[tuple[float, float]]:
+    """(speed km/h, HR bpm) samples across every run's stream, for a 2D density."""
+    pairs: list[tuple[float, float]] = []
+    for run in runs:
+        for sample in full_stream(conn, run.activity_id):
+            if sample.velocity_mps and sample.velocity_mps > 0 and sample.hr:
+                pairs.append((sample.velocity_mps * 3.6, sample.hr))
+    return pairs
