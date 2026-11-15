@@ -111,3 +111,23 @@ CREATE TABLE IF NOT EXISTS raw_files (
     fetched_at TEXT NOT NULL,
     sha256     TEXT NOT NULL
 );
+
+-- Derived analytics, persisted after each report run (latest-wins). These are
+-- recomputed from the raw tables, so they can always be rebuilt; storing them
+-- makes every computed series queryable and exportable without a recompute.
+CREATE TABLE IF NOT EXISTS derived_series (
+    name        TEXT NOT NULL,
+    lane        TEXT NOT NULL,
+    unit        TEXT NOT NULL,
+    day         TEXT NOT NULL,  -- ISO-8601 date
+    value       REAL NOT NULL,
+    computed_at TEXT NOT NULL,  -- ISO-8601 UTC datetime of the run that wrote it
+    PRIMARY KEY (name, day)
+);
+
+CREATE TABLE IF NOT EXISTS derived_scalars (
+    name        TEXT NOT NULL PRIMARY KEY,
+    value       REAL NOT NULL,
+    unit        TEXT NOT NULL,
+    computed_at TEXT NOT NULL
+);

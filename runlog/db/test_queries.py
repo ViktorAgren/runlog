@@ -55,3 +55,52 @@ def test_hr_samples_empty_for_no_runs() -> None:
     conn = store.connect(":memory:")  # type: ignore[arg-type]
     store.init_db(conn)
     assert queries.hr_samples(conn, []) == []
+
+
+def _memory_db() -> sqlite3.Connection:
+    conn = store.connect(":memory:")  # type: ignore[arg-type]
+    store.init_db(conn)
+    return conn
+
+
+def test_series_store_roundtrip_is_latest_wins() -> None:
+    conn = _memory_db()
+    queries.replace_series(
+        conn,
+        "ctl",
+        "training",
+        "load",
+        [("2026-01-01", 10.0), ("2026-01-02", 12.0)],
+        "2026-01-03T00:00:00+00:00",
+    )
+    assert queries.read_series(conn, "ctl") == (
+        "training",
+        "load",
+        [("2026-01-01", 10.0), ("2026-01-02", 12.0)],
+    )
+    queries.replace_series(
+        conn, "ctl", "training", "load", [("2026-01-05", 20.0)], "later"
+    )
+    assert queries.read_series(conn, "ctl") == (
+        "training",
+        "load",
+        [("2026-01-05", 20.0)],
+    )
+    assert queries.read_series(conn, "missing") is None
+
+
+def test_all_series_rows_sorted() -> None:
+    conn = _memory_db()
+    queries.replace_series(conn, "b", "recovery", "ms", [("2026-01-02", 2.0)], "t")
+    queries.replace_series(conn, "a", "training", "km", [("2026-01-01", 1.0)], "t")
+    assert queries.all_series_rows(conn) == [
+        ("a", "training", "km", "2026-01-01", 1.0),
+        ("b", "recovery", "ms", "2026-01-02", 2.0),
+    ]
+
+
+def test_scalar_store_is_upsert() -> None:
+    conn = _memory_db()
+    queries.upsert_scalar(conn, "vo2max", 61.6, "ml/kg/min", "t")
+    queries.upsert_scalar(conn, "vo2max", 62.0, "ml/kg/min", "later")
+    assert queries.all_scalars(conn) == [("vo2max", 62.0, "ml/kg/min")]
