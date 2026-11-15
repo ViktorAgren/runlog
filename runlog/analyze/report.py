@@ -188,6 +188,7 @@ _SECTION_SPEC: tuple[tuple[str, str, tuple[str, ...]], ...] = (
             "durability",
             "training_monotony",
             "training_strain",
+            "correlation_matrix",
         ),
     ),
     (
@@ -234,6 +235,7 @@ _TITLE_OVERRIDES = {
     "durability": "Durability (long-run efficiency fade)",
     "training_monotony": "Training monotony",
     "training_strain": "Training strain",
+    "correlation_matrix": "Correlation matrix (daily signals)",
     "readiness": "Daily readiness",
     "running_economy": "Running economy (speed per watt)",
     "vo2max": "VO2max",
@@ -672,6 +674,33 @@ def _run(
     )
     if coupling:
         trend_series.append(("Load-HRV coupling trend", "cross", "r/30d", coupling))
+    # Correlation matrix across the key daily signals (common-date Pearson r).
+    corr_labels, corr_matrix = analytics.correlation_matrix(
+        [
+            ("Load", daily),
+            ("HRV", metrics.daily_means(metrics.metric_series(conn, "hrv_sdnn"))),
+            ("Rest HR", metrics.daily_means(metrics.metric_series(conn, "resting_hr"))),
+            ("Sleep", metrics.daily_means(metrics.metric_series(conn, "sleep_hours"))),
+            (
+                "HR rec",
+                metrics.daily_means(metrics.metric_series(conn, "hr_recovery_1min")),
+            ),
+            ("VO2max", metrics.daily_means(metrics.metric_series(conn, "vo2max"))),
+            (
+                "Resp",
+                metrics.daily_means(metrics.metric_series(conn, "respiratory_rate")),
+            ),
+        ]
+    )
+    if any(
+        value is not None
+        for i, row in enumerate(corr_matrix)
+        for j, value in enumerate(row)
+        if i != j
+    ):
+        produced.append(
+            charts.correlation_heatmap_chart(corr_labels, corr_matrix, analytics_dir)
+        )
     table = importance.build_table(
         _collect_candidates(trend_series, responses, readiness_r, life)
     )

@@ -72,6 +72,28 @@ def pearson(xs: Sequence[float], ys: Sequence[float]) -> float | None:
     return sxy / math.sqrt(sxx * syy)
 
 
+def correlation_matrix(
+    labeled: Sequence[tuple[str, Sequence[tuple[date, float]]]],
+    min_overlap: int = 5,
+) -> tuple[list[str], list[list[float | None]]]:
+    """Pairwise Pearson matrix over each pair's common dates (None if too few)."""
+    labels = [label for label, _ in labeled]
+    by_day = [dict(series) for _, series in labeled]
+    size = len(labels)
+    matrix: list[list[float | None]] = [[None] * size for _ in range(size)]
+    for i in range(size):
+        matrix[i][i] = 1.0
+        for j in range(i + 1, size):
+            common = sorted(set(by_day[i]) & set(by_day[j]))
+            if len(common) >= min_overlap:
+                value = pearson(
+                    [by_day[i][day] for day in common],
+                    [by_day[j][day] for day in common],
+                )
+                matrix[i][j] = matrix[j][i] = value
+    return labels, matrix
+
+
 @dataclass(frozen=True)
 class Trend:
     slope_per_day: float

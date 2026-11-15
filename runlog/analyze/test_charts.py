@@ -232,6 +232,13 @@ def test_critical_speed_and_readiness_charts_write_png(tmp_path: Path) -> None:
     assert _wrote_png(charts.readiness_chart(days, tmp_path))
 
 
+def test_correlation_heatmap_chart(tmp_path: Path) -> None:
+    labels = ["load", "hrv"]
+    matrix: list[list[float | None]] = [[1.0, -0.4], [-0.4, 1.0]]
+    assert _wrote_png(charts.correlation_heatmap_chart(labels, matrix, tmp_path))
+    assert _wrote_png(charts.correlation_heatmap_chart([], [], tmp_path))
+
+
 def test_pace_hr_density_chart(tmp_path: Path) -> None:
     pairs = [(10.0 + i * 0.1, 140.0 + i) for i in range(60)]
     assert _wrote_png(charts.pace_hr_density_chart(pairs, tmp_path))

@@ -13,6 +13,7 @@ import math
 import statistics
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
 from matplotlib.ticker import FuncFormatter
 
 from runlog.analyze import stats, style
@@ -21,6 +22,7 @@ from runlog.analyze.style import (
     BAD,
     FORM,
     GOOD,
+    INK,
     MUTED,
     PRIMARY,
     SUBTLE,
@@ -1051,6 +1053,42 @@ def pace_hr_density_chart(pairs: Sequence[tuple[float, float]], out_dir: Path) -
         bar.set_label("samples", color=SUBTLE, fontsize=9)
         bar.ax.tick_params(labelsize=8, colors=SUBTLE)
     return style.save(fig, out_dir, "pace_hr_density.svg")
+
+
+def correlation_heatmap_chart(
+    labels: Sequence[str], matrix: Sequence[Sequence[float | None]], out_dir: Path
+) -> Path:
+    """Pearson correlation matrix of the daily signals, as a diverging heatmap."""
+    fig, ax = style.figure(
+        "Correlation matrix",
+        "Pearson r between daily signals over their common dates",
+    )
+    if labels:
+        data = np.array(
+            [[np.nan if v is None else v for v in row] for row in matrix], dtype=float
+        )
+        image = ax.imshow(data, cmap="RdBu_r", vmin=-1, vmax=1, aspect="auto")
+        ax.set_xticks(range(len(labels)))
+        ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=8)
+        ax.set_yticks(range(len(labels)))
+        ax.set_yticklabels(labels, fontsize=8)
+        ax.grid(visible=False)
+        for i, row in enumerate(matrix):
+            for j, value in enumerate(row):
+                if value is not None:
+                    ax.text(
+                        j,
+                        i,
+                        f"{value:.2f}",
+                        ha="center",
+                        va="center",
+                        fontsize=7,
+                        color="white" if abs(value) > 0.55 else INK,
+                    )
+        bar = fig.colorbar(image, ax=ax, pad=0.01)
+        bar.set_label("r", color=SUBTLE, fontsize=9)
+        bar.ax.tick_params(labelsize=8, colors=SUBTLE)
+    return style.save(fig, out_dir, "correlation_matrix.svg")
 
 
 def mean_maximal_curve_chart(

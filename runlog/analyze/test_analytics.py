@@ -41,6 +41,25 @@ def test_run_trimp_matches_banister_formula() -> None:
     assert got is not None and math.isclose(got, expected, rel_tol=1e-9)
 
 
+def test_correlation_matrix_recovers_perfect_relationships() -> None:
+    a = [(date(2026, 1, d), float(d)) for d in range(1, 11)]
+    b = [(date(2026, 1, d), float(d) * 2) for d in range(1, 11)]  # +1 with a
+    c = [(date(2026, 1, d), -float(d)) for d in range(1, 11)]  # -1 with a
+    labels, matrix = analytics.correlation_matrix([("a", a), ("b", b), ("c", c)])
+    assert labels == ["a", "b", "c"]
+    assert matrix[0][0] == 1.0
+    assert matrix[0][1] is not None and round(matrix[0][1], 6) == 1.0
+    assert matrix[0][2] is not None and round(matrix[0][2], 6) == -1.0
+    assert matrix[1][2] == matrix[2][1]  # symmetric
+
+
+def test_correlation_matrix_none_on_low_overlap() -> None:
+    a = [(date(2026, 1, 1), 1.0)]
+    b = [(date(2026, 2, 1), 1.0)]
+    _labels, matrix = analytics.correlation_matrix([("a", a), ("b", b)])
+    assert matrix[0][1] is None
+
+
 def test_run_trimp_uses_female_coefficients() -> None:
     run = _run(datetime(2026, 1, 1), avg_hr=150.0, moving_s=3600)
     hrr = (150 - 50) / (190 - 50)
