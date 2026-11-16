@@ -695,6 +695,9 @@ def acwr_chart(series: Sequence[tuple[date, float]], out_dir: Path) -> Path:
     if series:
         ax.plot([d for d, _ in series], [v for _, v in series], color=PRIMARY, lw=1.8)
         style.latest_callout(ax, series[-1][0], series[-1][1], f"{series[-1][1]:.2f}")
+        # Clip the early-history startup spikes (chronic load near zero sends the
+        # ratio to 3-4) so the meaningful 0.5-2 band is not compressed.
+        ax.set_ylim(0, 2.6)
     ax.legend()
     style.date_axis(ax)
     return style.save(fig, out_dir, "acwr.svg")
@@ -1270,7 +1273,8 @@ def readiness_chart(days: Sequence[ReadinessDay], out_dir: Path) -> Path:
     if days:
         xs = [d.day for d in days]
         ys = [d.score for d in days]
-        ax.plot(xs, ys, color=PRIMARY, lw=1.6)
+        ax.plot(xs, ys, color=MUTED, lw=0.7, alpha=0.55, label="Daily")
+        ax.plot(xs, _rolling_median(ys), color=PRIMARY, lw=2.0, label="Rolling median")
         style.latest_callout(ax, xs[-1], ys[-1], f"{ys[-1]:.0f}")
     ax.set_ylim(0, 100)
     ax.legend(loc="lower left")
