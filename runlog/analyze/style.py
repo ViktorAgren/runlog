@@ -83,13 +83,14 @@ def apply_theme() -> None:
             "axes.grid": True,
             "axes.axisbelow": True,
             "grid.color": GRID,
-            "grid.linewidth": 0.9,
+            "grid.linewidth": 1.1,
+            "lines.linewidth": 2.0,
             "xtick.color": SUBTLE,
             "ytick.color": SUBTLE,
-            "axes.labelsize": 11,
-            "xtick.labelsize": 10,
-            "ytick.labelsize": 10,
-            "legend.fontsize": 9,
+            "axes.labelsize": 13,
+            "xtick.labelsize": 12,
+            "ytick.labelsize": 12,
+            "legend.fontsize": 11,
             "legend.frameon": False,
             "axes.prop_cycle": _MPL.cycler(color=list(PALETTE)),
         }
@@ -101,7 +102,7 @@ def figure(
     subtitle: str | None = None,
     xlabel: str = "",
     ylabel: str = "",
-    figsize: tuple[float, float] = (9.0, 5.2),
+    figsize: tuple[float, float] = (9.5, 5.4),
 ) -> tuple[Any, Any]:
     """A themed figure/axes with only axes and data.
 
@@ -135,7 +136,7 @@ def sig_value(value: float, sig_digits: int = 3) -> str:
 
 def footnote(fig: Any, text: str) -> None:
     """A small grey caption at the bottom-left (data source / n / date)."""
-    fig.text(0.01, 0.005, text, fontsize=8, color=MUTED, va="bottom")
+    fig.text(0.01, 0.005, text, fontsize=9.5, color=MUTED, va="bottom")
 
 
 def save(fig: Any, out_dir: Path, name: str) -> Path:
@@ -187,7 +188,7 @@ def trend_annotation(
         label_text,
         transform=ax.transAxes,
         va="top",
-        fontsize=9,
+        fontsize=11,
         color=SUBTLE,
         bbox={"boxstyle": "round,pad=0.3", "fc": "white", "ec": GRID, "alpha": 0.9},
     )
@@ -250,7 +251,7 @@ def latest_callout(ax: Any, x: Any, y: float, text: str, color: str = PRIMARY) -
         xy=(x, y),
         xytext=(6, 6),
         textcoords="offset points",
-        fontsize=9,
+        fontsize=11,
         fontweight="bold",
         color=color,
     )
@@ -266,7 +267,7 @@ def bar_value_labels(ax: Any, bars: Any, fmt: str = "{:.0f}") -> None:
             xytext=(0, 3),
             textcoords="offset points",
             ha="center",
-            fontsize=8,
+            fontsize=10,
             color=SUBTLE,
         )
 
