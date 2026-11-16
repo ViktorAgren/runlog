@@ -44,9 +44,7 @@ def test_run_trimp_matches_banister_formula() -> None:
 def test_acwr_requires_an_established_chronic_base() -> None:
     base = date(2026, 1, 1)
     # 40 days elapsed but only 5 active days -> chronic base never established.
-    sparse = [
-        (base + timedelta(days=d), 100.0) for d in (0, 7, 14, 21, 39)
-    ]
+    sparse = [(base + timedelta(days=d), 100.0) for d in (0, 7, 14, 21, 39)]
     assert analytics.acwr_series(sparse) == []
     # 40 consecutive active days -> ACWR emits once the 28-day base fills.
     dense = [(base + timedelta(days=d), 50.0) for d in range(40)]
