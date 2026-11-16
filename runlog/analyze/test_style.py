@@ -23,9 +23,10 @@ def test_palettes_are_valid_hex() -> None:
     )
 
 
-def test_figure_sets_left_aligned_title() -> None:
+def test_figure_draws_no_embedded_title() -> None:
+    # Titles live in the HTML caption, never inside the figure (no double title).
     _fig, ax = style.figure("Weekly volume", subtitle="km per week")
-    assert ax.get_title(loc="left") == "Weekly volume"
+    assert ax.get_title(loc="left") == ""
 
 
 def test_trend_annotation_returns_fitted_trend() -> None:

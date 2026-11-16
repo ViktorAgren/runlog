@@ -219,55 +219,225 @@ _SECTION_SPEC: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ),
 )
 
-_TITLE_OVERRIDES = {
-    "pmc_fitness_form": "Fitness · Fatigue · Form",
-    "acwr": "Acute:chronic workload ratio",
-    "hr_over_time": "Heart rate over time",
-    "pace_hr_density": "Heart rate vs speed (density)",
-    "hr_zones": "Time in HR zones",
-    "hr_histogram": "HR distribution",
-    "pace_by_session": "Pace distribution by session type",
-    "grade_adjusted_pace": "Grade-adjusted pace",
-    "efficiency_factor": "Aerobic efficiency factor",
-    "critical_speed": "Critical speed",
-    "lactate_thresholds": "Lactate thresholds (LT1 / LT2) over time",
-    "mean_maximal_curve": "Mean-maximal speed curve",
-    "vdot": "VDOT (modelled race fitness)",
-    "polarization_index": "Polarization Index (intensity structure)",
-    "durability": "Durability (long-run efficiency fade)",
-    "training_monotony": "Training monotony",
-    "training_strain": "Training strain",
-    "correlation_matrix": "Correlation matrix (daily signals)",
-    "readiness": "Daily readiness",
-    "running_economy": "Running economy (speed per watt)",
-    "vo2max": "VO2max",
-    "resting_hr": "Resting heart rate",
-    "hrv_sdnn": "HRV (SDNN)",
-    "sleep_hours": "Sleep hours",
-    "hr_recovery_1min": "HR recovery (1 min)",
-    "body_mass": "Body mass",
-    "walking_hr_avg": "Walking HR (passive)",
-    "respiratory_rate": "Respiratory rate",
-    "spo2": "SpO2",
-    "walking_asymmetry": "Walking asymmetry",
-    "sport_hours": "Weekly hours by sport",
-    "load_response": "Load and next-day recovery",
-    "steps": "Daily steps",
-    "exercise_minutes": "Exercise minutes",
-    "active_energy": "Active energy",
-    "energy_breakdown": "Daily expenditure (BMR + active)",
-    "tdee": "Total daily energy expenditure",
-    "energy_cost": "Energy cost per km",
-    "physical_effort": "Physical effort (MET)",
-    "walking_speed": "Walking speed",
-    "flights_climbed": "Flights climbed",
-    "weekday_profile": "Weekday rhythm",
-    "records": "Personal records",
+# One source of truth for each figure's caption: (title, description). The title
+# and description render only in the HTML <figcaption> (the figures carry no
+# embedded title), and the descriptions state what is measured, not coaching
+# slogans.
+_FIGURES: dict[str, tuple[str, str]] = {
+    # Volume & consistency
+    "weekly_volume": (
+        "Weekly volume",
+        "Distance per calendar week with a 4-week rolling mean.",
+    ),
+    "runs_per_week": ("Runs per week", "Number of sessions per calendar week."),
+    "monthly_by_year": (
+        "Monthly distance",
+        "Distance per calendar month, grouped by year.",
+    ),
+    "cumulative_distance": (
+        "Cumulative distance",
+        "Distance accumulated through each year to date.",
+    ),
+    "training_heatmap": (
+        "Training calendar",
+        "Distance by weekday and week; darker denotes a longer run.",
+    ),
+    "distance_histogram": (
+        "Run-distance distribution",
+        "Distribution of per-run distance, with the median marked.",
+    ),
+    "elevation_by_month": (
+        "Elevation gain",
+        "Metres ascended per calendar month, grouped by year.",
+    ),
+    # All-sport mix
+    "sport_hours": (
+        "Weekly hours by sport",
+        "Training duration per week, stacked by sport type.",
+    ),
+    # Pace & racing
+    "pace_over_time": (
+        "Pace over time",
+        "Mean pace per run with a rolling median (lower is faster).",
+    ),
+    "pace_by_session": (
+        "Pace by session type",
+        "Distribution of mean pace per run, by detected session type.",
+    ),
+    "grade_adjusted_pace": (
+        "Grade-adjusted pace",
+        "Pace corrected for elevation (Strava GAP).",
+    ),
+    "best_effort_pace": (
+        "Fastest pace by distance",
+        "Fastest sustained pace at each distance, from the streams.",
+    ),
+    "best_effort_progression": (
+        "Best-effort progression",
+        "All-time-best pace at each distance over time.",
+    ),
+    "race_predictions": (
+        "Predicted race times",
+        "Riegel projections from current best efforts.",
+    ),
+    "records": (
+        "Personal records",
+        "All-time (filled) and seasonal (open) bests over time.",
+    ),
+    # Heart rate & physiology
+    "hr_over_time": (
+        "Heart rate over time",
+        "Mean heart rate per run with a rolling median.",
+    ),
+    "pace_hr_density": (
+        "Heart rate vs speed",
+        "Joint density of heart rate and speed across every run's stream.",
+    ),
+    "hr_zones": (
+        "Time in heart-rate zones",
+        "Minutes accumulated in each Karvonen heart-rate-reserve zone.",
+    ),
+    "hr_histogram": (
+        "Heart-rate distribution",
+        "Time spent at each heart rate, with the zone thresholds.",
+    ),
+    "training_load": (
+        "Weekly training load",
+        "Heart-rate-weighted load (duration × intensity) per week.",
+    ),
+    "intensity_distribution": (
+        "Intensity distribution",
+        "Share of time in the easy, moderate and hard heart-rate zones.",
+    ),
+    "cadence": ("Cadence over time", "Mean step rate per run with a rolling mean."),
+    "running_power": (
+        "Running power",
+        "Mean mechanical power per run (device estimate).",
+    ),
+    "stride_length": ("Stride length", "Mean stride length per run."),
+    "vertical_oscillation": (
+        "Vertical oscillation",
+        "Mean vertical oscillation per run.",
+    ),
+    "ground_contact": ("Ground-contact time", "Mean ground-contact time per run."),
+    "running_economy": (
+        "Running economy",
+        "Speed per unit mechanical power (m/s per watt).",
+    ),
+    # Fitness & form
+    "pmc_fitness_form": (
+        "Fitness, fatigue and form",
+        "Banister model: fitness (CTL), fatigue (ATL) and form (TSB).",
+    ),
+    "acwr": (
+        "Acute:chronic workload ratio",
+        "Seven-day load relative to the 28-day chronic load.",
+    ),
+    "efficiency_factor": (
+        "Aerobic efficiency",
+        "Speed per heartbeat over time (efficiency factor).",
+    ),
+    "aerobic_decoupling": (
+        "Aerobic decoupling",
+        "Pace-to-HR drift between the first and second half of long runs.",
+    ),
+    "critical_speed": (
+        "Critical speed",
+        "Speed-duration best efforts fitted to the critical-speed model.",
+    ),
+    "lactate_thresholds": (
+        "Lactate thresholds",
+        "Aerobic (LT1) and lactate (LT2) threshold speed from the CS model.",
+    ),
+    # Performance models
+    "mean_maximal_curve": (
+        "Mean-maximal speed curve",
+        "Fastest mean speed sustained at each duration, with the fitted CS.",
+    ),
+    "vdot": (
+        "VDOT",
+        "VO₂max-equivalent race fitness (Daniels-Gilbert), with CI and PI bands.",
+    ),
+    "polarization_index": (
+        "Polarization index",
+        "Treff index of the intensity distribution over time (above 2 is polarized).",
+    ),
+    "durability": (
+        "Durability",
+        "Within-long-run efficiency decline from the fresh to the fatigued third.",
+    ),
+    "training_monotony": (
+        "Training monotony",
+        "Weekly mean daily load divided by its standard deviation (Foster).",
+    ),
+    "training_strain": (
+        "Training strain",
+        "Weekly load multiplied by monotony (Foster).",
+    ),
+    "correlation_matrix": (
+        "Correlation matrix",
+        "Pearson correlation between daily training and recovery signals.",
+    ),
+    # Anomalies & readiness
+    "anomaly_timeline": (
+        "Anomaly timeline",
+        "Days flagged against each metric's rolling robust baseline.",
+    ),
+    "readiness": (
+        "Daily readiness",
+        "Composite recovery score from resting HR, HRV, sleep and HR recovery.",
+    ),
+    "load_response": (
+        "Load-response",
+        "Next-day deviation of each recovery marker by prior-day load.",
+    ),
+    # Energy & expenditure
+    "energy_breakdown": (
+        "Daily energy expenditure",
+        "Resting metabolism (Mifflin-St Jeor) plus active energy.",
+    ),
+    "tdee": (
+        "Total daily energy expenditure",
+        "Estimated total daily energy expenditure over time.",
+    ),
+    "active_energy": ("Active energy", "Active energy expenditure over time."),
+    "energy_cost": ("Energy cost per km", "Energy expended per kilometre over time."),
+    # Lifestyle
+    "steps": ("Daily steps", "Daily step count over time."),
+    "exercise_minutes": ("Exercise minutes", "Daily exercise minutes over time."),
+    "physical_effort": (
+        "Physical effort",
+        "Daily physical-effort (MET) index over time.",
+    ),
+    "walking_speed": ("Walking speed", "Average walking speed over time."),
+    "flights_climbed": ("Flights climbed", "Flights of stairs ascended per day."),
+    "weekday_profile": (
+        "Weekday rhythm",
+        "Mean steps (bars) and sleep (line) by weekday.",
+    ),
+    # Recovery markers
+    "vo2max": ("VO₂max", "Apple VO₂max estimate over time."),
+    "resting_hr": ("Resting heart rate", "Resting heart rate over time."),
+    "hrv_sdnn": ("Heart-rate variability", "Overnight HRV (SDNN) over time."),
+    "sleep_hours": ("Sleep duration", "Nightly sleep duration over time."),
+    "hr_recovery_1min": (
+        "Heart-rate recovery",
+        "One-minute post-exercise heart-rate recovery over time.",
+    ),
+    "body_mass": ("Body mass", "Body mass over time."),
+    "walking_hr_avg": ("Walking heart rate", "Average walking heart rate over time."),
+    "respiratory_rate": ("Respiratory rate", "Overnight respiratory rate over time."),
 }
 
 
-def _pretty(stem: str) -> str:
-    return _TITLE_OVERRIDES.get(stem, stem.replace("_", " ").capitalize())
+def _figure_meta(stem: str) -> tuple[str, str]:
+    """(title, description) for a figure stem, falling back to a prettified stem."""
+    return _FIGURES.get(stem, (stem.replace("_", " ").capitalize(), ""))
+
+
+def _figure_ref(stem: str, path: str) -> FigureRef:
+    title, description = _figure_meta(stem)
+    return FigureRef(title, path, description)
 
 
 def run(
@@ -385,7 +555,12 @@ def _run(
                 charts.marker_chart(trend, title, ylabel, filename, training_dir)
             )
             trend_series.append(
-                (f"{_pretty(filename[:-4])} trend", "training", f"{ylabel}/30d", trend)
+                (
+                    f"{_figure_meta(filename[:-4])[0]} trend",
+                    "training",
+                    f"{ylabel}/30d",
+                    trend,
+                )
             )
 
     latest_markers: dict[str, tuple[date, float] | None] = {}
@@ -397,7 +572,7 @@ def _run(
         daily = metrics.daily_means(series)
         if daily:
             trend_series.append(
-                (f"{_pretty(metric)} trend", "recovery", f"{ylabel}/30d", daily)
+                (f"{_figure_meta(metric)[0]} trend", "recovery", f"{ylabel}/30d", daily)
             )
         if daily and metric not in _UNCHARTED_MARKERS:
             produced.append(
@@ -437,7 +612,7 @@ def _run(
             )
             trend_series.append(
                 (
-                    f"{_pretty(metric)} trend",
+                    f"{_figure_meta(metric)[0]} trend",
                     "lifestyle",
                     f"{ylabel}/30d",
                     daily_series[metric],
@@ -959,7 +1134,7 @@ def _build_sections(produced: Sequence[Path], out_dir: Path) -> list[Section]:
     ]
     sections: list[Section] = []
     for title, narrative, stems in _SECTION_SPEC:
-        figures = [FigureRef(_pretty(s), by_stem[s]) for s in stems if s in by_stem]
+        figures = [_figure_ref(s, by_stem[s]) for s in stems if s in by_stem]
         if figures:
             sections.append(Section(title, narrative, figures))
     if recovery:
@@ -967,7 +1142,7 @@ def _build_sections(produced: Sequence[Path], out_dir: Path) -> list[Section]:
             Section(
                 "Recovery & fitness markers",
                 "Passive off-workout signals, kept separate from training load.",
-                [FigureRef(_pretty(stem), rel) for stem, rel in recovery],
+                [_figure_ref(stem, rel) for stem, rel in recovery],
             )
         )
     return sections

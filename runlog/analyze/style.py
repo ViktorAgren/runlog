@@ -97,20 +97,21 @@ def apply_theme() -> None:
 
 
 def figure(
-    title: str,
+    title: str = "",
     subtitle: str | None = None,
     xlabel: str = "",
     ylabel: str = "",
     figsize: tuple[float, float] = (9.0, 5.2),
 ) -> tuple[Any, Any]:
-    """A themed figure/axes with a left-aligned title and context subtitle."""
+    """A themed figure/axes with only axes and data.
+
+    The title and description are rendered as the HTML ``<figcaption>`` (journal
+    style), not inside the figure, so they never appear twice; ``title`` /
+    ``subtitle`` are accepted for call-site compatibility but not drawn.
+    """
+    _ = (title, subtitle)
     fig = Figure(figsize=figsize)
     ax = fig.add_subplot(111)
-    ax.set_title(title, loc="left", fontsize=14, fontweight="bold", color=INK, pad=24)
-    if subtitle:
-        ax.text(
-            0.0, 1.02, subtitle, transform=ax.transAxes, fontsize=10.5, color=SUBTLE
-        )
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     ax.grid(axis="x", visible=False)

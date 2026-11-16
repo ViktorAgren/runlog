@@ -194,7 +194,7 @@
         {% for fig in section.figures %}
         <figure>
           <div class="svg-fig">{{ fig.svg|safe }}</div>
-          <figcaption><span class="figlabel">Fig {{ loop.index }}.</span> {{ fig.title }}{% if fig.caption %} — {{ fig.caption }}{% endif %}</figcaption>
+          <figcaption><span class="figlabel">Figure {{ loop.index }}. {{ fig.title }}.</span>{% if fig.caption %} {{ fig.caption }}{% endif %}</figcaption>
         </figure>
         {% endfor %}
       </div>
