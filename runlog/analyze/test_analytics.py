@@ -41,6 +41,18 @@ def test_run_trimp_matches_banister_formula() -> None:
     assert got is not None and math.isclose(got, expected, rel_tol=1e-9)
 
 
+def test_acwr_requires_an_established_chronic_base() -> None:
+    base = date(2026, 1, 1)
+    # 40 days elapsed but only 5 active days -> chronic base never established.
+    sparse = [
+        (base + timedelta(days=d), 100.0) for d in (0, 7, 14, 21, 39)
+    ]
+    assert analytics.acwr_series(sparse) == []
+    # 40 consecutive active days -> ACWR emits once the 28-day base fills.
+    dense = [(base + timedelta(days=d), 50.0) for d in range(40)]
+    assert analytics.acwr_series(dense)
+
+
 def test_correlation_matrix_recovers_perfect_relationships() -> None:
     a = [(date(2026, 1, d), float(d)) for d in range(1, 11)]
     b = [(date(2026, 1, d), float(d) * 2) for d in range(1, 11)]  # +1 with a

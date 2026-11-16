@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from runlog.analyze.metrics import PLAUSIBLE_PACE_S_PER_KM
+from runlog.db import quality
 
 if TYPE_CHECKING:
     import sqlite3
@@ -80,8 +81,8 @@ def full_stream(
             altitude_m=row["altitude_m"],
             lat=row["lat"],
             lng=row["lng"],
-            hr=row["hr"],
-            velocity_mps=row["velocity_mps"],
+            hr=quality.plausible_hr(row["hr"]),
+            velocity_mps=quality.plausible_speed(row["velocity_mps"]),
         )
         for row in conn.execute(
             """
@@ -267,20 +268,17 @@ def run_stream_series(
     return series
 
 
-# Speeds above this (km/h) are GPS teleports, not running; drop them so the
-# density plot is not dominated by a handful of glitch samples.
-_MAX_PLAUSIBLE_KMH = 28.0
-
-
 def speed_hr_pairs(
     conn: sqlite3.Connection, runs: Sequence[Run]
 ) -> list[tuple[float, float]]:
-    """(speed km/h, HR bpm) samples across every run's stream, for a 2D density."""
+    """(speed km/h, HR bpm) samples across every run's stream, for a 2D density.
+
+    Samples are already cleaned in :func:`full_stream` (implausible velocity/HR
+    nulled), so this only pairs the surviving values.
+    """
     pairs: list[tuple[float, float]] = []
     for run in runs:
         for sample in full_stream(conn, run.activity_id):
             if sample.velocity_mps and sample.velocity_mps > 0 and sample.hr:
-                speed = sample.velocity_mps * 3.6
-                if speed <= _MAX_PLAUSIBLE_KMH:
-                    pairs.append((speed, sample.hr))
+                pairs.append((sample.velocity_mps * 3.6, sample.hr))
     return pairs

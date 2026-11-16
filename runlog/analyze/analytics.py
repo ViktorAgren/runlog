@@ -43,6 +43,7 @@ _CTL_DAYS = 42  # "Fitness" time constant
 _ATL_DAYS = 7  # "Fatigue" time constant
 _ACWR_ACUTE_DAYS = 7
 _ACWR_CHRONIC_DAYS = 28
+_ACWR_MIN_ACTIVE_DAYS = 14  # chronic base must be established before ACWR is valid
 # Distances for both the best-effort pace record (bars) and the progression
 # lines, so the two charts stay consistent.
 _EFFORT_DISTANCES: tuple[tuple[str, float], ...] = (
@@ -191,15 +192,23 @@ def performance_management(
 def acwr_series(
     daily: Sequence[tuple[date, float]],
 ) -> list[tuple[date, float]]:
-    """Acute:chronic workload ratio (7-day vs 28-day mean daily TRIMP)."""
+    """Acute:chronic workload ratio (7-day vs 28-day mean daily TRIMP).
+
+    Emitted only once the chronic window holds an established training base; the
+    sparse ramp-up from rest divides by a near-zero chronic load and produces
+    meaningless 3-4x spikes, so those days are omitted rather than clamped.
+    """
     filled = fill_daily(daily)
     loads = [load for _, load in filled]
     series: list[tuple[date, float]] = []
     for i, (day, _load) in enumerate(filled):
         if i + 1 < _ACWR_CHRONIC_DAYS:
             continue
+        window = loads[i - _ACWR_CHRONIC_DAYS + 1 : i + 1]
+        if sum(1 for load in window if load > 0) < _ACWR_MIN_ACTIVE_DAYS:
+            continue
         acute = sum(loads[i - _ACWR_ACUTE_DAYS + 1 : i + 1]) / _ACWR_ACUTE_DAYS
-        chronic = sum(loads[i - _ACWR_CHRONIC_DAYS + 1 : i + 1]) / _ACWR_CHRONIC_DAYS
+        chronic = sum(window) / _ACWR_CHRONIC_DAYS
         if chronic > 0:
             series.append((day, round(acute / chronic, 2)))
     return series

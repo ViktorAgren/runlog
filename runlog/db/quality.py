@@ -31,6 +31,25 @@ _JUMP_M = 500.0
 # Flags that make a run unusable for analytics (vs. merely worth noting).
 QUARANTINE_FLAGS = frozenset({"implausible_pace", "time_gap", "tiny_distance"})
 
+# Physiologically plausible bounds for cleaning raw per-second stream samples at
+# the point of read, so every analysis sees clean data and no chart has to clamp
+# its axes. A single source of truth for the thresholds.
+MAX_RUN_SPEED_MPS = 8.0  # ~28.8 km/h; a faster sample is a GPS teleport
+MIN_RUN_HR = 40.0  # below this is a sensor dropout (not a resting HR mid-run)
+MAX_RUN_HR = 230.0  # above this is a sensor artifact
+
+
+def plausible_hr(hr: float | None) -> float | None:
+    """The HR sample if physiologically plausible, else None (a dropout)."""
+    return hr if hr is not None and MIN_RUN_HR <= hr <= MAX_RUN_HR else None
+
+
+def plausible_speed(velocity_mps: float | None) -> float | None:
+    """The velocity sample if plausible for running, else None (a GPS glitch)."""
+    if velocity_mps is None or velocity_mps < 0 or velocity_mps > MAX_RUN_SPEED_MPS:
+        return None
+    return velocity_mps
+
 
 def stream_flags(activity: Activity, stream: Sequence[StreamPoint]) -> tuple[str, ...]:
     """Return the data-quality flags for one activity + its stream."""

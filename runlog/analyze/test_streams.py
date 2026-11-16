@@ -137,3 +137,18 @@ def test_stream_cache_memoizes_within_scope() -> None:
     assert first and second == first
     # Outside the cache the deletion is visible, proving the scope closed.
     assert streams.full_stream(conn, activity_id) == []
+
+
+def test_full_stream_cleans_implausible_samples() -> None:
+    conn, activity_id = _store_run_with_stream(0)
+    conn.executemany(
+        "INSERT INTO stream_points "
+        "(activity_id, seq, offset_s, distance_m, hr, velocity_mps) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        [
+            (int(activity_id), 0, 0, 0.0, 150.0, 3.0),  # plausible
+            (int(activity_id), 1, 1, 3.0, 0.0, 50.0),  # HR dropout + GPS glitch
+        ],
+    )
+    cleaned = streams.full_stream(conn, activity_id)
+    assert [(s.hr, s.velocity_mps) for s in cleaned] == [(150.0, 3.0), (None, None)]

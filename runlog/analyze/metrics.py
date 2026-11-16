@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING
 
 from runlog.analyze import dedup
 from runlog.db import queries
-from runlog.db.quality import QUARANTINE_FLAGS
+from runlog.db.quality import MAX_RUN_HR, MIN_RUN_HR, QUARANTINE_FLAGS
 from runlog.domain import ActivityId, Source
 
 if TYPE_CHECKING:
@@ -532,10 +532,10 @@ def hr_drift(
             for row in conn.execute(
                 """
                 SELECT hr FROM stream_points
-                WHERE activity_id = ? AND hr IS NOT NULL
+                WHERE activity_id = ? AND hr BETWEEN ? AND ?
                 ORDER BY seq
                 """,
-                (int(run.activity_id),),
+                (int(run.activity_id), MIN_RUN_HR, MAX_RUN_HR),
             )
         ]
         if len(hrs) < 4:

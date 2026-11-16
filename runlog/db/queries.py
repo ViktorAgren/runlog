@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from runlog.db import quality
+
 if TYPE_CHECKING:
     import sqlite3
     from collections.abc import Sequence
@@ -24,14 +26,15 @@ def hr_samples(conn: sqlite3.Connection, run_ids: Sequence[ActivityId]) -> list[
     """All per-point heart-rate samples for the given runs (for a histogram)."""
     if not run_ids:
         return []
+    placeholders = in_placeholders(len(run_ids))
     return [
         float(row["hr"])
         for row in conn.execute(
             f"""
             SELECT hr FROM stream_points
-            WHERE hr IS NOT NULL AND activity_id IN ({in_placeholders(len(run_ids))})
+            WHERE hr BETWEEN ? AND ? AND activity_id IN ({placeholders})
             """,
-            tuple(int(i) for i in run_ids),
+            (quality.MIN_RUN_HR, quality.MAX_RUN_HR, *(int(i) for i in run_ids)),
         )
     ]
 

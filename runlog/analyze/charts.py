@@ -94,28 +94,10 @@ def _format_clock(seconds: float) -> str:
     return f"{hours}:{minutes:02d}:{secs:02d}" if hours else f"{minutes}:{secs:02d}"
 
 
-def _robust_range(
-    values: Sequence[float],
-    lo_pct: float = 2.0,
-    hi_pct: float = 98.0,
-    pad: float = 0.06,
-) -> tuple[float, float]:
-    """Padded (low, high) at the given percentiles, so outliers don't set the axis."""
-    arr = np.asarray(values, dtype=float)
-    low = float(np.percentile(arr, lo_pct))
-    high = float(np.percentile(arr, hi_pct))
-    span = (high - low) or 1.0
-    return low - span * pad, high + span * pad
-
-
-def _pace_axis(ax: Any, paces: Sequence[float] | None = None) -> None:
-    """Format a pace axis as M:SS, faster upward, clamped to the data's bulk."""
+def _pace_axis(ax: Any) -> None:
+    """Format a pace axis as M:SS and invert it so faster is up."""
     ax.yaxis.set_major_formatter(FuncFormatter(_format_pace))
-    if paces:
-        low, high = _robust_range(paces)
-        ax.set_ylim(high, low)  # inverted: slower (larger) paces at the bottom
-    else:
-        ax.invert_yaxis()
+    ax.invert_yaxis()
 
 
 def _rolling_median(values: Sequence[float]) -> list[float]:
@@ -311,9 +293,7 @@ def pace_over_time_chart(points: Sequence[PacePoint], out_dir: Path) -> Path:
         _pace_scatter(ax, starts, paces)
         ax.legend()
         style.footnote(fig, _count_note(len(ordered)))
-        _pace_axis(ax, paces)
-    else:
-        _pace_axis(ax)
+    _pace_axis(ax)
     style.date_axis(ax)
     return style.save(fig, out_dir, "pace_over_time.svg")
 
@@ -328,12 +308,11 @@ def grade_adjusted_pace_chart(points: Sequence[PacePoint], out_dir: Path) -> Pat
     )
     ordered = sorted(points, key=lambda p: p.start)
     if ordered:
-        paces = [p.pace_s_per_km for p in ordered]
-        _pace_scatter(ax, [p.start for p in ordered], paces)
+        _pace_scatter(
+            ax, [p.start for p in ordered], [p.pace_s_per_km for p in ordered]
+        )
         ax.legend()
-        _pace_axis(ax, paces)
-    else:
-        _pace_axis(ax)
+    _pace_axis(ax)
     style.date_axis(ax)
     return style.save(fig, out_dir, "grade_adjusted_pace.svg")
 
@@ -456,10 +435,8 @@ def hr_histogram(
         "Heart rate (bpm)",
         "Samples (≈ seconds)",
     )
-    # Drop sensor-dropout samples (HR near 0) that otherwise add a spurious bar.
-    valid = [s for s in samples if s >= 50]
-    if valid:
-        ax.hist(valid, bins=30, color=PRIMARY, alpha=0.65)
+    if samples:
+        ax.hist(list(samples), bins=30, color=PRIMARY, alpha=0.65)
     top = ax.get_ylim()[1]
     for zone in zones:
         ax.axvline(zone.low_bpm, color=SUBTLE, linestyle="--", linewidth=0.8)
@@ -695,9 +672,6 @@ def acwr_chart(series: Sequence[tuple[date, float]], out_dir: Path) -> Path:
     if series:
         ax.plot([d for d, _ in series], [v for _, v in series], color=PRIMARY, lw=1.8)
         style.latest_callout(ax, series[-1][0], series[-1][1], f"{series[-1][1]:.2f}")
-        # Clip the early-history startup spikes (chronic load near zero sends the
-        # ratio to 3-4) so the meaningful 0.5-2 band is not compressed.
-        ax.set_ylim(0, 2.6)
     ax.legend()
     style.date_axis(ax)
     return style.save(fig, out_dir, "acwr.svg")
@@ -1087,11 +1061,9 @@ def pace_hr_density_chart(pairs: Sequence[tuple[float, float]], out_dir: Path) -
 
 def pace_by_session_chart(rows: Sequence[ActivityRow], out_dir: Path) -> Path:
     """Violin distribution of average pace per run, by detected session type."""
-    # Plausible run-pace band (2:30–9:00/km); slower runs are walks/hikes whose
-    # long KDE tails otherwise swamp the violins.
     by_session: dict[str, list[float]] = {}
     for row in rows:
-        if row.pace_s and 150 <= row.pace_s <= 540:
+        if row.pace_s and row.pace_s > 0:
             by_session.setdefault(row.session, []).append(row.pace_s)
     groups = sorted(
         ((s, paces) for s, paces in by_session.items() if len(paces) >= 3),
@@ -1116,9 +1088,7 @@ def pace_by_session_chart(rows: Sequence[ActivityRow], out_dir: Path) -> Path:
         ax.set_xticks(range(1, len(groups) + 1))
         ax.set_xticklabels([s for s, _ in groups], rotation=20, ha="right", fontsize=9)
         ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: _format_pace(v)))
-        all_paces = [pace for _, paces in groups for pace in paces]
-        low, high = _robust_range(all_paces, lo_pct=1.0, hi_pct=99.0, pad=0.05)
-        ax.set_ylim(high, low)  # inverted (faster up), clamped past walk outliers
+        ax.invert_yaxis()  # faster paces at the top
     return style.save(fig, out_dir, "pace_by_session.svg")
 
 
