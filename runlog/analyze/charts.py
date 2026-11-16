@@ -14,7 +14,7 @@ import statistics
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-from matplotlib.ticker import FuncFormatter
+from matplotlib.ticker import FixedLocator, FuncFormatter, NullLocator
 
 from runlog.analyze import stats, style
 from runlog.analyze.style import (
@@ -94,10 +94,28 @@ def _format_clock(seconds: float) -> str:
     return f"{hours}:{minutes:02d}:{secs:02d}" if hours else f"{minutes}:{secs:02d}"
 
 
-def _pace_axis(ax: Any) -> None:
-    """Format a pace axis as M:SS and invert it so faster is up."""
+def _robust_range(
+    values: Sequence[float],
+    lo_pct: float = 2.0,
+    hi_pct: float = 98.0,
+    pad: float = 0.06,
+) -> tuple[float, float]:
+    """Padded (low, high) at the given percentiles, so outliers don't set the axis."""
+    arr = np.asarray(values, dtype=float)
+    low = float(np.percentile(arr, lo_pct))
+    high = float(np.percentile(arr, hi_pct))
+    span = (high - low) or 1.0
+    return low - span * pad, high + span * pad
+
+
+def _pace_axis(ax: Any, paces: Sequence[float] | None = None) -> None:
+    """Format a pace axis as M:SS, faster upward, clamped to the data's bulk."""
     ax.yaxis.set_major_formatter(FuncFormatter(_format_pace))
-    ax.invert_yaxis()
+    if paces:
+        low, high = _robust_range(paces)
+        ax.set_ylim(high, low)  # inverted: slower (larger) paces at the bottom
+    else:
+        ax.invert_yaxis()
 
 
 def _rolling_median(values: Sequence[float]) -> list[float]:
@@ -293,7 +311,9 @@ def pace_over_time_chart(points: Sequence[PacePoint], out_dir: Path) -> Path:
         _pace_scatter(ax, starts, paces)
         ax.legend()
         style.footnote(fig, _count_note(len(ordered)))
-    _pace_axis(ax)
+        _pace_axis(ax, paces)
+    else:
+        _pace_axis(ax)
     style.date_axis(ax)
     return style.save(fig, out_dir, "pace_over_time.svg")
 
@@ -308,11 +328,12 @@ def grade_adjusted_pace_chart(points: Sequence[PacePoint], out_dir: Path) -> Pat
     )
     ordered = sorted(points, key=lambda p: p.start)
     if ordered:
-        _pace_scatter(
-            ax, [p.start for p in ordered], [p.pace_s_per_km for p in ordered]
-        )
+        paces = [p.pace_s_per_km for p in ordered]
+        _pace_scatter(ax, [p.start for p in ordered], paces)
         ax.legend()
-    _pace_axis(ax)
+        _pace_axis(ax, paces)
+    else:
+        _pace_axis(ax)
     style.date_axis(ax)
     return style.save(fig, out_dir, "grade_adjusted_pace.svg")
 
@@ -435,8 +456,10 @@ def hr_histogram(
         "Heart rate (bpm)",
         "Samples (≈ seconds)",
     )
-    if samples:
-        ax.hist(list(samples), bins=30, color=PRIMARY, alpha=0.65)
+    # Drop sensor-dropout samples (HR near 0) that otherwise add a spurious bar.
+    valid = [s for s in samples if s >= 50]
+    if valid:
+        ax.hist(valid, bins=30, color=PRIMARY, alpha=0.65)
     top = ax.get_ylim()[1]
     for zone in zones:
         ax.axvline(zone.low_bpm, color=SUBTLE, linestyle="--", linewidth=0.8)
@@ -631,7 +654,8 @@ def pmc_chart(points: Sequence[PmcPoint], out_dir: Path) -> Path:
             days,
             [p.fatigue for p in points],
             color=ACCENT,
-            lw=1.4,
+            lw=0.9,
+            alpha=0.6,
             label="Fatigue (ATL)",
         )
         forms = [p.form for p in points]
@@ -643,7 +667,7 @@ def pmc_chart(points: Sequence[PmcPoint], out_dir: Path) -> Path:
         ax2.fill_between(
             days, forms, 0, where=[f < 0 for f in forms], color=BAD, alpha=0.14
         )
-        ax2.plot(days, forms, color=FORM, lw=1.6, label="Form (TSB)")
+        ax2.plot(days, forms, color=FORM, lw=0.9, alpha=0.7, label="Form (TSB)")
         ax2.axhline(0, color=MUTED, lw=0.8, zorder=1)
         ax2.set_ylabel("Form (TSB)")
         style.latest_callout(
@@ -800,9 +824,11 @@ def intensity_distribution_chart(dist: IntensityDistribution, out_dir: Path) -> 
             )
         left += value
     ax.set_yticks([])
+    ax.set_ylim(-0.75, 0.75)
     ax.set_xlim(0, 100)
     ax.grid(visible=False)
-    ax.legend(ncol=3, loc="upper center", bbox_to_anchor=(0.5, 1.18))
+    # Legend below the bar (above the title overlapped the heading).
+    ax.legend(ncol=3, loc="upper center", bbox_to_anchor=(0.5, -0.25), frameon=False)
     return style.save(fig, out_dir, "intensity_distribution.svg")
 
 
@@ -1058,9 +1084,11 @@ def pace_hr_density_chart(pairs: Sequence[tuple[float, float]], out_dir: Path) -
 
 def pace_by_session_chart(rows: Sequence[ActivityRow], out_dir: Path) -> Path:
     """Violin distribution of average pace per run, by detected session type."""
+    # Plausible run-pace band (2:30–9:00/km); slower runs are walks/hikes whose
+    # long KDE tails otherwise swamp the violins.
     by_session: dict[str, list[float]] = {}
     for row in rows:
-        if row.pace_s and row.pace_s > 0:
+        if row.pace_s and 150 <= row.pace_s <= 540:
             by_session.setdefault(row.session, []).append(row.pace_s)
     groups = sorted(
         ((s, paces) for s, paces in by_session.items() if len(paces) >= 3),
@@ -1085,7 +1113,9 @@ def pace_by_session_chart(rows: Sequence[ActivityRow], out_dir: Path) -> Path:
         ax.set_xticks(range(1, len(groups) + 1))
         ax.set_xticklabels([s for s, _ in groups], rotation=20, ha="right", fontsize=9)
         ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: _format_pace(v)))
-        ax.invert_yaxis()  # faster paces at the top
+        all_paces = [pace for _, paces in groups for pace in paces]
+        low, high = _robust_range(all_paces, lo_pct=1.0, hi_pct=99.0, pad=0.05)
+        ax.set_ylim(high, low)  # inverted (faster up), clamped past walk outliers
     return style.save(fig, out_dir, "pace_by_session.svg")
 
 
@@ -1173,6 +1203,11 @@ def mean_maximal_curve_chart(
             label="Best efforts",
         )
         ax.set_xscale("log")
+        ticks = [120, 300, 600, 1200, 1800]  # 2, 5, 10, 20, 30 min
+        ax.xaxis.set_major_locator(FixedLocator(ticks))
+        ax.xaxis.set_minor_locator(NullLocator())
+        ax.set_xticklabels([f"{t // 60} min" for t in ticks])
+        ax.set_xlabel("Duration (log scale)")
         if model is not None:
             span = [
                 durations[0] * (durations[-1] / durations[0]) ** (i / 100)

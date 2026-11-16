@@ -267,6 +267,11 @@ def run_stream_series(
     return series
 
 
+# Speeds above this (km/h) are GPS teleports, not running; drop them so the
+# density plot is not dominated by a handful of glitch samples.
+_MAX_PLAUSIBLE_KMH = 28.0
+
+
 def speed_hr_pairs(
     conn: sqlite3.Connection, runs: Sequence[Run]
 ) -> list[tuple[float, float]]:
@@ -275,5 +280,7 @@ def speed_hr_pairs(
     for run in runs:
         for sample in full_stream(conn, run.activity_id):
             if sample.velocity_mps and sample.velocity_mps > 0 and sample.hr:
-                pairs.append((sample.velocity_mps * 3.6, sample.hr))
+                speed = sample.velocity_mps * 3.6
+                if speed <= _MAX_PLAUSIBLE_KMH:
+                    pairs.append((speed, sample.hr))
     return pairs
