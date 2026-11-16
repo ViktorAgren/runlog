@@ -37,6 +37,27 @@ def _bounds(values: Sequence[float]) -> tuple[float, float]:
     return low, high
 
 
+def _y_range(values: Sequence[float], min_span: float) -> tuple[float, float]:
+    """Robust y-axis range: the 2nd-98th percentile band, never below ``min_span``.
+
+    Raw min/max let a handful of stops/GPS spikes set the scale, squashing the
+    real signal into a sliver; a near-constant series would likewise amplify
+    quantization jitter to fill the plot. Scaling to the central band (every
+    point is still drawn, clamped to the axis) and holding a metric-appropriate
+    floor keeps a steady run flat and a varied run legible.
+    """
+    ys = sorted(values)
+    last = len(ys) - 1
+    low = ys[round(0.02 * last)]
+    high = ys[round(0.98 * last)]
+    if high - low < min_span:
+        mid = (high + low) / 2
+        low, high = mid - min_span / 2, mid + min_span / 2
+    if low == high:
+        return low - 1.0, high + 1.0
+    return low, high
+
+
 def line_chart(
     points: Sequence[tuple[float, float | None]],
     *,
@@ -44,19 +65,22 @@ def line_chart(
     unit: str,
     color: str,
     y_format: str = "int",
+    min_span: float = 0.0,
 ) -> str:
     """Render ``(x, y)`` points (y may be None for gaps) to an inline ``<svg>``."""
     valid = [(x, y) for x, y in points if y is not None]
     if len(valid) < 2:
         return f'<div class="chart-empty">{title}: no stream</div>'
     xmin, xmax = _bounds([x for x, _ in valid])
-    ymin, ymax = _bounds([y for _, y in valid if y is not None])
+    ymin, ymax = _y_range([y for _, y in valid if y is not None], min_span)
+    _y_top, _y_bot = _PAD_T, _H - _PAD_B
 
     def sx(x: float) -> float:
         return _PAD_L + (x - xmin) / (xmax - xmin) * (_W - _PAD_L - _PAD_R)
 
     def sy(y: float) -> float:
-        return _H - _PAD_B - (y - ymin) / (ymax - ymin) * (_H - _PAD_T - _PAD_B)
+        v = _y_bot - (y - ymin) / (ymax - ymin) * (_y_bot - _y_top)
+        return min(max(v, _y_top), _y_bot)
 
     segments: list[str] = []
     pen_down = False

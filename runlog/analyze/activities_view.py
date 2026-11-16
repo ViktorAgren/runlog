@@ -68,6 +68,7 @@ class Chart:
     color: str
     y_format: str
     points: list[tuple[float, float | None]]
+    min_span: float  # smallest y-axis span, so a steady run stays visibly flat
 
 
 @dataclass(frozen=True)
@@ -273,20 +274,23 @@ def _detect_session(
 
 def _charts(stream: list[_StreamPt]) -> list[Chart]:
     minutes = [pt.offset_s / 60.0 for pt in stream]
-    series: list[tuple[str, str, str, str, list[float | None]]] = [
-        ("Heart rate", "bpm", "#dc2626", "int", [pt.hr for pt in stream]),
+    # min_span: the narrowest y-axis span (in each metric's own unit) worth
+    # resolving, so sensor jitter on a steady run is not amplified to fill the plot.
+    series: list[tuple[str, str, str, str, float, list[float | None]]] = [
+        ("Heart rate", "bpm", "#dc2626", "int", 20.0, [pt.hr for pt in stream]),
         (
             "Pace",
             "min/km",
             "#2563eb",
             "pace",
+            60.0,
             [_pace_from_velocity(pt.velocity_mps) for pt in stream],
         ),
-        ("Cadence", "spm", "#7c3aed", "int", [pt.cadence for pt in stream]),
-        ("Elevation", "m", "#16a34a", "int", [pt.altitude_m for pt in stream]),
+        ("Cadence", "spm", "#7c3aed", "int", 20.0, [pt.cadence for pt in stream]),
+        ("Elevation", "m", "#16a34a", "int", 20.0, [pt.altitude_m for pt in stream]),
     ]
     charts: list[Chart] = []
-    for title, unit, color, y_format, values in series:
+    for title, unit, color, y_format, min_span, values in series:
         present = [v for v in values if v is not None]
         if len(present) < 2 or (title == "Elevation" and max(present) == min(present)):
             continue
@@ -297,6 +301,7 @@ def _charts(stream: list[_StreamPt]) -> list[Chart]:
                 color=color,
                 y_format=y_format,
                 points=list(zip(minutes, values, strict=True)),
+                min_span=min_span,
             )
         )
     return charts

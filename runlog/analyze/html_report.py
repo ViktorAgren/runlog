@@ -78,6 +78,7 @@ def render_activity_pages(
                 unit=chart.unit,
                 color=chart.color,
                 y_format=chart.y_format,
+                min_span=chart.min_span,
             )
             for chart in detail.charts
         ]

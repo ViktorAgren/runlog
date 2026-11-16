@@ -138,6 +138,7 @@ def test_render_activity_pages_writes_a_page_with_chart_and_laps(
                 color="#dc2626",
                 y_format="int",
                 points=[(0.0, 140.0), (1.0, 150.0)],
+                min_span=20.0,
             )
         ],
         zones=[ZoneBand("Z2", "Endurance", "134-148", 900, 100)],
