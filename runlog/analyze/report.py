@@ -116,7 +116,7 @@ class ReportResult:
 _SECTION_SPEC: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     (
         "Volume & consistency",
-        "How much and how regularly you run.",
+        "Training volume and its week-to-week regularity over the reporting period.",
         (
             "weekly_volume",
             "runs_per_week",
@@ -129,13 +129,14 @@ _SECTION_SPEC: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ),
     (
         "All-sport training mix",
-        "Every recorded workout — not just running. "
-        "Running-only analysis is unaffected.",
+        "All recorded workouts across sports; the running-specific analyses "
+        "elsewhere are unaffected.",
         ("sport_hours",),
     ),
     (
         "Pace & racing",
-        "Pace trends, elevation-adjusted pace, best efforts, and race projections.",
+        "Pace trends, elevation-adjusted pace, maximal efforts and race-time "
+        "projections.",
         (
             "pace_over_time",
             "pace_by_session",
@@ -148,7 +149,8 @@ _SECTION_SPEC: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ),
     (
         "Heart rate & physiology",
-        "Effort, running form, and how your body responds to load.",
+        "Cardiovascular effort, heart-rate zone distribution and running-form "
+        "kinematics.",
         (
             "hr_over_time",
             "pace_hr_density",
@@ -166,8 +168,8 @@ _SECTION_SPEC: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ),
     (
         "Fitness & form",
-        "Fitness/fatigue balance, workload ratio, aerobic efficiency, and "
-        "the critical-speed model.",
+        "Fitness-fatigue balance, workload ratio, aerobic efficiency and the "
+        "critical-speed model.",
         (
             "pmc_fitness_form",
             "acwr",
@@ -194,20 +196,20 @@ _SECTION_SPEC: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ),
     (
         "Anomalies & readiness",
-        "Days and runs that deviate from your own rolling baseline, and how "
-        "training load moves next-day recovery.",
+        "Signals deviating from their rolling robust baseline, and the next-day "
+        "recovery response to training load.",
         ("anomaly_timeline", "readiness", "load_response"),
     ),
     (
         "Energy & expenditure",
-        "What the body spends: resting metabolism (BMR) plus active energy, "
-        "and the energy cost of covering a kilometre.",
+        "Estimated energy expenditure: resting metabolism plus active energy, "
+        "and the energy cost per kilometre.",
         ("energy_breakdown", "tdee", "active_energy", "energy_cost"),
     ),
     (
         "Lifestyle & daily patterns",
-        "Passive daily-life signals — steps, movement, and sleep rhythm — "
-        "separate from training analysis.",
+        "Passive daily-life signals (steps, movement, sleep rhythm), tracked "
+        "separately from the training analysis.",
         (
             "steps",
             "exercise_minutes",
@@ -1141,7 +1143,8 @@ def _build_sections(produced: Sequence[Path], out_dir: Path) -> list[Section]:
         sections.append(
             Section(
                 "Recovery & fitness markers",
-                "Passive off-workout signals, kept separate from training load.",
+                "Passive off-workout recovery markers, tracked separately from "
+                "training load.",
                 [_figure_ref(stem, rel) for stem, rel in recovery],
             )
         )
