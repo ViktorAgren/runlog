@@ -49,6 +49,42 @@ _MARKER_LABELS = {
 }
 
 
+def abstract(
+    overall: Summary,
+    pmc: Sequence[PmcPoint],
+    table: SignificanceTable | None,
+) -> str:
+    """A concise prose abstract: reporting period, current fitness/form, top finding."""
+    parts: list[str] = []
+    if overall.first_run and overall.last_run:
+        parts.append(
+            f"Between {overall.first_run:%d %b %Y} and {overall.last_run:%d %b %Y}, "
+            f"{overall.run_count} runs covered {overall.total_km:.0f} km "
+            f"(longest {overall.longest_km:.1f} km)."
+        )
+    if pmc:
+        last = pmc[-1]
+        state = (
+            "a freshened, race-ready state"
+            if last.form > 5
+            else (
+                "accumulated fatigue" if last.form < -10 else "a balanced training load"
+            )
+        )
+        parts.append(
+            f"Current fitness (CTL) is {last.fitness:.0f} against a form (TSB) of "
+            f"{last.form:+.0f}, indicating {state}."
+        )
+    if table and table.findings and table.findings[0].significant:
+        top = table.findings[0]
+        parts.append(
+            f"Across {table.n_tests} trend tests (Benjamini-Hochberg corrected at "
+            f"q<{table.alpha:g}), the strongest change is {top.label.lower()} "
+            f"({top.effect}, {stats.format_p(top.p)})."
+        )
+    return " ".join(parts)
+
+
 def _pace(seconds: float | None) -> str:
     if seconds is None:
         return "-"
