@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 _W = 760.0
-_H = 220.0
+_H = 240.0
 _PAD_L = 52.0
 _PAD_R = 14.0
 _PAD_T = 24.0
@@ -90,6 +90,6 @@ def line_chart(
         f'<text x="{_PAD_L:.0f}" y="15" class="ctitle">{title}'
         f'{f" ({unit})" if unit else ""}</text>'
         f"{''.join(gridlines)}{xlabels}"
-        f'<path d="{path}" fill="none" stroke="{color}" stroke-width="1.5"/>'
+        f'<path d="{path}" fill="none" stroke="{color}" stroke-width="2.0"/>'
         f"</svg>"
     )

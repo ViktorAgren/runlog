@@ -7,11 +7,19 @@
 <style>
   :root { --ink:#0f172a; --subtle:#64748b; --muted:#94a3b8; --line:#e2e8f0;
     --bg:#f8fafc; --card:#fff; }
+  :root:not([data-theme="light"]) {
+    @media (prefers-color-scheme: dark) {
+      --ink:#e7e6e2; --subtle:#a8a79f; --muted:#74736c; --line:#2a2e37;
+      --bg:#15171c; --card:#1b1e25;
+    }
+  }
+  :root[data-theme="dark"] { --ink:#e7e6e2; --subtle:#a8a79f; --muted:#74736c;
+    --line:#2a2e37; --bg:#15171c; --card:#1b1e25; }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--ink);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
     line-height:1.5; }
-  .wrap { max-width:880px; margin:0 auto; padding:24px 20px 48px; }
+  .wrap { max-width:1040px; margin:0 auto; padding:24px 24px 48px; }
   .back { color:var(--subtle); font-size:13px; text-decoration:none; }
   .back:hover { color:var(--ink); }
   h1 { font-size:22px; margin:10px 0 2px; letter-spacing:-0.01em; }
@@ -24,15 +32,15 @@
   .chip .cl { display:block; color:var(--subtle); font-size:11px; text-transform:uppercase;
     letter-spacing:0.03em; }
   .chip .cv { font-size:17px; font-weight:600; }
-  .charts { display:grid; gap:14px; margin-top:16px; }
+  .charts { display:grid; gap:16px; margin-top:16px; }
   svg.chart { width:100%; height:auto; background:var(--card); border:1px solid var(--line);
     border-radius:8px; }
   .chart-empty { background:var(--card); border:1px solid var(--line); border-radius:8px;
     padding:14px; color:var(--muted); font-size:13px; }
   .grid { stroke:var(--line); stroke-width:1; }
-  .ylab { fill:var(--muted); font-size:10px; text-anchor:end; }
-  .xlab { fill:var(--muted); font-size:10px; }
-  .ctitle { fill:var(--ink); font-size:12px; font-weight:600; }
+  .ylab { fill:var(--muted); font-size:13px; text-anchor:end; }
+  .xlab { fill:var(--muted); font-size:13px; }
+  .ctitle { fill:var(--ink); font-size:15px; font-weight:600; }
   table.laps { border-collapse:collapse; width:100%; font-size:13px; background:var(--card);
     border:1px solid var(--line); border-radius:10px; overflow:hidden; }
   table.laps th { text-align:left; color:var(--subtle); font-size:11px; text-transform:uppercase;
@@ -110,5 +118,17 @@
   </table>
   {% endif %}
 </div>
+<script>
+  (function () {
+    var h = (location.hash || '').replace('#', '');
+    if (h === 'dark' || h === 'light') {
+      document.documentElement.setAttribute('data-theme', h);
+    }
+    if (window.top !== window.self) {
+      var back = document.querySelector('.back');
+      if (back) back.style.display = 'none';
+    }
+  })();
+</script>
 </body>
 </html>

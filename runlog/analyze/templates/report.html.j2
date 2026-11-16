@@ -102,11 +102,9 @@
   footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--line);
     color: var(--muted); font-size: 12px; }
   /* Activities tab */
-  .acts-layout { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
-    gap: 18px; align-items: start; }
-  @media (max-width: 900px) { .acts-layout { grid-template-columns: 1fr; }
+  @media (max-width: 900px) {
     .figs { grid-template-columns: 1fr; } header { flex-direction: column; } }
-  .acts-scroll { max-height: 78vh; overflow: auto; border: 1px solid var(--line);
+  .acts-scroll { max-height: 72vh; overflow: auto; border: 1px solid var(--line);
     border-radius: 10px; background: var(--surface); }
   table.acts { border-collapse: collapse; width: 100%; font-size: 13px; }
   table.acts th { position: sticky; top: 0; background: var(--surface); text-align: left;
@@ -118,8 +116,20 @@
   table.acts tbody tr { cursor: pointer; }
   table.acts tbody tr:hover { background: var(--paper); }
   table.acts tbody tr.sel { background: color-mix(in srgb, var(--accent) 14%, transparent); }
-  .detail-frame { width: 100%; height: 78vh; border: 1px solid var(--line);
-    border-radius: 10px; background: var(--surface); position: sticky; top: 16px; }
+  .modal-backdrop { position: fixed; inset: 0; z-index: 50; display: none;
+    background: rgba(12, 12, 15, 0.55); padding: 3vh 2vw;
+    align-items: stretch; justify-content: center; }
+  .modal-backdrop[open] { display: flex; }
+  .modal { position: relative; width: min(1180px, 96vw); max-height: 94vh;
+    background: var(--surface); border: 1px solid var(--line-strong);
+    border-radius: 12px; box-shadow: 0 24px 60px rgba(0,0,0,0.35);
+    overflow: hidden; display: flex; flex-direction: column; }
+  .modal-close { position: absolute; top: 10px; right: 12px; z-index: 2; appearance: none;
+    width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--line-strong);
+    background: var(--surface); color: var(--sub); font-size: 18px; line-height: 1;
+    cursor: pointer; }
+  .modal-close:hover { color: var(--ink); }
+  .detail-frame { flex: 1; width: 100%; border: 0; background: var(--surface); }
   .hint { color: var(--muted); font-size: 12.5px; padding: 10px 2px; }
   .filters { display: flex; gap: 16px; margin-bottom: 10px; align-items: center;
     font-size: 13px; color: var(--sub); }
@@ -227,8 +237,7 @@
 
   <div id="activities" class="panel" hidden>
     {% if model.activities %}
-    <div class="acts-layout">
-      <div>
+    <div>
         <div class="filters">
           <label>Show
             <select id="f-indoor" onchange="applyFilters()">
@@ -282,8 +291,12 @@
           </table>
         </div>
         <div class="hint" id="acts-hint">{{ model.activities|length }} runs · click a row to open its timeline · click a column to sort</div>
+    </div>
+    <div class="modal-backdrop" id="detail-modal" onclick="if (event.target === this) closeDetail()">
+      <div class="modal">
+        <button class="modal-close" onclick="closeDetail()" aria-label="Close detail">&times;</button>
+        <iframe id="detail-frame" class="detail-frame" title="workout detail"></iframe>
       </div>
-      <iframe id="detail-frame" class="detail-frame" title="workout detail"></iframe>
     </div>
     {% else %}
     <p class="narrative">No activities to list.</p>
@@ -310,12 +323,26 @@
       b.classList.toggle('active', b.dataset.tab === id);
     });
   }
+  function currentTheme() {
+    var t = document.documentElement.getAttribute('data-theme');
+    if (t) return t;
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
   function openActivity(page, row) {
     var frame = document.getElementById('detail-frame');
-    if (frame) frame.src = page;
+    if (frame) frame.src = page + '#' + currentTheme();
+    var modal = document.getElementById('detail-modal');
+    if (modal) modal.setAttribute('open', '');
     document.querySelectorAll('#acts tbody tr').forEach(function (r) { r.classList.remove('sel'); });
     row.classList.add('sel');
   }
+  function closeDetail() {
+    var modal = document.getElementById('detail-modal');
+    if (modal) modal.removeAttribute('open');
+  }
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') closeDetail();
+  });
   function applyFilters() {
     var ind = document.getElementById('f-indoor').value;
     var ses = document.getElementById('f-session').value;

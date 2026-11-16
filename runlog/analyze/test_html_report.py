@@ -114,10 +114,11 @@ def test_render_includes_activities_tab_and_rows(tmp_path: Path) -> None:
     checks = (
         'data-tab="activities"' in html,  # the tab button
         'id="detail-frame"' in html,  # the detail iframe
+        'id="detail-modal"' in html,  # rows open in a modal overlay
         "openActivity('activities/7.html'" in html,  # the row opens its page
         "25:00" in html,  # the row's vital numbers
     )
-    assert checks == (True, True, True, True)
+    assert checks == (True, True, True, True, True)
 
 
 def test_render_activity_pages_writes_a_page_with_chart_and_laps(
