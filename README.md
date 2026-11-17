@@ -10,8 +10,8 @@ oscillation, ground contact), and the health metrics Strava doesn't have
 (resting HR, HRV, VO2max, SpO2, sleep, HR-recovery). From those it computes
 weekly volume, pace and HR trends, fitness/fatigue/form (CTL/ATL/TSB), ACWR,
 intensity distribution, elevation-adjusted pace, critical speed, a daily
-readiness score, and flags days and runs that deviate from your rolling
-baseline.
+readiness score, a ranked performance-limiter diagnosis, and flags days and
+runs that deviate from your rolling baseline.
 
 ---
 
@@ -23,24 +23,25 @@ pip install -e ".[dev]"
 ```
 
 Requires Python ≥ 3.11. Run everything as `python3 -m runlog <command>` (or just
-`runlog <command>` once the package is installed).
+`runlog <command>` once the package is installed). Every command takes `--help`
+for its full flag list.
 
 ## Configuration
 
-- **Data directory** — all local state lives under `./data` (override with the
-  `RUNLOG_DATA_DIR` environment variable): `data/raw/` holds every payload
-  verbatim, `data/runlog.db` is the SQLite query layer, `data/reports/` and
+- **Data directory** — all local state lives under `./data` (override with
+  `RUNLOG_DATA_DIR`): `data/raw/` archives every payload verbatim,
+  `data/runlog.db` is the SQLite query layer, and `data/reports/` and
   `data/plans/` hold generated output. `data/` and `.env` are git-ignored.
-- **Secrets** — copy `.env.example` to `.env`. Used only by two features:
-  - `STRAVA_CLIENT_ID` / `STRAVA_CLIENT_SECRET` / `STRAVA_REFRESH_TOKEN` — for
-    the Strava API (`strava auth` / `strava sync`). Not needed for bulk import.
-  - `ANTHROPIC_API_KEY` — for `plan` (unless you use `--dry-run`).
+- **Secrets** — copy `.env.example` to `.env`. Needed only for the Strava API
+  (`STRAVA_CLIENT_ID` / `_SECRET` / `_REFRESH_TOKEN`, used by `strava auth` and
+  `strava sync`; bulk import needs none) and for live plan generation
+  (`ANTHROPIC_API_KEY`, unless you use `--dry-run`).
 - **Athlete profile** (optional) — copy `athlete.toml.example` to
   `data/athlete.toml`. Every command reads it: `hr_max` / `hr_rest` anchor the
-  HR zones (so you no longer pass `--hr-max` each time; the flag still overrides
+  HR zones (so `--hr-max` need not be passed each time; the flag still overrides
   for a single run), and `sex` / `height_cm` / `birth_date` feed the energy
-  section (all three needed, or it is omitted). The same keys also work as
-  `RUNLOG_*` environment variables if you prefer `.env`.
+  model (all three required, or it is omitted). Each key also works as a
+  `RUNLOG_*` environment variable.
 
 ## Quick start
 
@@ -53,8 +54,6 @@ python3 -m runlog status                                     # 4. verify
 python3 -m runlog report                                     # 5. charts + HTML + analytics
 python3 -m runlog plan --goal 5k --date 2026-09-01 \
         --days mon,wed,sat --dry-run                         # 6. training plan
-python3 -m runlog plan-review --plan data/plans/plan-5k-2026-09-01.md \
-        --start 2026-07-01 --dry-run                         # 7. follow up mid-block
 ```
 
 Already set up? `runlog sync` refreshes everything in order (Strava → Apple →
@@ -62,264 +61,153 @@ link) and prints status; add `--report` to regenerate the charts and HTML too.
 
 ---
 
-## CLI reference
+## Commands
 
-All commands are subcommands of `runlog`. Flags are optional unless marked
-**required**.
+### Import and maintenance
 
-### `db init`
+- **`db init`** — create the SQLite schema (idempotent).
+- **`strava import-bulk PATH`** — import a Strava "Download your data" archive;
+  no API or subscription required. **`strava auth`** then **`strava sync`** use
+  the API instead, incrementally pulling summaries, laps, and per-point streams
+  (`--after DATE`, `--no-streams`); API access needs a Strava subscription (see
+  below).
+- **`apple import PATH`** — import an Apple Health export: GPX route streams,
+  interval laps, and the off-workout markers (resting HR, HRV, VO2max).
+- **`link`** — match the same run across Strava and Apple by start-time
+  proximity (`--window SECONDS`, default 180); records a confidence-scored link
+  without merging or deleting.
+- **`sync`** — refresh all sources in order (Strava API → Apple import → link),
+  then print status. Apple is imported *after* Strava on purpose, so per-second
+  HR and running dynamics backfill onto Strava-logged runs. `--report` also
+  renders the dashboard.
+- **`status`** — row counts per table and per source.
 
-Create the SQLite schema (idempotent — safe to re-run). No parameters.
+### Analysis and daily use
 
-### `strava auth`
+- **`report`** — compute analytics, render ~40 PNG charts, and write a
+  single-file `report.html` plus a terminal summary (see *Methods* below).
+  `--since DATE` limits the window, `--weeks N` the summary length,
+  `--min-distance KM` drops aborted starts, and `--hr-max BPM` overrides the
+  configured max.
+- **`today`** — a morning card: readiness score and its contributors,
+  yesterday's load (TRIMP percentile, TSB, ACWR), today's planned session, an
+  updating race forecast, and a deterministic **go / easy / rest** call.
+- **`last`** — analyses the most recent run (km and HR-zone splits, GAP,
+  negative split) and grades its pace and HR against the planned bands
+  (`IN BAND` / `FAST OF BAND` / …), flagging new records.
+- **`limiters`** — a deterministic, no-LLM diagnosis that ranks what caps
+  performance across four axes — **engine** (aerobic ceiling: VDOT trend, and
+  under-expression when watch VO2max outruns race-derived VDOT), **speed**
+  (short efforts against the critical-speed curve), **durability** (efficiency
+  fade, decoupling, Riegel exponent), and **structure** (polarization, monotony,
+  ACWR, consistency) — each scored to a common 0–3 severity with a
+  research-anchored reason and a prescription. A confidence flag gates the read
+  on data sufficiency.
 
-Run the one-time OAuth flow to obtain a Strava refresh token, which you paste
-into `.env`. No parameters. **Requires a Strava subscription** (API access is
-included in it; see note below). Needs `STRAVA_CLIENT_ID`/`SECRET` in `.env`.
+`today`, `last`, and `limiters` need no API; the first two take `--plan PATH`
+(default: newest in `data/plans/`).
 
-### `strava sync`
+### Planning
 
-Incrementally pull new activities from the Strava API (summaries, laps, and
-per-point streams). Only fetches activities newer than what you already hold.
+- **`plan`** — generate a plan for a goal, grounded in your data (see *Methods*).
+  `--goal` and `--days` are required; `--date` sets a race (omit for an ongoing
+  `--weeks` block), with optional `--target-time`, `--max-distance`, and
+  `--max-time` caps. Writes markdown to `data/plans/`.
+- **`plan-review`** — compare a plan (`--plan`, `--start`) against the runs you
+  actually did and return adherence, per-week adjustments, and tips, without
+  rewriting the plan.
 
-| Flag | Default | Description |
-| --- | --- | --- |
-| `--after DATE` | newest stored run | ISO date (`YYYY-MM-DD`); only import activities after it |
-| `--no-streams` | off | Skip per-point streams (faster, summaries + laps only) |
-
-### `strava import-bulk PATH`
-
-Import a Strava "Download your data" archive — **no API, no subscription**.
-Request it from *Settings → My Account → Download or Delete Your Account →
-Download Request*.
-
-| Argument | Description |
-| --- | --- |
-| `PATH` (**required**) | Path to the Strava export `.zip` |
-
-### `apple import PATH`
-
-Import an Apple Health export (workouts with GPX route streams + interval laps,
-plus resting HR / HRV / VO2max). On iPhone: **Health app → profile picture →
-Export All Health Data**, then AirDrop the `export.zip` to your computer.
-
-| Argument | Description |
-| --- | --- |
-| `PATH` (**required**) | Path to the Apple Health `export.zip` |
-
-### `link`
-
-Match the same run across Strava and Apple by start-time proximity (records a
-link with a confidence score — it does **not** merge or delete anything).
-
-| Flag | Default | Description |
-| --- | --- | --- |
-| `--window SECONDS` | `180` | Max start-time gap to treat two activities as the same run |
-
-### `status`
-
-Print row counts per table (and per-source activity counts). No parameters.
-
-### `sync`
-
-Refresh all sources in the correct order and print status. Runs Strava API sync
-(skipped if no credentials), then Apple import, then linking. **Apple is imported
-after Strava on purpose** — that's how per-second HR and running dynamics get
-backfilled onto new Strava-logged runs (those metrics only exist Apple-side).
-
-| Flag | Default | Description |
-| --- | --- | --- |
-| `--apple PATH` | the archived export | Apple export `.zip` to import (else re-imports the archived one under `data/raw/`) |
-| `--report` | off | Also render the report + HTML dashboard afterwards |
-
-### `report`
-
-Compute analytics, render PNG charts, and write a single-file `report.html` plus
-a terminal summary. Training analysis is running-only (runs de-duplicated
-across sources); separate sections cover the all-sport training mix, passive
-recovery markers, lifestyle patterns, and load-vs-recovery response.
-
-| Flag | Default | Description |
-| --- | --- | --- |
-| `--out DIR` | `data/reports` | Output dir for the `training/`, `recovery/`, `analytics/` PNGs and `report.html` |
-| `--weeks N` | `6` | How many recent weeks to list in the terminal summary |
-| `--since DATE` | all history | ISO date; only analyze runs on/after it |
-| `--min-distance KM` | `1.0` | Drop runs shorter than this (removes accidental/aborted starts) |
-| `--hr-max BPM` | `athlete.toml`, else highest recorded | Your true max HR, for accurate HR zones |
-
-### `today` / `last`
-
-Daily-use cards over the same data — no API needed. `runlog today` prints a
-morning card: readiness score and its contributors, yesterday's training load
-(TRIMP + percentile, TSB, ACWR), the session your active plan schedules for
-today, an updating race forecast, and a deterministic **go / easy / rest**
-recommendation. `runlog last` analyzes your most recent run — km splits, HR-zone
-split, GAP, negative split — and grades its average pace and HR against the
-planned session's bands (`IN BAND` / `FAST OF BAND` / …), flagging any new
-records. Both take `--plan PATH` (default: the newest file in `data/plans/`) and
-`--hr-max BPM`.
-
-### `plan`
-
-Generate a personalized training plan for a goal, grounded in your data. Writes
-markdown to `data/plans/` and prints it. Needs `ANTHROPIC_API_KEY` unless
-`--dry-run` is used.
-
-| Flag | Default | Description |
-| --- | --- | --- |
-| `--goal G` (**required**) | — | Race distance, e.g. `3k`, `5k`, `10k`, `half` |
-| `--date D` | — | Race date, `YYYY-MM-DD`. Omit for an ongoing block with no race |
-| `--weeks N` | `8` | Block length when no `--date` — a rolling block to review and extend, ending in a time-trial checkpoint |
-| `--days DAYS` (**required**) | — | Available training days, comma-separated, e.g. `mon,wed,sat` |
-| `--target-time T` | — | Optional goal finish time, e.g. `12:00` |
-| `--max-distance KM` | — | Cap on any single run |
-| `--max-time MIN` | — | Cap on any single run's duration |
-| `--hr-max BPM` | `athlete.toml`, else highest recorded | Your true max HR (anchors the Karvonen HR zones) |
-| `--out PATH` | `data/plans/plan-<goal>-<date>.md` | Output markdown path |
-| `--model NAME` | `claude-opus-4-8` | Claude model (e.g. `claude-sonnet-4-6`) |
-| `--dry-run` | off | Print the grounded prompt instead of calling the API (no key/credits) |
-
-### `plan-review`
-
-Follow up on a plan you're partway through: compares the plan against every run
-you actually did since it started and returns an adherence assessment, per-week
-adjustments, tips, and watch-outs (**tips only — it never rewrites the plan**).
-Same dry-run/API model as `plan`. Writes markdown to `data/plans/`.
-
-| Flag | Default | Description |
-| --- | --- | --- |
-| `--plan PATH` (**required**) | — | The plan markdown file to review against |
-| `--start DATE` (**required**) | — | The date the plan block began, `YYYY-MM-DD` |
-| `--hr-max BPM` | `athlete.toml`, else highest recorded | Your true max HR (anchors the HR zones) |
-| `--out PATH` | `data/plans/review-<plan>-<today>.md` | Output markdown path |
-| `--model NAME` | `claude-opus-4-8` | Claude model to use |
-| `--dry-run` | off | Print the review prompt instead of calling the API (no key/credits) |
+Both need `ANTHROPIC_API_KEY` unless `--dry-run` prints the grounded prompt to
+paste into Claude Code or claude.ai; `--model` selects the Claude model.
 
 ### `serve`
 
-Runs a small read-only JSON API over the same analysis layer — a foundation for
-an interactive web UI (date-range filtering, sorting) the static report can't
-do. Needs the optional `web` extra:
+A small read-only JSON API over the same analysis layer, for an interactive UI
+the static report can't provide (date-range filtering, sorting). Needs the
+`web` extra:
 
 ```bash
 pip install -e '.[web]'
 python3 -m runlog serve            # http://127.0.0.1:8000  (--host / --port)
 ```
 
-Endpoints: `GET /api/activities`, `/api/activities/{id}`, `/api/weekly-volume`,
-`/api/pmc`, `/api/readiness`. Interactive docs at `/docs`. Reads `data/runlog.db`
-and the athlete profile; it never writes.
-
-| Flag | Default | Description |
-| --- | --- | --- |
-| `--host HOST` | `127.0.0.1` | Bind address |
-| `--port PORT` | `8000` | Bind port |
+Endpoints: `/api/activities`, `/api/activities/{id}`, `/api/weekly-volume`,
+`/api/pmc`, `/api/readiness`; interactive docs at `/docs`. It only reads.
 
 ---
 
-## How it works
+## Methods
 
 ### Importing
 
-- **Strava API** (`strava sync`) has the most detail but needs a Strava
-  subscription: as of 30 June 2026 Standard-tier API access is included in the
-  subscription. No subscription? `strava import-bulk` uses the account data
-  download and captures the same activities with no API access.
-- **Apple Health** (`apple import`) adds what Strava lacks — resting HR, HRV,
-  VO2max, cadence (from step count), and interval segments — and covers
-  Apple-Watch-only runs (e.g. track intervals you don't push to Strava).
-- **Ingest is idempotent** (keyed on `source` + `source_id`): re-running any
-  import or sync overwrites rather than duplicates. Raw payloads are archived
-  under `data/raw/` first, so the DB can always be rebuilt.
+The Strava API carries the most detail but needs a subscription (as of 30 June
+2026, Standard-tier API access is included in it); `strava import-bulk` captures
+the same activities from the account data download with no API. Apple Health
+adds what Strava lacks — resting HR, HRV, VO2max, cadence, interval segments —
+and covers Apple-Watch-only runs. Ingest is idempotent (keyed on `source` +
+`source_id`), so re-running overwrites rather than duplicates; raw payloads are
+archived first, so the DB can always be rebuilt.
 
-### Analyzing (`report`)
+### Analysing (`report`)
 
-Prints a text summary (total distance, streaks, consistency, records, Riegel
-race predictions, training mix, training status, intensity split, latest
-markers, anomalies, load-response, lifestyle), writes `report.html` (KPI cards
-+ every figure embedded as base64, so it's one file), and saves ~40 charts
-under four folders:
+The report prints a text summary (distance, streaks, consistency, records,
+Riegel race predictions, training mix and status, intensity split, latest
+markers, anomalies, load-response, lifestyle), writes a self-contained
+`report.html` (KPI cards plus every figure as base64), and saves charts under
+four folders:
 
-- **`training/`** — weekly/monthly volume, runs-per-week, cumulative distance,
-  distance histogram, training heatmap, pace over time, grade-adjusted pace,
-  fastest by distance, race predictions, HR over time, HR zones, HR histogram,
-  training load, cadence, elevation, running-form dynamics (power, stride
-  length, vertical oscillation, ground contact, running economy), and weekly
-  hours stacked by sport (running, strength, walking, cycling).
+- **`training/`** — volume, runs-per-week, cumulative and histogram distance,
+  heatmap, pace and grade-adjusted pace, fastest-by-distance, race predictions,
+  HR series/zones/histogram, training load, cadence, elevation, running-form
+  dynamics (power, stride length, vertical oscillation, ground contact,
+  economy), and weekly hours by sport.
 - **`recovery/`** — off-workout markers: VO2max, resting HR, HRV, sleep,
   HR-recovery, body mass, walking HR, respiratory rate.
-- **`lifestyle/`** — passive daily patterns: steps, exercise minutes, active
-  energy, and a weekday rhythm profile (steps + sleep by weekday).
-- **`analytics/`** — derived models:
-  - **Performance Management Chart** — Fitness (CTL) / Fatigue (ATL) / Form (TSB)
-    from Banister TRIMP.
-  - **ACWR** — acute:chronic workload ratio (sweet spot 0.8–1.3).
-  - **Efficiency factor** trend with a fitted regression slope.
-  - **Aerobic decoupling** from the HR + velocity streams.
-  - **Best-effort progression** — fastest continuous 1k/5k/10k over time.
-  - **Critical speed** — the CS/D' model fit to your best efforts.
-  - **Intensity distribution** — % time easy / moderate / hard.
-  - **Anomaly timeline** and **daily readiness** vs. your rolling baseline.
-  - **Load-response** — mean next-day HRV / resting HR / sleep / HR-recovery
-    deviation after rest, moderate, and hard days (all-sport TRIMP).
+- **`lifestyle/`** — passive patterns: steps, exercise minutes, active energy,
+  and a weekday rhythm profile.
+- **`analytics/`** — derived models: the Performance Management Chart
+  (CTL/ATL/TSB from Banister TRIMP), ACWR (sweet spot 0.8–1.3), efficiency-factor
+  trend, aerobic decoupling, best-effort progression, the critical-speed (CS/D′)
+  model, intensity distribution, and the anomaly and readiness timelines against
+  a rolling baseline.
 
-The per-second streams (GPS, elevation, velocity, reconstructed HR) drive the
-stream metrics: elevation-adjusted pace (Minetti cost model), per-run HR-zone
-splits, stream-integrated TRIMP, and OLS cardiac drift (a summary line).
-
-Energy expenditure splits each day into resting and active kcal. Apple does not
-record a resting figure by default, so BMR is estimated with Mifflin-St Jeor
-from your body-mass series and the configured demographics (a measured
-`basal_energy` reading is preferred when an export provides one). Apple's active
-energy already excludes resting energy, so the total is additive:
-`TDEE = BMR + active`. Per-run energy cost (kcal/km) is reported for a single
-data source at a time, because Strava and Apple estimate calories with different
-models — mixing them shows a device change rather than a change in the athlete.
-
-Anomaly detection flags days where resting HR, HRV, SpO2, sleep, or HR-recovery
-deviate from their trailing ~42-day baseline (a red-flag day when ≥2 fire
-together), plus runs whose efficiency drops below baseline.
+Per-second streams drive the stream metrics: elevation-adjusted pace (Minetti
+cost model), per-run HR-zone splits, stream-integrated TRIMP, and OLS cardiac
+drift. Energy expenditure splits each day into resting and active kcal — BMR
+from Mifflin–St Jeor over the body-mass series and configured demographics
+(a measured basal reading preferred when present), added to Apple's
+resting-excluded active energy as `TDEE = BMR + active`; per-run kcal/km is
+reported one source at a time, since Strava and Apple model calories
+differently. Anomaly detection flags days where resting HR, HRV, SpO2, sleep, or
+HR-recovery leave their trailing ~42-day baseline (a red-flag day when ≥2 fire),
+plus runs whose efficiency drops below baseline.
 
 Data hygiene: cross-source runs are de-duplicated (the Strava row of each linked
-pair is kept, Apple-only running dynamics coalesced onto it); runs below
-`--min-distance` are dropped; implausible paces and out-of-range health readings
-are filtered; corrupted streams are flagged at ingest and excluded; intraday
-health metrics show as daily means; cumulative daily metrics (steps, energy,
-flights) are taken from the single largest-recording device rather than summed
-across the iPhone and Watch, which would double-count; and off-workout data
-stays in `recovery/`, out of training totals.
+pair kept, Apple-only dynamics coalesced onto it); runs below `--min-distance`
+are dropped; implausible paces and out-of-range readings are filtered; corrupted
+streams are excluded at ingest; intraday metrics show as daily means; cumulative
+daily metrics (steps, energy, flights) are taken from the single
+largest-recording device rather than summed across iPhone and Watch; and
+off-workout data stays out of training totals.
 
-### Planning (`plan`)
+### Planning (`plan`, `plan-review`)
 
-Builds an athlete profile from your data (recent 90-day volume/pace, all-time
-best 1k/5k/10k, current Fitness/Fatigue/Form and ACWR, VO2max/resting HR) and
-computes your training zones in code — VDOT paces (Daniels) from your best 5k
-and Karvonen HR bands from `--hr-max` + resting HR. Claude (Opus 4.8) then
-assigns each session a zone and copies the pace/HR/RPE from it (rather than
-guessing), tags venue (Track optional vs Road/GPS), and for interval/tempo/track
-sessions produces an Apple Watch custom workout (warm-up → work/recovery reps →
-cool-down with pace/HR alerts). It respects your available days and max run
-distance/time and tapers into race day. It also cross-checks the VDOT zones
-against a **critical-speed model** fit from your best efforts, so when you're
-running faster than VDOT implies it leans the hard bands toward measured
-evidence rather than the table.
+`plan` builds an athlete profile from your data (recent 90-day volume and pace,
+all-time best 1k/5k/10k, current CTL/ATL/TSB and ACWR, VO2max/resting HR) and
+computes training zones in code — VDOT paces (Daniels) from your best 5k and
+Karvonen HR bands from max + resting HR. Claude then assigns each session a zone
+and copies its pace/HR/RPE rather than guessing, tags venue, emits Apple Watch
+custom workouts for structured sessions, respects your available days and run
+caps, and tapers into race day. The VDOT zones are cross-checked against a
+critical-speed model fit to your best efforts, so the hard bands lean on
+measured evidence when you outrun the table.
 
-No API credits? Add `--dry-run` to print the prompt instead of calling the API.
-Paste it into Claude Code or claude.ai (covered by a Pro/Max subscription) — the
-Console API is billed separately from chat subscriptions.
-
-### Following up (`plan-review`)
-
-Point `plan-review` at the plan markdown plus its start date. It builds a
-progress report from your DB — per-plan-week volume vs. plan, a per-workout log
-(date, kind, distance, pace, HR, zone split, GAP, cadence, cardiac drift)
-reconstructed from the streams, **per-rep detail for structured sessions**
-(each rep's avg/max HR plus the set's HR drift and pace evenness), an advanced-
-fitness block (critical speed, best efforts, decoupling), fitness trajectory
-(CTL then vs. now), ACWR, and readiness flags — and asks Claude to compare each
-performed session to the planned one and advise. The
-plan markdown is passed verbatim (never re-parsed), so it works with any plan
-you've generated. Same `--dry-run` path as `plan`.
+`plan-review` builds a progress report from the DB — per-week volume vs. plan, a
+per-workout log reconstructed from the streams, per-rep detail for structured
+sessions, an advanced-fitness block (critical speed, best efforts, decoupling),
+fitness trajectory, ACWR, and readiness flags — and asks Claude to compare each
+performed session to the planned one and advise. The plan markdown is passed
+verbatim, so it works with any generated plan.
 
 ---
 
@@ -330,7 +218,7 @@ you've generated. Same `--dry-run` path as `plan`.
 | `activities` | one row per run/workout per source (summary + Strava extras + Apple running dynamics) |
 | `laps` | splits / interval repeats / workout phases (warm-up, work, cool-down) |
 | `stream_points` | tidy per-point time series (HR, GPS, altitude, velocity) |
-| `health_metrics` | non-workout Apple metrics (resting HR, HRV, VO2max, SpO2, sleep, ...) |
+| `health_metrics` | non-workout Apple metrics (resting HR, HRV, VO2max, SpO2, sleep, …) |
 | `activity_links` | matched Strava↔Apple activity pairs with a confidence score |
 | `raw_files` | manifest of archived raw payloads |
 
