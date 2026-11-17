@@ -17,6 +17,11 @@ env/
 .pytest_cache/
 .hypothesis/
 
+# Coverage artifacts
+.coverage
+.coverage.*
+htmlcov/
+
 # Secrets
 .env
 
