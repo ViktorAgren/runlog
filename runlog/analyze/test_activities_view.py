@@ -170,3 +170,37 @@ def test_build_detail_falls_back_to_the_apple_twins_stream(
         "Elevation",
     ]
     assert [lap.index for lap in detail.laps] == [1, 2, 3]
+
+
+def test_smooth_series_rejects_spikes_and_preserves_gaps() -> None:
+    assert activities_view._smooth_series(
+        [100.0, 102.0, 500.0, 104.0, 106.0], window=3
+    ) == [101.0, 102.0, 104.0, 106.0, 105.0]
+    assert activities_view._smooth_series([100.0, None, 104.0], window=3) == [
+        100.0,
+        None,
+        104.0,
+    ]
+
+
+def test_charts_normalize_cadence_add_power_and_floor_pace_span() -> None:
+    stream = [
+        activities_view._StreamPt(
+            offset_s=i,
+            distance_m=float(i),
+            hr=150.0,
+            velocity_mps=3.0,
+            cadence=88.0,  # per-leg rpm -> 176 spm
+            altitude_m=None,
+            watts=250.0,
+        )
+        for i in range(6)
+    ]
+    charts = {c.title: c for c in activities_view._charts(stream)}
+
+    cadence = [y for _, y in charts["Cadence"].points if y is not None]
+    assert (
+        set(charts) == {"Heart rate", "Pace", "Cadence", "Power"}
+        and charts["Pace"].min_span == 12.0
+        and cadence == [176.0] * 6
+    )

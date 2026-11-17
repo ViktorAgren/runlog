@@ -143,7 +143,8 @@ def test_render_activity_pages_writes_a_page_with_chart_and_laps(
         ],
         zones=[ZoneBand("Z2", "Endurance", "134-148", 900, 100)],
         thresholds=[("LT1 (aerobic)", "148 bpm")],
-        laps=[LapRow(1, "1.00", "5:00", "5:00/km", 145, 160)],
+        intervals=None,
+        laps=[LapRow(1, "1.00", "5:00", "5:00/km", 145, 160, 170)],
     )
 
     pages = html_report.render_activity_pages([detail], tmp_path)

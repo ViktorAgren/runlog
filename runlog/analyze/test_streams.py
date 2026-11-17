@@ -152,3 +152,27 @@ def test_full_stream_cleans_implausible_samples() -> None:
     )
     cleaned = streams.full_stream(conn, activity_id)
     assert [(s.hr, s.velocity_mps) for s in cleaned] == [(150.0, 3.0), (None, None)]
+
+
+def _cad(offset: int, cadence: float | None) -> StreamSample:
+    return StreamSample(
+        offset_s=offset,
+        distance_m=float(offset),
+        altitude_m=None,
+        lat=None,
+        lng=None,
+        hr=None,
+        velocity_mps=None,
+        cadence=cadence,
+    )
+
+
+def test_lap_cadence_stats_means_per_lap_and_normalizes() -> None:
+    # Laps end at 2 and 4; per-leg rpm means (85, 105) double to spm.
+    stream = [_cad(0, 80.0), _cad(1, 90.0), _cad(2, 100.0), _cad(3, 110.0)]
+    assert streams.lap_cadence_stats(stream, [2, 4]) == [170.0, 210.0]
+
+
+def test_lap_cadence_stats_none_for_a_lap_without_samples() -> None:
+    stream = [_cad(0, 170.0), _cad(1, 172.0)]
+    assert streams.lap_cadence_stats(stream, [2, 4]) == [171.0, None]

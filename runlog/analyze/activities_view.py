@@ -9,10 +9,12 @@ and physiology, producing the data a per-workout page renders as inline SVG.
 from __future__ import annotations
 
 import dataclasses
+import statistics
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from runlog.analyze import metrics
+from runlog.db import quality
 from runlog.domain import ActivityId
 from runlog.plan import progress
 
@@ -59,6 +61,7 @@ class LapRow:
     pace_disp: str
     avg_hr: int | None
     max_hr: int | None
+    cadence: int | None
 
 
 @dataclass(frozen=True)
@@ -93,6 +96,7 @@ class ActivityDetail:
     charts: list[Chart]
     zones: list[ZoneBand]
     thresholds: list[tuple[str, str]]
+    intervals: progress.IntervalSummary | None
     laps: list[LapRow]
 
 
@@ -104,6 +108,7 @@ class _StreamPt:
     velocity_mps: float | None
     cadence: float | None
     altitude_m: float | None
+    watts: float | None
 
 
 def _fmt_duration(seconds: int | None) -> str:
@@ -167,10 +172,11 @@ def _load_stream(conn: sqlite3.Connection, activity_id: ActivityId) -> list[_Str
             velocity_mps=row["velocity_mps"],
             cadence=row["cadence"],
             altitude_m=row["altitude_m"],
+            watts=row["watts"],
         )
         for row in conn.execute(
             """
-            SELECT offset_s, distance_m, hr, velocity_mps, cadence, altitude_m
+            SELECT offset_s, distance_m, hr, velocity_mps, cadence, altitude_m, watts
             FROM stream_points
             WHERE activity_id = ? AND offset_s IS NOT NULL
             ORDER BY seq
@@ -272,22 +278,46 @@ def _detect_session(
     return "Easy"
 
 
+# Centered rolling-median window (samples) that tames ~1 Hz sensor jitter
+# without hiding real structure.
+_SMOOTH_WINDOW = 5
+
+
+def _smooth_series(
+    values: list[float | None], window: int = _SMOOTH_WINDOW
+) -> list[float | None]:
+    """Centered rolling median, preserving None gaps and the series length."""
+    half = window // 2
+    out: list[float | None] = []
+    for i, value in enumerate(values):
+        if value is None:
+            out.append(None)
+            continue
+        near = [v for v in values[max(0, i - half) : i + half + 1] if v is not None]
+        out.append(statistics.median(near) if near else None)
+    return out
+
+
 def _charts(stream: list[_StreamPt]) -> list[Chart]:
     minutes = [pt.offset_s / 60.0 for pt in stream]
-    # min_span: the narrowest y-axis span (in each metric's own unit) worth
-    # resolving, so sensor jitter on a steady run is not amplified to fill the plot.
+    # Clean (drop dropouts/spikes), normalize cadence to spm, then smooth; a raw
+    # per-point trace is otherwise jittery and axis-flattened. min_span is the
+    # narrowest y-span worth resolving in each metric's own unit.
+    hr = _smooth_series([quality.plausible_hr(pt.hr) for pt in stream])
+    pace = _smooth_series([_pace_from_velocity(pt.velocity_mps) for pt in stream])
+    cadence = _smooth_series(
+        quality.to_spm([quality.plausible_cadence(pt.cadence) for pt in stream])
+    )
+    power = _smooth_series(
+        [pt.watts if pt.watts and pt.watts > 0 else None for pt in stream]
+    )
+    elevation = [pt.altitude_m for pt in stream]
     series: list[tuple[str, str, str, str, float, list[float | None]]] = [
-        ("Heart rate", "bpm", "#dc2626", "int", 20.0, [pt.hr for pt in stream]),
-        (
-            "Pace",
-            "min/km",
-            "#2563eb",
-            "pace",
-            60.0,
-            [_pace_from_velocity(pt.velocity_mps) for pt in stream],
-        ),
-        ("Cadence", "spm", "#7c3aed", "int", 20.0, [pt.cadence for pt in stream]),
-        ("Elevation", "m", "#16a34a", "int", 20.0, [pt.altitude_m for pt in stream]),
+        ("Heart rate", "bpm", "#dc2626", "int", 20.0, hr),
+        ("Pace", "min/km", "#2563eb", "pace", 12.0, pace),
+        ("Cadence", "spm", "#7c3aed", "int", 10.0, cadence),
+        ("Power", "W", "#ea580c", "int", 20.0, power),
+        ("Elevation", "m", "#16a34a", "int", 20.0, elevation),
     ]
     charts: list[Chart] = []
     for title, unit, color, y_format, min_span, values in series:
@@ -316,6 +346,7 @@ def _lap_rows(laps: Sequence[progress.LapSplit]) -> list[LapRow]:
             pace_disp=_fmt_pace(lap.pace_s_per_km),
             avg_hr=round(lap.avg_hr) if lap.avg_hr else None,
             max_hr=round(lap.max_hr) if lap.max_hr else None,
+            cadence=round(lap.avg_cadence) if lap.avg_cadence else None,
         )
         for lap in laps
     ]
@@ -341,6 +372,10 @@ def _header(detail: progress.WorkoutDetail, run: Run) -> list[tuple[str, str]]:
             ),
         ),
     ]
+    if detail.avg_power_w is not None:
+        chips.append(("Avg power", f"{round(detail.avg_power_w)} W"))
+    if detail.avg_stride_length_m is not None:
+        chips.append(("Avg stride", f"{detail.avg_stride_length_m:.2f} m"))
     if detail.cardiac_drift_pct is not None:
         chips.append(("Cardiac drift", f"{detail.cardiac_drift_pct:+.1f}%"))
     if detail.gap_pace_s_per_km is not None:
@@ -381,6 +416,7 @@ def build_detail(
         charts=_charts(stream),
         zones=_zone_bands(zone_secs, hr_max, hr_rest) if sum(zone_secs) else [],
         thresholds=_thresholds(hr_max, hr_rest),
+        intervals=progress.interval_summary(detail.laps),
         laps=_lap_rows(detail.laps),
     )
 

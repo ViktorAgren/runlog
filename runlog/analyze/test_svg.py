@@ -57,3 +57,12 @@ def test_line_chart_centers_a_steady_series_and_clamps_the_spike() -> None:
     )
     assert 'd="M52.0 117.0' in svg  # 360 maps to the vertical centre
     assert 'L746.0 24.0" fill="none"' in svg  # the stop clamps to the top pad
+
+
+def test_y_range_shows_variation_above_a_small_floor() -> None:
+    assert _y_range([300.0, 320.0, 340.0, 360.0, 380.0], 12.0) == (300.0, 380.0)
+
+
+def test_y_range_floors_a_near_constant_series() -> None:
+    low, high = _y_range([300.0, 300.0, 300.0, 301.0], 12.0)
+    assert round(high - low, 1) == 12.0
