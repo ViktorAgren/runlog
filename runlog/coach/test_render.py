@@ -9,8 +9,23 @@ from runlog.analyze.readiness import ReadinessDay
 from runlog.analyze.records import RecordEvent
 from runlog.coach import render
 from runlog.coach.daily import Guidance, LastCard, SessionComparison, TodayCard
+from runlog.coach.limiters import LimiterCard, LimiterFinding
 from runlog.plan.progress import WorkoutDetail
 from runlog.plan.schedule import PlannedSession
+
+_ENGINE_RX = (
+    "Add a 2nd quality day: weekly LT2 threshold plus fortnightly vVO2max reps "
+    "(3-5 min) to lift the aerobic ceiling."
+)
+_SPEED_RX = (
+    "Weekly neuromuscular speed: strides / short reps (10-20 x 100-200 m) "
+    "and hill sprints."
+)
+_DURABILITY_RX = (
+    "Progress the long run and add tempo-finish long runs; hold weekly "
+    "aerobic volume to build fatigue resistance."
+)
+_SPEED_REASON = "short-distance efforts +5% vs your CS curve · D' 200 m reserve"
 
 
 def _session() -> PlannedSession:
@@ -192,3 +207,94 @@ def test_render_last_no_band() -> None:
     )
     text = render.render_last(card)
     assert "by feel — no band" in text
+
+
+def test_render_limiters_full_card() -> None:
+    card = LimiterCard(
+        day=date(2026, 11, 17),
+        primary="speed",
+        findings=(
+            LimiterFinding(
+                "speed",
+                2.0,
+                (_SPEED_REASON,),
+                _SPEED_RX,
+            ),
+            LimiterFinding(
+                "engine", 0.0, ("VDOT 60.0 rising (+0.5/mo) · VO2max 60.0",), _ENGINE_RX
+            ),
+            LimiterFinding(
+                "durability",
+                0.0,
+                ("fatigue resistance near reference",),
+                _DURABILITY_RX,
+            ),
+            LimiterFinding(
+                "structure",
+                0.0,
+                ("distribution & consistency on track",),
+                "Hold the 80/20 structure and weekly consistency.",
+            ),
+        ),
+        confidence="high",
+        confidence_note=None,
+        short_gap_pct=5.0,
+        long_gap_pct=0.0,
+    )
+    assert render.render_limiters(card).splitlines() == [
+        "LIMITERS — Tue 2026-11-17 · confidence high",
+        "Primary     Speed (sev 2.0)",
+        "Curve       short +5% · long +0% vs CS prediction",
+        f"Speed       2.0 · {_SPEED_REASON}",
+        f"  do        {_SPEED_RX}",
+        "Engine      0.0 · VDOT 60.0 rising (+0.5/mo) · VO2max 60.0",
+        f"  do        {_ENGINE_RX}",
+        "Durability  0.0 · fatigue resistance near reference",
+        f"  do        {_DURABILITY_RX}",
+        "Structure   0.0 · distribution & consistency on track",
+        "  do        Hold the 80/20 structure and weekly consistency.",
+    ]
+
+
+def test_render_limiters_low_confidence_shows_note_and_no_curve() -> None:
+    card = LimiterCard(
+        day=date(2026, 11, 17),
+        primary="structure",
+        findings=(
+            LimiterFinding(
+                "structure",
+                2.0,
+                ("only 66% easy (Seiler ~80%), PI 2.3",),
+                "Shift to ~80/20: raise easy-run time, keep hard days hard.",
+            ),
+            LimiterFinding(
+                "engine",
+                0.0,
+                ("engine trend unavailable (need 2+ CS windows)",),
+                _ENGINE_RX,
+            ),
+            LimiterFinding(
+                "speed",
+                0.0,
+                ("speed vs curve unavailable (need 3+ effort distances)",),
+                _SPEED_RX,
+            ),
+            LimiterFinding(
+                "durability",
+                0.0,
+                ("fatigue resistance near reference",),
+                _DURABILITY_RX,
+            ),
+        ),
+        confidence="low",
+        confidence_note="limited by missing best efforts at 3+ distances",
+        short_gap_pct=None,
+        long_gap_pct=None,
+    )
+    lines = render.render_limiters(card).splitlines()
+    assert lines[:3] == [
+        "LIMITERS — Tue 2026-11-17 · confidence low",
+        "Primary     Structure (sev 2.0)",
+        "Note        limited by missing best efforts at 3+ distances",
+    ]
+    assert not any(line.startswith("Curve") for line in lines)

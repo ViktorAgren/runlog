@@ -19,6 +19,8 @@ Commands:
                                 morning readiness + planned-session card
     last [--plan PATH] [--hr-max N]
                                 post-run analysis of the latest run vs the plan
+    limiters [--hr-max N]       rank your performance limiter (engine/speed/
+                                durability/structure) + what to train next
     plan --goal G --date D --days mon,wed,sat [--target-time T]
          [--max-distance KM] [--max-time MIN] [--dry-run]
                                 generate an AI training plan (needs API key;
@@ -284,6 +286,19 @@ def _cmd_last(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_limiters(args: argparse.Namespace) -> int:
+    from runlog.coach import limiters, render
+
+    conn = _open_db()
+    cfg = load_athlete_config()
+    hr_max, hr_rest = _hr_from(args, cfg)
+    card = limiters.build_limiters(
+        conn, hr_max=hr_max, hr_rest=hr_rest, sex=cfg.sex, today=date.today()
+    )
+    print(render.render_limiters(card))
+    return 0
+
+
 def _cmd_plan(args: argparse.Namespace) -> int:
     import math
 
@@ -514,6 +529,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "--hr-max", type=float, help="your true max HR (overrides athlete.toml)"
     )
     last_cmd.set_defaults(func=_cmd_last)
+
+    limiters_cmd = sub.add_parser(
+        "limiters", help="rank what's limiting your performance and what to train"
+    )
+    limiters_cmd.add_argument(
+        "--hr-max", type=float, help="your true max HR (overrides athlete.toml)"
+    )
+    limiters_cmd.set_defaults(func=_cmd_limiters)
 
     plan_cmd = sub.add_parser("plan", help="generate an AI training plan")
     plan_cmd.add_argument("--goal", required=True, help="e.g. 3k, 5k, 10k, half")
