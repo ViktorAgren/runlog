@@ -34,6 +34,7 @@ if TYPE_CHECKING:
     from runlog.analyze.records import RecordEvent
     from runlog.analyze.response import MarkerResponse
     from runlog.analyze.stats import CorrTest
+    from runlog.coach.limiters import LimiterCard
 
 _MARKER_LABELS = {
     "vo2max": "VO2max",
@@ -483,6 +484,32 @@ def advanced_section(
             f"{stats.format_p(readiness_corr.p)}, n={readiness_corr.n} "
             f"(explains ~{round(readiness_corr.r**2 * 100)}% of off-day variance)"
         )
+    return "\n".join(lines)
+
+
+def limiters_section(card: LimiterCard) -> str:
+    """Render the ranked performance-limiter diagnosis as plain text."""
+    lines: list[str] = ["", "Performance limiters", "=" * 40]
+    top = card.findings[0]
+    if top.severity < 0.5:
+        lines.append(
+            f"No clear limiter — all axes near your own curve "
+            f"(confidence {card.confidence})."
+        )
+    else:
+        lines.append(
+            f"Primary: {top.axis} (severity {top.severity:.1f}/3, "
+            f"confidence {card.confidence})"
+        )
+    if card.confidence_note is not None:
+        lines.append(f"  {card.confidence_note}")
+    for finding in card.findings:
+        lines.append(
+            f"{finding.axis.capitalize():<11} {finding.severity:.1f}  "
+            f"{' · '.join(finding.reasons)}"
+        )
+        if finding.severity >= 1.0:
+            lines.append(f"            -> {finding.prescription}")
     return "\n".join(lines)
 
 

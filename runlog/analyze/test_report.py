@@ -240,3 +240,7 @@ def test_report_run_writes_charts_and_summary(tmp_path: Path) -> None:
     # Without athlete demographics the energy section is absent, but says so
     # rather than vanishing silently.
     assert "Energy expenditure not estimated" in result.summary_text
+    # The limiter diagnosis appears in the terminal summary and as an HTML KPI.
+    assert "Performance limiters" in result.summary_text
+    assert result.report_html is not None
+    assert "Primary limiter" in result.report_html.read_text()

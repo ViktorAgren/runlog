@@ -43,6 +43,7 @@ from runlog.analyze import (
 )
 from runlog.analyze.report_model import FigureRef, Kpi, ReportModel, Section
 from runlog.analyze.series import Scalar, from_trends
+from runlog.coach import limiters
 from runlog.db import queries, store
 
 if TYPE_CHECKING:
@@ -930,6 +931,9 @@ def _run(
     advanced = summary.advanced_section(cs_model, readiness_latest, readiness_r)
     if advanced:
         text += "\n" + advanced
+    # All-time ability read (like `runlog limiters`), independent of --since.
+    limiter_card = limiters.build_limiters(conn, hr_max_value, hr_rest_value, sex)
+    text += "\n" + summary.limiters_section(limiter_card)
     quarantined = metrics.quarantined_count(conn)
     if quarantined:
         text += f"\n\n{quarantined} run(s) quarantined (data errors, excluded)."
@@ -957,23 +961,25 @@ def _run(
         data_exports = persist.export(conn, out_dir)
 
     span = f"{overall.first_run} to {overall.last_run}"
+    kpis = _build_kpis(
+        overall,
+        pmc,
+        acwr,
+        ef_trend,
+        intensity,
+        latest_markers,
+        cs_model,
+        readiness_latest,
+        life,
+        ef_test,
+        energy_summary,
+    )
+    kpis.append(_limiter_kpi(limiter_card))
     model = ReportModel(
         title="Running analytics report",
         subtitle=f"{span} · {overall.run_count} runs",
         generated_at=datetime.now().strftime("%Y-%m-%d %H:%M"),
-        kpis=_build_kpis(
-            overall,
-            pmc,
-            acwr,
-            ef_trend,
-            intensity,
-            latest_markers,
-            cs_model,
-            readiness_latest,
-            life,
-            ef_test,
-            energy_summary,
-        ),
+        kpis=kpis,
         sections=_build_sections(produced, out_dir),
         stats=_stats_table(table),
         activities=activity_rows,
@@ -986,6 +992,23 @@ def _run(
         report_html=report_html,
         activity_pages=activity_pages,
         data_exports=data_exports,
+    )
+
+
+def _limiter_kpi(card: limiters.LimiterCard) -> Kpi:
+    top = card.findings[0]
+    if top.severity < 0.5:
+        return Kpi(
+            "Primary limiter",
+            "none clear",
+            context=f"{card.confidence} confidence",
+            tone="good",
+        )
+    return Kpi(
+        "Primary limiter",
+        top.axis.capitalize(),
+        context=f"severity {top.severity:.1f}/3, {card.confidence} confidence",
+        tone="warn" if top.severity >= 2.0 else "neutral",
     )
 
 
