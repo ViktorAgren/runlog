@@ -128,3 +128,18 @@ def test_cli_today_and_last_on_empty_db(
     assert today_out.startswith("TODAY —")
     assert "no active plan schedule" in today_out
     assert "No runs in the database yet." in last_out
+
+
+def test_cli_limiters_on_empty_db(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("RUNLOG_DATA_DIR", str(tmp_path / "data"))
+    assert main(["db", "init"]) == 0
+    capsys.readouterr()
+
+    code = main(["limiters"])
+    out = capsys.readouterr().out
+
+    assert code == 0
+    assert out.startswith("LIMITERS —")
+    assert "confidence low" in out

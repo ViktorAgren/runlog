@@ -8,6 +8,7 @@ from runlog.analyze.forecast import format_race_time
 
 if TYPE_CHECKING:
     from runlog.coach.daily import LastCard, TodayCard
+    from runlog.coach.limiters import LimiterCard
 
 _LABEL = 11  # label column width; values begin one space past it
 
@@ -154,4 +155,34 @@ def render_last(card: LastCard) -> str:
             else:
                 parts.append(f"{e.kind} {_clock(e.seconds)}")
         lines.append(_row("Efforts", " · ".join(parts)))
+    return "\n".join(lines)
+
+
+def render_limiters(card: LimiterCard) -> str:
+    top = card.findings[0]
+    if top.severity < 0.5:
+        primary = (
+            f"none clear — all axes near your curve (top {top.axis} {top.severity:.1f})"
+        )
+    else:
+        primary = f"{top.axis.capitalize()} (sev {top.severity:.1f})"
+    lines = [
+        f"LIMITERS — {card.day:%a %Y-%m-%d} · confidence {card.confidence}",
+        _row("Primary", primary),
+    ]
+    if card.confidence_note is not None:
+        lines.append(_row("Note", card.confidence_note))
+    if card.short_gap_pct is not None and card.long_gap_pct is not None:
+        lines.append(
+            _row(
+                "Curve",
+                f"short {card.short_gap_pct:+.0f}% · long {card.long_gap_pct:+.0f}% "
+                "vs CS prediction",
+            )
+        )
+    for f in card.findings:
+        lines.append(
+            _row(f.axis.capitalize(), f"{f.severity:.1f} · {' · '.join(f.reasons)}")
+        )
+        lines.append(_row("  do", f.prescription))
     return "\n".join(lines)
