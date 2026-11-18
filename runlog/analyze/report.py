@@ -1054,6 +1054,23 @@ def _kpi_delta(
     return text, ("good" if (change > 0) == up_good else "bad")
 
 
+def _signed(value: float, places: int = 3) -> str:
+    """Signed fixed-point without a '-0.000' artefact from rounding."""
+    rounded = round(value, places) or 0.0
+    return f"{rounded:+.{places}f}"
+
+
+def _efficiency_tone(per_30_days: float, test: stats.TrendTest | None) -> str:
+    """Tone the efficiency trend only when it is significant; else neutral.
+
+    A positive slope whose CI straddles zero is noise, not improvement, so it
+    must not read as green.
+    """
+    if test is None or test.p >= 0.05:
+        return "neutral"
+    return "good" if per_30_days >= 0 else "warn"
+
+
 def _build_kpis(
     overall: metrics.Summary,
     pmc: Sequence[analytics.PmcPoint],
@@ -1079,8 +1096,18 @@ def _build_kpis(
             f"{overall.run_count} runs",
         ),
         # No delta on the partial current week (it always reads "down" mid-week);
-        # its week-over-week trend is narrated in the training-status summary.
-        Kpi("This week", f"{overall.this_week_km:.0f}", "km", "current training week"),
+        # its week-over-week trend is narrated in the training-status summary. A
+        # bare 0 reads as broken, so name the gap instead.
+        Kpi(
+            "This week",
+            f"{overall.this_week_km:.0f}",
+            "km",
+            (
+                f"no runs since {overall.last_run}"
+                if overall.this_week_km == 0
+                else "current training week"
+            ),
+        ),
     ]
     if pmc:
         last = pmc[-1]
@@ -1142,24 +1169,25 @@ def _build_kpis(
                 "Easy share",
                 f"{intensity.easy_pct:.0f}",
                 "%",
-                f"easy:hard {intensity.easy_to_hard}; ~80% ideal",
+                f"{intensity.moderate_pct:.0f}% moderate; ~80% easy ideal",
                 tone,
             )
         )
     if ef_trend is not None:
-        tone = "good" if ef_trend.per_30_days >= 0 else "warn"
         if ef_test is not None:
             low, high = ef_test.ci_30d
-            context = f"[{low:+.3f}, {high:+.3f}]/mo, {stats.format_p(ef_test.p)}"
+            context = (
+                f"[{_signed(low)}, {_signed(high)}]/mo, {stats.format_p(ef_test.p)}"
+            )
         else:
             context = f"r={ef_trend.r:.2f}"
         kpis.append(
             Kpi(
                 "Efficiency",
-                f"{ef_trend.per_30_days:+.3f}",
+                _signed(ef_trend.per_30_days),
                 "/mo",
                 context,
-                tone,
+                _efficiency_tone(ef_trend.per_30_days, ef_test),
             )
         )
     if cs_model is not None:
