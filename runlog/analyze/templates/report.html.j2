@@ -39,6 +39,7 @@
     margin: 0 0 6px; letter-spacing: -0.01em; }
   .sub { color: var(--sub); font-size: 15.5px; }
   .gen { color: var(--muted); font-size: 12.5px; margin-top: 6px; font-family: var(--mono); }
+  .provenance { color: var(--muted); font-size: 12.5px; margin: 8px 0 0; }
   .theme-btn { flex: none; appearance: none; border: 1px solid var(--line-strong);
     background: var(--surface); color: var(--sub); border-radius: 8px; cursor: pointer;
     font-size: 13px; padding: 6px 12px; font-family: var(--sans); }
@@ -73,6 +74,9 @@
     font-variant-numeric: tabular-nums; }
   .kpi .k-unit { font-size: 13px; font-weight: 500; color: var(--sub); margin-left: 3px; }
   .kpi .k-context { color: var(--sub); font-size: 12.5px; }
+  .kpi .k-delta { font-size: 12px; font-weight: 600; margin-top: 2px; }
+  .kpi .k-delta.good { color: #16a34a; } .kpi .k-delta.bad { color: #dc2626; }
+  .kpi .k-delta.flat { color: var(--muted); font-weight: 500; }
   .figs { display: grid; gap: 34px; grid-template-columns: 1fr; }
   figure { margin: 0; background: var(--surface); border: 1px solid var(--line);
     border-radius: 10px; padding: 14px 14px 10px; box-shadow: var(--shadow); }
@@ -116,6 +120,17 @@
   table.acts tbody tr { cursor: pointer; }
   table.acts tbody tr:hover { background: var(--paper); }
   table.acts tbody tr.sel { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  table.acts th.srt-a::after { content: " \25B2"; } table.acts th.srt-d::after { content: " \25BC"; }
+  .badge { font-size: 10px; padding: 1px 5px; border-radius: 6px; font-weight: 700;
+    margin-left: 5px; vertical-align: middle; }
+  .badge.pr { background: #eab308; color: #1a1a1a; }
+  .badge.off { background: #dc2626; color: #fff; }
+  .ibar { display: inline-flex; height: 8px; width: 72px; border-radius: 999px;
+    overflow: hidden; background: var(--line); vertical-align: middle; }
+  .ibar span { display: block; height: 100%; }
+  .ibar .e { background: #16a34a; } .ibar .m { background: #eab308; } .ibar .h { background: #dc2626; }
+  .acts-summary { font-size: 13px; color: var(--sub); margin: 2px 0 8px;
+    font-variant-numeric: tabular-nums; }
   .modal-backdrop { position: fixed; inset: 0; z-index: 50; display: none;
     background: rgba(12, 12, 15, 0.55); padding: 3vh 2vw;
     align-items: stretch; justify-content: center; }
@@ -156,8 +171,11 @@
   <div id="overview" class="panel">
     {% if model.summary %}
     <div class="abstract">
-      <h2>Abstract</h2>
+      <h2>Training status</h2>
       <p>{{ model.summary }}</p>
+      {% if model.provenance %}
+      <p class="provenance">{{ model.provenance }}</p>
+      {% endif %}
     </div>
     {% endif %}
 
@@ -189,6 +207,7 @@
           <div class="k-label">{{ kpi.label }}</div>
           <div class="k-value">{{ kpi.value }}{% if kpi.unit %}<span class="k-unit">{{ kpi.unit }}</span>{% endif %}</div>
           {% if kpi.context %}<div class="k-context">{{ kpi.context }}</div>{% endif %}
+          {% if kpi.delta %}<div class="k-delta {{ kpi.delta_dir }}">{{ kpi.delta }}</div>{% endif %}
         </div>
         {% endfor %}
       </div>
@@ -254,43 +273,65 @@
               {% endfor %}
             </select>
           </label>
+          <label>Search
+            <input id="f-search" type="search" oninput="applyFilters()"
+              placeholder="date / session / source" autocomplete="off">
+          </label>
         </div>
+        <div class="acts-summary" id="acts-summary"></div>
         <div class="acts-scroll">
           <table class="acts" id="acts">
             <thead><tr>
               <th onclick="sortActs(0,'t')">Date</th>
-              <th>Day</th>
+              <th onclick="sortActs(1,'t')">Day</th>
               <th onclick="sortActs(2,'t')">Type</th>
               <th onclick="sortActs(3,'t')">Session</th>
               <th onclick="sortActs(4,'t')">Source</th>
               <th onclick="sortActs(5,'n')">Dist</th>
               <th onclick="sortActs(6,'n')">Time</th>
               <th onclick="sortActs(7,'n')">Pace</th>
-              <th onclick="sortActs(8,'n')">Avg HR</th>
-              <th>Max HR</th><th>Cad</th><th>Elev</th><th>kcal</th>
+              <th onclick="sortActs(8,'n')" title="grade-adjusted pace">GAP</th>
+              <th onclick="sortActs(9,'n')">Avg HR</th>
+              <th onclick="sortActs(10,'n')">Max HR</th>
+              <th onclick="sortActs(11,'n')" title="Banister TRIMP">Load</th>
+              <th onclick="sortActs(12,'n')" title="efficiency factor: m/min per bpm">EF</th>
+              <th onclick="sortActs(13,'n')" title="HR-pace decoupling">Decoup</th>
+              <th onclick="sortActs(14,'n')" title="easy / moderate / hard time">Int</th>
+              <th onclick="sortActs(15,'n')">Cad</th>
+              <th onclick="sortActs(16,'n')">Elev</th>
+              <th onclick="sortActs(17,'n')">kcal</th>
             </tr></thead>
             <tbody>
             {% for a in model.activities %}
-            <tr data-indoor="{{ 1 if a.indoor else 0 }}" data-session="{{ a.session }}" onclick="openActivity('{{ a.page }}', this)">
+            <tr data-indoor="{{ 1 if a.indoor else 0 }}" data-session="{{ a.session }}"
+                data-text="{{ (a.date ~ ' ' ~ a.session ~ ' ' ~ a.source ~ ' ' ~ a.sport)|lower }}"
+                data-dist="{{ a.distance_km }}" data-dur="{{ a.duration_s }}"
+                data-load="{{ a.load or 0 }}" data-hr="{{ a.avg_hr or 0 }}"
+                data-pacekey="{{ a.pace_s or 0 }}" onclick="openActivity('{{ a.page }}', this)">
               <td>{{ a.date }}</td>
               <td>{{ a.weekday }}</td>
               <td>{{ a.sport }}</td>
-              <td>{{ a.session }}</td>
+              <td>{{ a.session }}{% if a.is_pr %}<span class="badge pr">PR</span>{% endif %}{% if a.is_off %}<span class="badge off">off</span>{% endif %}</td>
               <td>{{ a.source }}</td>
               <td class="num" data-sort="{{ a.distance_km }}">{{ '%.2f'|format(a.distance_km) }}</td>
-              <td class="num" data-sort="{{ a.duration_s }}">{{ a.duration_disp }}</td>
-              <td class="num" data-sort="{{ a.pace_s }}">{{ a.pace_disp }}</td>
-              <td class="num" data-sort="{{ a.avg_hr or 0 }}">{{ a.avg_hr if a.avg_hr is not none else '-' }}</td>
-              <td class="num">{{ a.max_hr if a.max_hr is not none else '-' }}</td>
-              <td class="num">{{ a.cadence if a.cadence is not none else '-' }}</td>
-              <td class="num">{{ a.elevation_m if a.elevation_m is not none else '-' }}</td>
-              <td class="num">{{ a.calories if a.calories is not none else '-' }}</td>
+              <td class="num" data-sort="{{ a.duration_s or '' }}">{{ a.duration_disp }}</td>
+              <td class="num" data-sort="{{ a.pace_s or '' }}">{{ a.pace_disp }}</td>
+              <td class="num" data-sort="{{ a.gap_s if a.gap_s is not none else '' }}">{{ a.gap_disp }}</td>
+              <td class="num" data-sort="{{ a.avg_hr or '' }}">{{ a.avg_hr if a.avg_hr is not none else '-' }}</td>
+              <td class="num" data-sort="{{ a.max_hr or '' }}">{{ a.max_hr if a.max_hr is not none else '-' }}</td>
+              <td class="num" data-sort="{{ a.load if a.load is not none else '' }}">{{ a.load if a.load is not none else '-' }}</td>
+              <td class="num" data-sort="{{ a.ef if a.ef is not none else '' }}">{{ '%.2f'|format(a.ef) if a.ef is not none else '-' }}</td>
+              <td class="num" data-sort="{{ a.decoupling_pct if a.decoupling_pct is not none else '' }}">{{ '%+.1f'|format(a.decoupling_pct) if a.decoupling_pct is not none else '-' }}</td>
+              <td data-sort="{{ a.hard_pct if a.hard_pct is not none else '' }}">{% if a.easy_pct is not none %}<span class="ibar" title="Easy {{ a.easy_pct|round|int }}% · Mod {{ a.moderate_pct|round|int }}% · Hard {{ a.hard_pct|round|int }}%"><span class="e" style="width:{{ a.easy_pct }}%"></span><span class="m" style="width:{{ a.moderate_pct }}%"></span><span class="h" style="width:{{ a.hard_pct }}%"></span></span>{% else %}-{% endif %}</td>
+              <td class="num" data-sort="{{ a.cadence or '' }}">{{ a.cadence if a.cadence is not none else '-' }}</td>
+              <td class="num" data-sort="{{ a.elevation_m or '' }}">{{ a.elevation_m if a.elevation_m is not none else '-' }}</td>
+              <td class="num" data-sort="{{ a.calories or '' }}">{{ a.calories if a.calories is not none else '-' }}</td>
             </tr>
             {% endfor %}
             </tbody>
           </table>
         </div>
-        <div class="hint" id="acts-hint">{{ model.activities|length }} runs · click a row to open its timeline · click a column to sort</div>
+        <div class="hint" id="acts-hint">click a row to open its timeline · click a column to sort</div>
     </div>
     <div class="modal-backdrop" id="detail-modal" onclick="if (event.target === this) closeDetail()">
       <div class="modal">
@@ -343,36 +384,66 @@
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') closeDetail();
   });
+  function fmtClock(s) {
+    s = Math.round(s); var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+    return h ? h + 'h ' + m + 'm' : m + 'm';
+  }
+  function fmtPace(s) {
+    s = Math.round(s); return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2);
+  }
+  function updateSummary() {
+    var n = 0, dist = 0, dur = 0, load = 0, hrSum = 0, hrN = 0;
+    document.querySelectorAll('#acts tbody tr').forEach(function (r) {
+      if (r.hidden) return;
+      n++;
+      dist += parseFloat(r.dataset.dist) || 0;
+      dur += parseFloat(r.dataset.dur) || 0;
+      load += parseFloat(r.dataset.load) || 0;
+      var hr = parseFloat(r.dataset.hr) || 0; if (hr > 0) { hrSum += hr; hrN++; }
+    });
+    var el = document.getElementById('acts-summary');
+    if (!el) return;
+    var parts = [n + ' runs', dist.toFixed(1) + ' km', fmtClock(dur), 'load ' + Math.round(load)];
+    if (dist > 0 && dur > 0) parts.push('avg ' + fmtPace(dur / (dist)) + '/km');
+    if (hrN) parts.push('avg HR ' + Math.round(hrSum / hrN));
+    el.textContent = parts.join('  ·  ');
+  }
   function applyFilters() {
+    if (!document.getElementById('acts')) return;
     var ind = document.getElementById('f-indoor').value;
     var ses = document.getElementById('f-session').value;
-    var shown = 0;
+    var q = (document.getElementById('f-search').value || '').trim().toLowerCase();
     document.querySelectorAll('#acts tbody tr').forEach(function (r) {
       var okInd = !ind || (ind === 'in') === (r.dataset.indoor === '1');
       var okSes = !ses || r.dataset.session === ses;
-      r.hidden = !(okInd && okSes);
-      if (!r.hidden) shown++;
+      var okQ = !q || (r.dataset.text || '').indexOf(q) !== -1;
+      r.hidden = !(okInd && okSes && okQ);
     });
-    var h = document.getElementById('acts-hint');
-    if (h) h.textContent = shown + ' runs · click a row to open its timeline';
+    updateSummary();
   }
-  var sortDir = {};
+  var sortDir = {}, sortCol = null;
   function sortActs(col, type) {
     var body = document.querySelector('#acts tbody');
     if (!body) return;
     var dir = sortDir[col] = -(sortDir[col] || 1);
     var rows = Array.prototype.slice.call(body.rows);
     rows.sort(function (a, b) {
-      var x, y;
       if (type === 'n') {
-        x = parseFloat(a.cells[col].dataset.sort); y = parseFloat(b.cells[col].dataset.sort);
-      } else {
-        x = a.cells[col].textContent; y = b.cells[col].textContent;
+        var x = parseFloat(a.cells[col].dataset.sort), y = parseFloat(b.cells[col].dataset.sort);
+        var ax = isNaN(x), ay = isNaN(y);           // blanks always sort last
+        if (ax && ay) return 0; if (ax) return 1; if (ay) return -1;
+        return x < y ? dir : x > y ? -dir : 0;
       }
-      if (x < y) return dir; if (x > y) return -dir; return 0;
+      var p = a.cells[col].textContent, r = b.cells[col].textContent;
+      return p < r ? dir : p > r ? -dir : 0;
     });
     rows.forEach(function (r) { body.appendChild(r); });
+    document.querySelectorAll('#acts th').forEach(function (h) { h.classList.remove('srt-a', 'srt-d'); });
+    var th = document.querySelectorAll('#acts th')[col];
+    if (th) th.classList.add(dir > 0 ? 'srt-a' : 'srt-d');
+    sortCol = col;
   }
+  applyFilters();
 </script>
 </body>
 </html>

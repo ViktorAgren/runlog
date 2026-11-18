@@ -9,6 +9,7 @@ re-deriving the same guards (the recurring 23 h "workout" / 0:00 best-effort /
 
 from __future__ import annotations
 
+import statistics
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -37,6 +38,13 @@ QUARANTINE_FLAGS = frozenset({"implausible_pace", "time_gap", "tiny_distance"})
 MAX_RUN_SPEED_MPS = 8.0  # ~28.8 km/h; a faster sample is a GPS teleport
 MIN_RUN_HR = 40.0  # below this is a sensor dropout (not a resting HR mid-run)
 MAX_RUN_HR = 230.0  # above this is a sensor artifact
+# Cadence bounds wide enough to admit either convention (per-leg rpm ~40-110 or
+# full spm ~120-240); a sample outside is a dropout/artifact. Zero is a dropout.
+MIN_RUN_CADENCE = 30.0
+MAX_RUN_CADENCE = 260.0
+# Per-point cadence is stored as per-leg rpm by some sources and full steps/min by
+# others. A series whose median is below this is per-leg and doubles to spm.
+_SPM_FLOOR = 120.0
 
 
 def plausible_hr(hr: float | None) -> float | None:
@@ -49,6 +57,25 @@ def plausible_speed(velocity_mps: float | None) -> float | None:
     if velocity_mps is None or velocity_mps < 0 or velocity_mps > MAX_RUN_SPEED_MPS:
         return None
     return velocity_mps
+
+
+def plausible_cadence(cadence: float | None) -> float | None:
+    """The cadence sample if plausible, else None (dropout/zero/artifact)."""
+    if cadence is None or not MIN_RUN_CADENCE <= cadence <= MAX_RUN_CADENCE:
+        return None
+    return cadence
+
+
+def to_spm(values: list[float | None]) -> list[float | None]:
+    """Normalize a cadence series to full steps/min, doubling a per-leg (rpm) one.
+
+    Decided from the series median so both legs of a run scale together; ``None``
+    gaps are preserved.
+    """
+    present = [v for v in values if v is not None]
+    if present and statistics.median(present) < _SPM_FLOOR:
+        return [v * 2 if v is not None else None for v in values]
+    return values
 
 
 def stream_flags(activity: Activity, stream: Sequence[StreamPoint]) -> tuple[str, ...]:

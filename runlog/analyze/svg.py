@@ -20,14 +20,27 @@ _PAD_T = 24.0
 _PAD_B = 30.0
 
 
-def _format(value: float, kind: str) -> str:
-    """Axis label for a value: pace as m:ss, floats to one decimal, else integer."""
+def _format(value: float, kind: str, decimals: int = 1) -> str:
+    """Axis label: pace as m:ss, floats to ``decimals`` places, else integer."""
     if kind == "pace":
         total = int(round(value))
         return f"{total // 60}:{total % 60:02d}"
     if kind == "float":
-        return f"{value:.1f}"
+        return f"{value:.{decimals}f}"
     return f"{int(round(value))}"
+
+
+def _float_decimals(values: Sequence[float], limit: int = 3) -> int:
+    """Fewest decimals (>=1) that render every tick label distinctly.
+
+    A narrow range (e.g. stride 0.90-1.05) collapses to repeated '1.0' labels at
+    one decimal; widen the precision until the labels separate.
+    """
+    for decimals in range(1, limit + 1):
+        labels = [f"{v:.{decimals}f}" for v in values]
+        if len(set(labels)) == len(labels):
+            return decimals
+    return limit
 
 
 def _bounds(values: Sequence[float]) -> tuple[float, float]:
@@ -37,22 +50,24 @@ def _bounds(values: Sequence[float]) -> tuple[float, float]:
     return low, high
 
 
-def _y_range(values: Sequence[float], min_span: float) -> tuple[float, float]:
-    """Robust y-axis range: the 2nd-98th percentile band, never below ``min_span``.
+_Y_MARGIN = 0.06  # headroom added beyond the data extremes
 
-    Raw min/max let a handful of stops/GPS spikes set the scale, squashing the
-    real signal into a sliver; a near-constant series would likewise amplify
-    quantization jitter to fill the plot. Scaling to the central band (every
-    point is still drawn, clamped to the axis) and holding a metric-appropriate
-    floor keeps a steady run flat and a varied run legible.
+
+def _y_range(values: Sequence[float], min_span: float) -> tuple[float, float]:
+    """Y-axis range spanning the full data, with headroom, never below ``min_span``.
+
+    Uses the true min/max so no point is clipped, plus a small margin so the
+    extremes sit inside the frame rather than on its edge. A near-constant series
+    is instead held to ``min_span`` so quantization jitter does not fill the plot.
     """
-    ys = sorted(values)
-    last = len(ys) - 1
-    low = ys[round(0.02 * last)]
-    high = ys[round(0.98 * last)]
-    if high - low < min_span:
+    low, high = min(values), max(values)
+    span = high - low
+    if span < min_span:
         mid = (high + low) / 2
         low, high = mid - min_span / 2, mid + min_span / 2
+    elif span > 0:
+        margin = span * _Y_MARGIN
+        low, high = low - margin, high + margin
     if low == high:
         return low - 1.0, high + 1.0
     return low, high
@@ -92,15 +107,16 @@ def line_chart(
         pen_down = True
     path = " ".join(segments)
 
+    tick_values = [ymin + frac * (ymax - ymin) for frac in (0.0, 0.5, 1.0)]
+    decimals = _float_decimals(tick_values) if y_format == "float" else 1
     gridlines: list[str] = []
-    for frac in (0.0, 0.5, 1.0):
-        value = ymin + frac * (ymax - ymin)
+    for value in tick_values:
         gy = sy(value)
         gridlines.append(
             f'<line x1="{_PAD_L:.0f}" y1="{gy:.1f}" x2="{_W - _PAD_R:.0f}" '
             f'y2="{gy:.1f}" class="grid"/>'
             f'<text x="{_PAD_L - 6:.0f}" y="{gy + 3:.1f}" class="ylab">'
-            f"{_format(value, y_format)}</text>"
+            f"{_format(value, y_format, decimals)}</text>"
         )
     xlabels = (
         f'<text x="{sx(xmin):.0f}" y="{_H - 10:.0f}" class="xlab">'

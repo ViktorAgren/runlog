@@ -46,6 +46,7 @@ class StreamSample:
     lng: float | None
     hr: float | None
     velocity_mps: float | None
+    cadence: float | None = None
 
 
 # A run's stream is immutable within a read-only pass, yet a report reads each
@@ -83,10 +84,11 @@ def full_stream(
             lng=row["lng"],
             hr=quality.plausible_hr(row["hr"]),
             velocity_mps=quality.plausible_speed(row["velocity_mps"]),
+            cadence=quality.plausible_cadence(row["cadence"]),
         )
         for row in conn.execute(
             """
-            SELECT offset_s, distance_m, altitude_m, lat, lng, hr, velocity_mps
+            SELECT offset_s, distance_m, altitude_m, lat, lng, hr, velocity_mps, cadence
             FROM stream_points
             WHERE activity_id = ? AND distance_m IS NOT NULL AND offset_s IS NOT NULL
             ORDER BY seq
@@ -122,6 +124,30 @@ def lap_hr_stats(
         if current is None or sample.hr > current:
             maxes[lap] = sample.hr
     return maxes
+
+
+def lap_cadence_stats(
+    stream: Sequence[StreamSample], lap_end_offsets: Sequence[int]
+) -> list[float | None]:
+    """Mean cadence (steps/min) within each lap, normalized to spm.
+
+    Laps are sliced the same way as :func:`lap_hr_stats`; the per-lap means are
+    normalized together so a per-leg (rpm) source doubles consistently across the
+    set. ``None`` for a lap with no cadence samples.
+    """
+    ends = list(lap_end_offsets)
+    sums = [0.0] * len(ends)
+    counts = [0] * len(ends)
+    for sample in stream:
+        if sample.cadence is None:
+            continue
+        lap = min(bisect.bisect_right(ends, sample.offset_s), len(ends) - 1)
+        sums[lap] += sample.cadence
+        counts[lap] += 1
+    means: list[float | None] = [
+        sums[i] / counts[i] if counts[i] else None for i in range(len(ends))
+    ]
+    return quality.to_spm(means)
 
 
 def grade_adjust_factor(grade: float) -> float:

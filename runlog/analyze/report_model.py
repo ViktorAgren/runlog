@@ -26,6 +26,8 @@ class Kpi:
     unit: str = ""
     context: str = ""  # one short clause of context, e.g. "slightly fatigued"
     tone: Tone = "neutral"
+    delta: str = ""  # preformatted change, e.g. "+12% vs 4-wk avg"
+    delta_dir: str = ""  # "up" | "down" | "flat" — drives the arrow and its colour
 
 
 @dataclass(frozen=True)
@@ -72,6 +74,7 @@ class ReportModel:
     stats: StatsTable | None = None
     activities: list[ActivityRow] = field(default_factory=list)
     summary: str = ""  # the analyst narrative, shown as the report's abstract
+    provenance: str = ""  # HR model and its source, shown under the status
 
 
 def acwr_tone(acwr: float) -> Tone:

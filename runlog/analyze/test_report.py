@@ -114,7 +114,7 @@ def test_energy_section_renders_bmr_and_tdee() -> None:
     )
     text = summary.energy_section(
         EnergySummary(
-            bmr_latest=1716.0,
+            bmr=1716.0,
             active_30d=520.0,
             tdee_30d=2236.0,
             weight_latest=74.2,
@@ -240,3 +240,34 @@ def test_report_run_writes_charts_and_summary(tmp_path: Path) -> None:
     # Without athlete demographics the energy section is absent, but says so
     # rather than vanishing silently.
     assert "Energy expenditure not estimated" in result.summary_text
+
+
+def test_signed_has_no_negative_zero() -> None:
+    assert [report._signed(v) for v in (-0.0004, 0.0, 0.005, -0.012)] == [
+        "+0.000",
+        "+0.000",
+        "+0.005",
+        "-0.012",
+    ]
+
+
+def test_efficiency_tone_is_neutral_unless_significant() -> None:
+    from runlog.analyze.stats import TrendTest
+
+    def _test(p: float) -> TrendTest:
+        return TrendTest(
+            slope_per_day=0.0002,
+            se_per_day=0.0001,
+            ci_low_per_day=-0.00001,
+            ci_high_per_day=0.0004,
+            p=p,
+            n=160,
+        )
+
+    cases = [
+        report._efficiency_tone(0.006, _test(0.057)),
+        report._efficiency_tone(0.006, _test(0.01)),
+        report._efficiency_tone(-0.006, _test(0.01)),
+        report._efficiency_tone(0.006, None),
+    ]
+    assert cases == ["neutral", "good", "warn", "neutral"]

@@ -98,6 +98,16 @@ def test_build_activities_row_has_indoor_flag_and_detected_session(
             cadence=None,
             elevation_m=None,
             calories=None,
+            load=45,
+            ef=1.33,
+            gap_s=None,
+            gap_disp="-",
+            decoupling_pct=0.0,
+            easy_pct=100.0,
+            moderate_pct=0.0,
+            hard_pct=0.0,
+            is_pr=True,
+            is_off=False,
         )
     ]
 
@@ -131,9 +141,11 @@ def test_build_detail_has_charts_laps_and_five_zone_bands(
     detail = activities_view.build_detail(conn, run, hr_max=190.0, hr_rest=50.0)
 
     assert [c.title for c in detail.charts] == [
-        "Heart rate",
         "Pace",
+        "Heart rate",
+        "Efficiency",
         "Cadence",
+        "Stride",
         "Elevation",
     ]
     assert [lap.index for lap in detail.laps] == [1, 2, 3]
@@ -164,9 +176,86 @@ def test_build_detail_falls_back_to_the_apple_twins_stream(
     detail = activities_view.build_detail(conn, run, hr_max=190.0, hr_rest=50.0)
 
     assert [c.title for c in detail.charts] == [
-        "Heart rate",
         "Pace",
+        "Heart rate",
+        "Efficiency",
         "Cadence",
+        "Stride",
         "Elevation",
     ]
     assert [lap.index for lap in detail.laps] == [1, 2, 3]
+
+
+def _pt(offset: int, **ch: float | None) -> activities_view._StreamPt:
+    return activities_view._StreamPt(
+        offset_s=offset,
+        distance_m=ch.get("distance_m"),
+        hr=ch.get("hr"),
+        velocity_mps=ch.get("velocity_mps"),
+        cadence=ch.get("cadence"),
+        altitude_m=ch.get("altitude_m"),
+        watts=ch.get("watts"),
+    )
+
+
+def test_resample_medians_per_bucket_and_caps_count() -> None:
+    stream = [
+        _pt(i, hr=h)
+        for i, h in enumerate([100.0, 100.0, 100.0, 200.0, 150.0, 150.0, 150.0, 150.0])
+    ]
+    buckets = activities_view._resample(stream, target=2)
+
+    assert [b.hr for b in buckets] == [100.0, 150.0] and len(buckets) == 2
+
+
+def test_smooth_is_a_centered_median_that_preserves_gaps() -> None:
+    values: list[float | None] = [170.0, 162.0, 178.0, None, 170.0, 162.0, 178.0]
+    assert activities_view._smooth(values, window=3) == [
+        166.0,
+        170.0,
+        170.0,
+        None,
+        166.0,
+        170.0,
+        170.0,
+    ]
+
+
+def test_charts_derive_pace_cadence_efficiency_stride() -> None:
+    # Dense 1 Hz steady 3 m/s run; per-leg cadence 88 should read as 176 spm, pace
+    # should come from distance (~5:33/km), no watts/altitude -> no Power/Elevation.
+    stream = [
+        _pt(i, distance_m=3.0 * i, hr=150.0, velocity_mps=3.0, cadence=88.0)
+        for i in range(120)
+    ]
+    charts = {
+        c.title: c
+        for c in activities_view._charts(activities_view._resample(stream, target=20))
+    }
+
+    cadence = [y for _, y in charts["Cadence"].points if y is not None]
+    pace = [y for _, y in charts["Pace"].points if y is not None]
+    assert (
+        set(charts) == {"Pace", "Heart rate", "Efficiency", "Cadence", "Stride"}
+        and cadence == [176.0] * len(cadence)
+        and all(abs(p - 1000 / 3) < 1.0 for p in pace)
+    )
+
+
+@pytest.mark.parametrize(
+    ("distance_km", "zones", "is_intervals", "expected"),
+    [
+        (16.0, [0.0, 0.0, 0.0, 300.0, 0.0], False, "Threshold"),  # hard long != Long
+        (16.0, [0.0, 600.0, 0.0, 0.0, 0.0], False, "Long"),  # easy long run
+        (5.0, [0.0, 200.0, 0.0, 30.0, 0.0], True, "Intervals"),  # recovery -> intervals
+        (5.0, [0.0, 0.0, 0.0, 0.0, 100.0], False, "VO2max"),
+        (0.0, [0.0, 0.0, 0.0, 0.0, 0.0], False, "Run"),  # no HR time
+    ],
+)
+def test_detect_session_puts_intensity_before_the_long_rule(
+    distance_km: float,
+    zones: list[float],
+    is_intervals: bool,
+    expected: str,
+) -> None:
+    assert activities_view._detect_session(distance_km, zones, is_intervals) == expected

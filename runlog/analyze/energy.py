@@ -13,6 +13,7 @@ trailing means, training/rest contrast) and reuses its helpers.
 from __future__ import annotations
 
 import bisect
+import statistics
 from collections import Counter
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -41,7 +42,7 @@ class EnergyDay:
 
 @dataclass(frozen=True)
 class EnergySummary:
-    bmr_latest: float
+    bmr: float  # representative basal rate (median of complete days)
     active_30d: float | None
     tdee_30d: float | None
     weight_latest: float | None
@@ -109,7 +110,21 @@ def energy_series(
                 weight_kg=round(weight, 1) if weight is not None else None,
             )
         )
-    return days
+    return _complete_days(days)
+
+
+def _complete_days(days: list[EnergyDay]) -> list[EnergyDay]:
+    """Drop part-day readings whose basal energy is implausibly low.
+
+    Apple accrues basal energy only while the watch is worn, so a short-wear day
+    reports a fraction of the near-constant true BMR; left in, that day drags
+    every energy figure down. Judged against the median basal, which part-day
+    lows cannot move while they stay the minority.
+    """
+    if len(days) < 3:
+        return days
+    floor = 0.6 * statistics.median([d.bmr for d in days])
+    return [d for d in days if d.bmr >= floor] or days
 
 
 def dominant_calorie_source(runs: Sequence[Run]) -> str | None:
@@ -158,7 +173,7 @@ def build_energy(
     weight_daily = [(d.day, d.weight_kg) for d in days if d.weight_kg is not None]
     basal_present = bool(metrics.metric_series(conn, "basal_energy", since))
     return EnergySummary(
-        bmr_latest=days[-1].bmr,
+        bmr=statistics.median([d.bmr for d in days]),
         active_30d=lifestyle.trailing_mean(active_daily, today=today),
         tdee_30d=lifestyle.trailing_mean(tdee_daily, today=today),
         weight_latest=weight_daily[-1][1] if weight_daily else None,

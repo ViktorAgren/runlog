@@ -254,6 +254,16 @@ def _activity_row(session: str, pace_s: float) -> object:
         cadence=160,
         elevation_m=10,
         calories=500,
+        load=60,
+        ef=1.4,
+        gap_s=295.0,
+        gap_disp="4:55/km",
+        decoupling_pct=2.0,
+        easy_pct=70.0,
+        moderate_pct=20.0,
+        hard_pct=10.0,
+        is_pr=False,
+        is_off=False,
     )
 
 

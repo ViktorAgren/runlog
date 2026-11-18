@@ -43,3 +43,17 @@ def test_implausible_pace_and_tiny_distance() -> None:
         quality.stream_flags(_activity(5000.0, 60), ()),
         quality.stream_flags(_activity(49.0, 30), ()),
     ) == (("implausible_pace",), ("tiny_distance",))
+
+
+def test_plausible_cadence_filters_dropouts_and_artifacts() -> None:
+    assert [
+        quality.plausible_cadence(v) for v in (None, 0.0, 29.0, 90.0, 170.0, 261.0)
+    ] == [None, None, None, 90.0, 170.0, None]
+
+
+def test_to_spm_doubles_per_leg_cadence() -> None:
+    assert quality.to_spm([85.0, 90.0, None, 95.0]) == [170.0, 180.0, None, 190.0]
+
+
+def test_to_spm_leaves_full_spm_untouched() -> None:
+    assert quality.to_spm([170.0, 180.0, None, 160.0]) == [170.0, 180.0, None, 160.0]

@@ -24,11 +24,21 @@ if TYPE_CHECKING:
 _TEMPLATE_DIR = Path(__file__).parent / "templates"
 
 
+def _pace(seconds: float | None) -> str:
+    """m:ss for a pace in s/km (template filter), or '-' when absent."""
+    if seconds is None:
+        return "-"
+    total = int(round(seconds))
+    return f"{total // 60}:{total % 60:02d}"
+
+
 def _env() -> Environment:
-    return Environment(
+    env = Environment(
         loader=FileSystemLoader(str(_TEMPLATE_DIR)),
         autoescape=select_autoescape(["html", "j2"]),
     )
+    env.filters["pace"] = _pace
+    return env
 
 
 def _inline_svg(path: Path) -> str:

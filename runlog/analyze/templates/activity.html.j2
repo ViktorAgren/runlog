@@ -79,6 +79,15 @@
     {% endfor %}
   </div>
 
+  {% if detail.analysis %}
+  <h2>Analysis</h2>
+  <div class="chips">
+    {% for label, value in detail.analysis %}
+    <div class="chip"><span class="cl">{{ label }}</span><span class="cv">{{ value }}</span></div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   {% if detail.zones %}
   <h2>Heart-rate zones</h2>
   <div class="zones">
@@ -103,16 +112,45 @@
     {% for chart in charts %}{{ chart|safe }}{% endfor %}
   </div>
 
+  {% macro group_line(g) %}{% filter trim %}
+    {%- set bits = [] -%}
+    {%- if g.avg_pace_s_per_km is not none %}{% set _ = bits.append((g.avg_pace_s_per_km|pace) ~ '/km') %}{% endif -%}
+    {%- if g.avg_hr is not none %}{% set _ = bits.append((g.avg_hr|round|int)|string ~ ' bpm') %}{% endif -%}
+    {%- if g.avg_cadence is not none %}{% set _ = bits.append((g.avg_cadence|round|int)|string ~ ' spm') %}{% endif -%}
+    {{ bits|join(' · ') }}
+  {% endfilter %}{% endmacro %}
+
+  {% if detail.intervals %}
+  <h2>Intervals</h2>
+  <div class="chips">
+    <div class="chip"><span class="cl">Work &times;{{ detail.intervals.work.reps }}</span>
+      <span class="cv">{{ group_line(detail.intervals.work) }}</span></div>
+    {% if detail.intervals.recovery %}
+    <div class="chip"><span class="cl">Recovery</span>
+      <span class="cv">{{ group_line(detail.intervals.recovery) }}</span></div>
+    {% endif %}
+    {% if detail.intervals.hr_drift is not none %}
+    <div class="chip"><span class="cl">HR drift (last-first rep)</span>
+      <span class="cv">{{ '%+.0f'|format(detail.intervals.hr_drift) }} bpm</span></div>
+    {% endif %}
+    {% if detail.intervals.pace_cv is not none %}
+    <div class="chip"><span class="cl">Pace evenness</span>
+      <span class="cv">{{ detail.intervals.pace_cv }}% CV</span></div>
+    {% endif %}
+  </div>
+  {% endif %}
+
   {% if detail.laps %}
-  <h2>Laps &amp; intervals</h2>
+  <h2>Laps</h2>
   <table class="laps">
     <thead><tr><th>#</th><th>Dist (km)</th><th>Time</th><th>Pace</th>
-      <th>Avg HR</th><th>Max HR</th></tr></thead>
+      <th>Avg HR</th><th>Max HR</th><th>Cadence</th></tr></thead>
     <tbody>
     {% for lap in detail.laps %}
     <tr><td>{{ lap.index }}</td><td>{{ lap.distance_disp }}</td><td>{{ lap.time_disp }}</td>
       <td>{{ lap.pace_disp }}</td><td>{{ lap.avg_hr if lap.avg_hr is not none else '-' }}</td>
-      <td>{{ lap.max_hr if lap.max_hr is not none else '-' }}</td></tr>
+      <td>{{ lap.max_hr if lap.max_hr is not none else '-' }}</td>
+      <td>{{ lap.cadence if lap.cadence is not none else '-' }}</td></tr>
     {% endfor %}
     </tbody>
   </table>

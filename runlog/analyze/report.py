@@ -11,7 +11,7 @@ from __future__ import annotations
 import statistics
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 from runlog.analyze import (
@@ -566,12 +566,16 @@ def _run(
             )
 
     latest_markers: dict[str, tuple[date, float] | None] = {}
+    marker_levels: dict[str, tuple[date, float] | None] = {}
+    marker_deltas: dict[str, float | None] = {}
     for metric, (title, ylabel) in _RECOVERY_MARKERS.items():
         series = metrics.metric_series(conn, metric, since=since)
         latest_markers[metric] = (
             (series[-1][0].date(), series[-1][1]) if series else None
         )
         daily = metrics.daily_means(series)
+        marker_levels[metric] = _marker_level(daily)
+        marker_deltas[metric] = _marker_delta(daily)
         if daily:
             trend_series.append(
                 (f"{_figure_meta(metric)[0]} trend", "recovery", f"{ylabel}/30d", daily)
@@ -936,7 +940,7 @@ def _run(
 
     # Activities tab: a row per run, plus a full-resolution detail page each.
     activity_rows, activity_details = activities_view.build_activities(
-        conn, runs, hr_max_value, hr_rest_value
+        conn, runs, hr_max_value, hr_rest_value, sex
     )
     activity_pages = html_report.render_activity_pages(activity_details, out_dir)
     produced.append(charts.pace_by_session_chart(activity_rows, training_dir))
@@ -967,17 +971,30 @@ def _run(
             acwr,
             ef_trend,
             intensity,
-            latest_markers,
+            marker_levels,
             cs_model,
             readiness_latest,
             life,
             ef_test,
             energy_summary,
+            marker_deltas,
+            vdot_points,
+            cs_series[-1][1] if cs_series else None,
         ),
         sections=_build_sections(produced, out_dir),
         stats=_stats_table(table),
         activities=activity_rows,
-        summary=summary.abstract(overall, pmc, table),
+        summary=summary.training_status(
+            overall,
+            pmc,
+            weekly,
+            intensity,
+            acwr,
+            readiness_latest,
+            anomalies,
+            table,
+        ),
+        provenance=_hr_provenance(hr_max, hr_rest, hr_max_value, hr_rest_value),
     )
     report_html = html_report.render(model, out_dir)
     return ReportResult(
@@ -989,19 +1006,134 @@ def _run(
     )
 
 
+def _hr_provenance(
+    hr_max: float | None,
+    hr_rest: float | None,
+    hr_max_value: float,
+    hr_rest_value: float,
+) -> str:
+    """State the HR anchors the analytics ran on and where each came from."""
+    max_src = "configured" if hr_max is not None else "estimated from runs"
+    rest_src = "athlete.toml" if hr_rest is not None else "measured median"
+    return (
+        f"HR model: max {hr_max_value:.0f} bpm ({max_src}), "
+        f"rest {hr_rest_value:.0f} bpm ({rest_src}) — the Karvonen reserve behind "
+        f"TRIMP load, HR zones and intensity. The Resting HR card below is passive "
+        f"Apple Watch data, tracked separately."
+    )
+
+
+def _series_delta(dated: Sequence[tuple[date, float]], days: int = 28) -> float | None:
+    """Change from ~``days`` ago to the latest point of a date-keyed series."""
+    if len(dated) < 2:
+        return None
+    latest_day, latest_val = dated[-1]
+    cutoff = latest_day - timedelta(days=days)
+    past = [v for d, v in dated if d <= cutoff]
+    return latest_val - (past[-1] if past else dated[0][1])
+
+
+def _marker_level(
+    daily: Sequence[tuple[date, float]], window: int = 7
+) -> tuple[date, float] | None:
+    """Robust recent level: the latest date with the median of its last ``window`` days.
+
+    A single day's resting HR or VO2max swings with sensor noise, so the card
+    shows a short-window median rather than one possibly-outlying reading.
+    """
+    if not daily:
+        return None
+    return daily[-1][0], statistics.median([v for _, v in daily[-window:]])
+
+
+def _marker_delta(
+    daily: Sequence[tuple[date, float]], window: int = 7, lag: int = 28
+) -> float | None:
+    """Change in the ``window``-day median level versus ~``lag`` days earlier."""
+    if len(daily) < 2:
+        return None
+    recent = statistics.median([v for _, v in daily[-window:]])
+    cutoff = daily[-1][0] - timedelta(days=lag)
+    prior = [v for d, v in daily if d <= cutoff]
+    if not prior:
+        return None
+    return recent - statistics.median(prior[-window:])
+
+
+def _kpi_delta(
+    current: float, reference: float | None, *, pct: bool, up_good: bool
+) -> tuple[str, str]:
+    """(display, colour) for a change vs a reference; colour is good/bad/flat.
+
+    The arrow sits in the display text; ``delta_dir`` carries the colour so the
+    template need not know whether up is good for each metric.
+    """
+    if reference is None or (pct and reference == 0):
+        return "", ""
+    change = current - reference
+    magnitude = change / abs(reference) * 100 if pct else change
+    if abs(magnitude) < (8 if pct else 1):
+        return "steady", "flat"
+    arrow = "▲" if change > 0 else "▼"
+    text = (
+        f"{arrow} {abs(magnitude):.0f}% vs 4-wk avg"
+        if pct
+        else f"{arrow} {abs(change):.0f} in 4 wk"
+    )
+    return text, ("good" if (change > 0) == up_good else "bad")
+
+
+def _signed(value: float, places: int = 3) -> str:
+    """Signed fixed-point without a '-0.000' artefact from rounding."""
+    rounded = round(value, places) or 0.0
+    return f"{rounded:+.{places}f}"
+
+
+def _efficiency_tone(per_30_days: float, test: stats.TrendTest | None) -> str:
+    """Tone the efficiency trend only when it is significant; else neutral.
+
+    A positive slope whose CI straddles zero is noise, not improvement, so it
+    must not read as green.
+    """
+    if test is None or test.p >= 0.05:
+        return "neutral"
+    return "good" if per_30_days >= 0 else "warn"
+
+
+def _vdot_race_context(model: cs.CsModel | None) -> str:
+    """5k/10k times from the same CS model the VDOT is derived from.
+
+    The headline VDOT is ``vdot(5k from critical speed)``, so the predicted
+    times must come from that model too; mixing in a Riegel estimate would print
+    a VDOT and times that describe different fitness.
+    """
+    if model is None:
+        return "Daniels VDOT from critical speed"
+    parts = [
+        f"{label} {forecast.format_race_time(secs)}"
+        for label, dist in (("5k", 5000.0), ("10k", 10000.0))
+        if (secs := model.predict_seconds(dist)) is not None
+    ]
+    return " · ".join(parts) or "Daniels VDOT from critical speed"
+
+
 def _build_kpis(
     overall: metrics.Summary,
     pmc: Sequence[analytics.PmcPoint],
     acwr: Sequence[tuple[date, float]],
     ef_trend: analytics.Trend | None,
     intensity: physiology.IntensityDistribution | None,
-    latest_markers: dict[str, tuple[date, float] | None],
+    marker_levels: dict[str, tuple[date, float] | None],
     cs_model: cs.CsModel | None,
     readiness_latest: readiness.ReadinessDay | None,
     life: lifestyle.LifestyleSummary | None = None,
     ef_test: stats.TrendTest | None = None,
     energy_summary: energy.EnergySummary | None = None,
+    marker_deltas: dict[str, float | None] | None = None,
+    vdot_points: Sequence[tuple[date, float]] = (),
+    vdot_model: cs.CsModel | None = None,
 ) -> list[Kpi]:
+    deltas = marker_deltas or {}
     kpis = [
         Kpi(
             "Total distance",
@@ -1009,16 +1141,51 @@ def _build_kpis(
             "km",
             f"{overall.run_count} runs",
         ),
-        Kpi("This week", f"{overall.this_week_km:.0f}", "km", "current training week"),
+        # No delta on the partial current week (it always reads "down" mid-week);
+        # its week-over-week trend is narrated in the training-status summary. A
+        # bare 0 reads as broken, so name the gap instead.
+        Kpi(
+            "This week",
+            f"{overall.this_week_km:.0f}",
+            "km",
+            (
+                f"no runs since {overall.last_run}"
+                if overall.this_week_km == 0
+                else "current training week"
+            ),
+        ),
     ]
     if pmc:
         last = pmc[-1]
+        ctl_ref = pmc[-28].fitness if len(pmc) > 28 else None
+        ctl_text, ctl_dir = _kpi_delta(last.fitness, ctl_ref, pct=False, up_good=True)
         kpis.append(
             Kpi(
                 "Fitness (CTL)",
                 f"{last.fitness:.0f}",
                 context=f"form {last.form:+.0f} TSB",
                 tone=report_model.form_tone(last.form),
+                delta=ctl_text,
+                delta_dir=ctl_dir,
+            )
+        )
+    if vdot_points:
+        latest_vdot = vdot_points[-1][1]
+        vd = _series_delta(vdot_points)
+        v_text, v_dir = _kpi_delta(
+            latest_vdot,
+            latest_vdot - vd if vd is not None else None,
+            pct=False,
+            up_good=True,
+        )
+        kpis.append(
+            Kpi(
+                "Race fitness",
+                f"{latest_vdot:.1f}",
+                "VDOT",
+                _vdot_race_context(vdot_model),
+                delta=v_text,
+                delta_dir=v_dir,
             )
         )
     if acwr:
@@ -1042,24 +1209,25 @@ def _build_kpis(
                 "Easy share",
                 f"{intensity.easy_pct:.0f}",
                 "%",
-                f"easy:hard {intensity.easy_to_hard}; ~80% ideal",
+                f"{intensity.moderate_pct:.0f}% moderate; ~80% easy ideal",
                 tone,
             )
         )
     if ef_trend is not None:
-        tone = "good" if ef_trend.per_30_days >= 0 else "warn"
         if ef_test is not None:
             low, high = ef_test.ci_30d
-            context = f"[{low:+.3f}, {high:+.3f}]/mo, {stats.format_p(ef_test.p)}"
+            context = (
+                f"[{_signed(low)}, {_signed(high)}]/mo, {stats.format_p(ef_test.p)}"
+            )
         else:
             context = f"r={ef_trend.r:.2f}"
         kpis.append(
             Kpi(
                 "Efficiency",
-                f"{ef_trend.per_30_days:+.3f}",
+                _signed(ef_trend.per_30_days),
                 "/mo",
                 context,
-                tone,
+                _efficiency_tone(ef_trend.per_30_days, ef_test),
             )
         )
     if cs_model is not None:
@@ -1081,11 +1249,32 @@ def _build_kpis(
                 _readiness_tone(readiness_latest.score),
             )
         )
-    markers = (("vo2max", "VO2max", "ml/kg/min"), ("resting_hr", "Resting HR", "bpm"))
-    for key, label, unit in markers:
-        marker = latest_markers.get(key)
+    markers = (
+        ("vo2max", "VO2max", "ml/kg/min", True),
+        ("resting_hr", "Resting HR", "bpm", False),
+    )
+    for key, label, unit, up_good in markers:
+        marker = marker_levels.get(key)
         if marker is not None:
-            kpis.append(Kpi(label, f"{marker[1]:.0f}", unit, f"latest {marker[0]}"))
+            md = deltas.get(key)
+            text, color = _kpi_delta(
+                marker[1],
+                marker[1] - md if md is not None else None,
+                pct=False,
+                up_good=up_good,
+            )
+            marker_tone = color if color in ("good", "bad") else "neutral"
+            kpis.append(
+                Kpi(
+                    label,
+                    f"{marker[1]:.0f}",
+                    unit,
+                    f"7-day median to {marker[0]}",
+                    tone=marker_tone,
+                    delta=text,
+                    delta_dir=color,
+                )
+            )
     if life is not None and life.steps_30d is not None:
         kpis.append(Kpi("Steps/day", f"{life.steps_30d:,.0f}", "", "30-day mean"))
     if life is not None and life.sleep_30d is not None:
@@ -1102,9 +1291,7 @@ def _build_kpis(
             else "Mifflin-St Jeor"
         )
         kpis.append(
-            Kpi(
-                "Resting (BMR)", f"{energy_summary.bmr_latest:,.0f}", "kcal/day", method
-            )
+            Kpi("Resting (BMR)", f"{energy_summary.bmr:,.0f}", "kcal/day", method)
         )
         if energy_summary.tdee_30d is not None:
             kpis.append(

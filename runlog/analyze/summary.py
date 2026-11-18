@@ -85,6 +85,103 @@ def abstract(
     return " ".join(parts)
 
 
+def _weekly_trend(weekly: Sequence[WeeklyVolume]) -> str:
+    """Direction of the 4-week rolling volume (robust to a partial current week)."""
+    if len(weekly) < 6 or weekly[-5].rolling_km <= 0:
+        return ""
+    pct = (weekly[-1].rolling_km - weekly[-5].rolling_km) / weekly[-5].rolling_km * 100
+    if abs(pct) < 8:
+        return "rolling volume steady"
+    return f"rolling volume {'up' if pct > 0 else 'down'} {abs(pct):.0f}% over 4 weeks"
+
+
+def _ctl_direction(pmc: Sequence[PmcPoint]) -> str:
+    ref = pmc[-28] if len(pmc) > 28 else pmc[0]
+    delta = pmc[-1].fitness - ref.fitness
+    return "rising" if delta > 1 else "falling" if delta < -1 else "holding"
+
+
+def _standout(anomalies: AnomalyReport | None, table: SignificanceTable | None) -> str:
+    if table and table.findings and table.findings[0].significant:
+        top = table.findings[0]
+        return (
+            f"The strongest measured change is {top.label.lower()} "
+            f"({top.effect}, {stats.format_p(top.p)})."
+        )
+    if anomalies and anomalies.performance:
+        worst = max(anomalies.performance, key=lambda a: abs(a.deviation))
+        return (
+            f"Watch: aerobic efficiency ran {abs(worst.deviation):.1f} SD below "
+            f"baseline on {worst.day:%d %b}."
+        )
+    return ""
+
+
+def training_status(
+    overall: Summary,
+    pmc: Sequence[PmcPoint],
+    weekly: Sequence[WeeklyVolume],
+    intensity: IntensityDistribution | None,
+    acwr: Sequence[tuple[date, float]],
+    readiness_latest: ReadinessDay | None,
+    anomalies: AnomalyReport | None,
+    table: SignificanceTable | None,
+) -> str:
+    """A coach-style status read of the current block, from already-computed metrics."""
+    parts: list[str] = []
+    if overall.first_run and overall.last_run:
+        line = (
+            f"Between {overall.first_run:%d %b %Y} and {overall.last_run:%d %b %Y}, "
+            f"{overall.run_count} runs covered {overall.total_km:.0f} km"
+        )
+        trend = _weekly_trend(weekly)
+        parts.append(f"{line}; {trend}." if trend else f"{line}.")
+    if pmc:
+        last = pmc[-1]
+        state = (
+            "freshened and race-ready"
+            if last.form > 5
+            else "carrying fatigue" if last.form < -10 else "in balance"
+        )
+        parts.append(
+            f"Fitness (CTL) is {last.fitness:.0f} and {_ctl_direction(pmc)}, with form "
+            f"(TSB) {last.form:+.0f} — {state}."
+        )
+    if acwr:
+        value = acwr[-1][1]
+        risk = (
+            "in the safe 0.8-1.3 band"
+            if 0.8 <= value <= 1.3
+            else (
+                "below the band (detraining)"
+                if value < 0.8
+                else "above the band (load spike)"
+            )
+        )
+        parts.append(f"Acute:chronic load is {value:.2f}, {risk}.")
+    if intensity is not None:
+        balance = (
+            "well polarized"
+            if intensity.easy_pct >= 80
+            else (
+                "a touch threshold-heavy"
+                if intensity.easy_pct >= 65
+                else "too much moderate-plus intensity"
+            )
+        )
+        parts.append(
+            f"Intensity is {intensity.easy_pct:.0f}% easy ({balance} vs ~80/20)."
+        )
+    if readiness_latest is not None:
+        score = readiness_latest.score
+        word = "strong" if score >= 60 else "low" if score < 40 else "normal"
+        parts.append(f"Latest readiness is {score:.0f}/100 ({word}).")
+    standout = _standout(anomalies, table)
+    if standout:
+        parts.append(standout)
+    return " ".join(parts)
+
+
 def _pace(seconds: float | None) -> str:
     if seconds is None:
         return "-"
@@ -413,7 +510,7 @@ def energy_section(
         return ""
     method = _METHOD_LABELS.get(energy.method, energy.method)
     lines: list[str] = ["", "Energy expenditure", "=" * 40]
-    lines.append(f"Resting (BMR)  {energy.bmr_latest:,.0f} kcal/day ({method})")
+    lines.append(f"Resting (BMR)  {energy.bmr:,.0f} kcal/day ({method})")
     if energy.active_30d is not None:
         lines.append(f"Active (30d)   {energy.active_30d:,.0f} kcal/day")
     if energy.tdee_30d is not None:

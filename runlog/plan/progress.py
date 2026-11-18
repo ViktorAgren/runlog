@@ -22,6 +22,7 @@ from runlog.plan import profile
 
 if TYPE_CHECKING:
     import sqlite3
+    from collections.abc import Sequence
 
     from runlog.analyze.metrics import Run
     from runlog.config import Sex
@@ -47,6 +48,7 @@ class LapSplit:
     pace_s_per_km: float | None
     avg_hr: float | None
     max_hr: float | None = None  # peak HR within the lap, from the point stream
+    avg_cadence: float | None = None  # mean cadence (spm) within the lap
 
 
 @dataclass(frozen=True)
@@ -188,6 +190,7 @@ def _laps(
         return ()
     ends = list(itertools.accumulate(int(row["elapsed_s"] or 0) for row in rows))
     max_hrs = streams.lap_hr_stats(stream, ends) if stream else [None] * len(rows)
+    cadences = streams.lap_cadence_stats(stream, ends) if stream else [None] * len(rows)
     return tuple(
         LapSplit(
             index=int(row["lap_index"]),
@@ -196,6 +199,7 @@ def _laps(
             pace_s_per_km=row["avg_pace_s_per_km"],
             avg_hr=row["avg_hr"],
             max_hr=max_hrs[i],
+            avg_cadence=cadences[i],
         )
         for i, row in enumerate(rows)
     )
@@ -230,6 +234,81 @@ def _rep_set_stats(
     drift = round(hrs[-1] - hrs[0], 1) if len(hrs) >= 2 else None
     cv = round(statistics.pstdev(paces) / mean_pace * 100, 1) if mean_pace else None
     return drift, cv
+
+
+@dataclass(frozen=True)
+class IntervalGroup:
+    label: str  # "Work" | "Recovery"
+    reps: int
+    avg_pace_s_per_km: float | None
+    avg_hr: float | None
+    avg_cadence: float | None
+
+
+@dataclass(frozen=True)
+class IntervalSummary:
+    """Work reps vs the recovery between them, for a structured session."""
+
+    work: IntervalGroup
+    recovery: IntervalGroup | None  # the float laps between first and last work rep
+    hr_drift: float | None  # last work rep avg HR - first (bpm)
+    pace_cv: float | None  # pace coefficient of variation over the work reps (%)
+
+
+def _interval_group(label: str, laps: Sequence[LapSplit]) -> IntervalGroup:
+    def _avg(values: list[float | None]) -> float | None:
+        present = [v for v in values if v is not None]
+        return round(statistics.mean(present), 1) if present else None
+
+    return IntervalGroup(
+        label=label,
+        reps=len(laps),
+        avg_pace_s_per_km=_avg([lap.pace_s_per_km for lap in laps]),
+        avg_hr=_avg([lap.avg_hr for lap in laps]),
+        avg_cadence=_avg([lap.avg_cadence for lap in laps]),
+    )
+
+
+def interval_summary(laps: tuple[LapSplit, ...]) -> IntervalSummary | None:
+    """Split a structured session's laps into work reps and the recovery between.
+
+    Work reps are laps of at least ``_MIN_REP_M`` within ``_REP_PACE_TOLERANCE`` of
+    the fastest; recovery is the slower laps sitting between the first and last
+    work rep (warm-up and cool-down are excluded). Returns ``None`` when there is
+    no clear rep set.
+    """
+    candidates = [
+        (i, lap)
+        for i, lap in enumerate(laps)
+        if lap.pace_s_per_km is not None
+        and lap.distance_m is not None
+        and lap.distance_m >= _MIN_REP_M
+    ]
+    if len(candidates) < 3:
+        return None
+    fastest = min(lap.pace_s_per_km for _, lap in candidates if lap.pace_s_per_km)
+    work = [
+        (i, lap)
+        for i, lap in candidates
+        if lap.pace_s_per_km is not None
+        and lap.pace_s_per_km <= fastest * _REP_PACE_TOLERANCE
+    ]
+    if len(work) < 2:
+        return None
+    positions = {i for i, _ in work}
+    first, last = min(positions), max(positions)
+    recovery = [laps[i] for i in range(first, last + 1) if i not in positions]
+    # Without recovery laps between the reps this is a steady run auto-split into
+    # km laps, not an interval session — the work/recovery contrast is the point.
+    if not recovery:
+        return None
+    hr_drift, pace_cv = _rep_set_stats(laps)
+    return IntervalSummary(
+        work=_interval_group("Work", [lap for _, lap in work]),
+        recovery=_interval_group("Recovery", recovery),
+        hr_drift=hr_drift,
+        pace_cv=pace_cv,
+    )
 
 
 def workout_detail(

@@ -10,7 +10,14 @@ import pytest
 from runlog.analyze import metrics
 from runlog.db import store
 from runlog.domain import Activity, ActivityRecord, Lap, SourceId, StreamPoint
-from runlog.plan.progress import build_progress, workout_detail
+from runlog.plan.progress import (
+    IntervalGroup,
+    IntervalSummary,
+    LapSplit,
+    build_progress,
+    interval_summary,
+    workout_detail,
+)
 
 
 @pytest.fixture
@@ -194,3 +201,38 @@ def test_build_progress_counts_only_runs_since_start(conn: sqlite3.Connection) -
     assert progress.workouts[0].kind == "Easy"
     # Both runs fall in plan week 1 (start .. start+6).
     assert [(pw.week, pw.runs) for pw in progress.plan_weeks] == [(1, 2)]
+
+
+def _lap(index: int, dist: float, pace: float, hr: float, cad: float) -> LapSplit:
+    return LapSplit(
+        index=index,
+        seconds=round(dist / 1000 * pace),
+        distance_m=dist,
+        pace_s_per_km=pace,
+        avg_hr=hr,
+        avg_cadence=cad,
+    )
+
+
+def test_interval_summary_splits_work_from_recovery() -> None:
+    laps = (
+        _lap(0, 1000.0, 360.0, 150.0, 160.0),  # warm-up
+        _lap(1, 400.0, 240.0, 170.0, 180.0),  # work
+        _lap(2, 200.0, 600.0, 150.0, 150.0),  # jog
+        _lap(3, 400.0, 242.0, 172.0, 182.0),  # work
+        _lap(4, 200.0, 600.0, 150.0, 150.0),  # jog
+        _lap(5, 400.0, 244.0, 174.0, 184.0),  # work
+        _lap(6, 1000.0, 360.0, 150.0, 160.0),  # cool-down
+    )
+    assert interval_summary(laps) == IntervalSummary(
+        work=IntervalGroup("Work", 3, 242.0, 172.0, 182.0),
+        recovery=IntervalGroup("Recovery", 2, 600.0, 150.0, 150.0),
+        hr_drift=4.0,
+        pace_cv=0.7,
+    )
+
+
+def test_interval_summary_none_without_recovery_between_reps() -> None:
+    # A steady run auto-split into same-pace km laps has no recovery -> not intervals.
+    laps = tuple(_lap(i, 1000.0, 300.0 + i, 150.0, 170.0) for i in range(5))
+    assert interval_summary(laps) is None
