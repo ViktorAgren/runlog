@@ -26,6 +26,8 @@ class Kpi:
     unit: str = ""
     context: str = ""  # one short clause of context, e.g. "slightly fatigued"
     tone: Tone = "neutral"
+    delta: str = ""  # preformatted change, e.g. "+12% vs 4-wk avg"
+    delta_dir: str = ""  # "up" | "down" | "flat" — drives the arrow and its colour
 
 
 @dataclass(frozen=True)

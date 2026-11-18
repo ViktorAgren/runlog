@@ -11,7 +11,7 @@ from __future__ import annotations
 import statistics
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 from runlog.analyze import (
@@ -566,12 +566,14 @@ def _run(
             )
 
     latest_markers: dict[str, tuple[date, float] | None] = {}
+    marker_deltas: dict[str, float | None] = {}
     for metric, (title, ylabel) in _RECOVERY_MARKERS.items():
         series = metrics.metric_series(conn, metric, since=since)
         latest_markers[metric] = (
             (series[-1][0].date(), series[-1][1]) if series else None
         )
         daily = metrics.daily_means(series)
+        marker_deltas[metric] = _series_delta(daily)
         if daily:
             trend_series.append(
                 (f"{_figure_meta(metric)[0]} trend", "recovery", f"{ylabel}/30d", daily)
@@ -973,11 +975,23 @@ def _run(
             life,
             ef_test,
             energy_summary,
+            marker_deltas,
+            vdot_points,
+            predictions,
         ),
         sections=_build_sections(produced, out_dir),
         stats=_stats_table(table),
         activities=activity_rows,
-        summary=summary.abstract(overall, pmc, table),
+        summary=summary.training_status(
+            overall,
+            pmc,
+            weekly,
+            intensity,
+            acwr,
+            readiness_latest,
+            anomalies,
+            table,
+        ),
     )
     report_html = html_report.render(model, out_dir)
     return ReportResult(
@@ -987,6 +1001,39 @@ def _run(
         activity_pages=activity_pages,
         data_exports=data_exports,
     )
+
+
+def _series_delta(dated: Sequence[tuple[date, float]], days: int = 28) -> float | None:
+    """Change from ~``days`` ago to the latest point of a date-keyed series."""
+    if len(dated) < 2:
+        return None
+    latest_day, latest_val = dated[-1]
+    cutoff = latest_day - timedelta(days=days)
+    past = [v for d, v in dated if d <= cutoff]
+    return latest_val - (past[-1] if past else dated[0][1])
+
+
+def _kpi_delta(
+    current: float, reference: float | None, *, pct: bool, up_good: bool
+) -> tuple[str, str]:
+    """(display, colour) for a change vs a reference; colour is good/bad/flat.
+
+    The arrow sits in the display text; ``delta_dir`` carries the colour so the
+    template need not know whether up is good for each metric.
+    """
+    if reference is None or (pct and reference == 0):
+        return "", ""
+    change = current - reference
+    magnitude = change / abs(reference) * 100 if pct else change
+    if abs(magnitude) < (8 if pct else 1):
+        return "steady", "flat"
+    arrow = "▲" if change > 0 else "▼"
+    text = (
+        f"{arrow} {abs(magnitude):.0f}% vs 4-wk avg"
+        if pct
+        else f"{arrow} {abs(change):.0f} in 4 wk"
+    )
+    return text, ("good" if (change > 0) == up_good else "bad")
 
 
 def _build_kpis(
@@ -1001,7 +1048,11 @@ def _build_kpis(
     life: lifestyle.LifestyleSummary | None = None,
     ef_test: stats.TrendTest | None = None,
     energy_summary: energy.EnergySummary | None = None,
+    marker_deltas: dict[str, float | None] | None = None,
+    vdot_points: Sequence[tuple[date, float]] = (),
+    predictions: Sequence[metrics.RacePrediction] = (),
 ) -> list[Kpi]:
+    deltas = marker_deltas or {}
     kpis = [
         Kpi(
             "Total distance",
@@ -1009,16 +1060,47 @@ def _build_kpis(
             "km",
             f"{overall.run_count} runs",
         ),
+        # No delta on the partial current week (it always reads "down" mid-week);
+        # its week-over-week trend is narrated in the training-status summary.
         Kpi("This week", f"{overall.this_week_km:.0f}", "km", "current training week"),
     ]
     if pmc:
         last = pmc[-1]
+        ctl_ref = pmc[-28].fitness if len(pmc) > 28 else None
+        ctl_text, ctl_dir = _kpi_delta(last.fitness, ctl_ref, pct=False, up_good=True)
         kpis.append(
             Kpi(
                 "Fitness (CTL)",
                 f"{last.fitness:.0f}",
                 context=f"form {last.form:+.0f} TSB",
                 tone=report_model.form_tone(last.form),
+                delta=ctl_text,
+                delta_dir=ctl_dir,
+            )
+        )
+    if vdot_points:
+        latest_vdot = vdot_points[-1][1]
+        vd = _series_delta(vdot_points)
+        v_text, v_dir = _kpi_delta(
+            latest_vdot,
+            latest_vdot - vd if vd is not None else None,
+            pct=False,
+            up_good=True,
+        )
+        pred = {p.label: p.seconds for p in predictions}
+        ctx = " · ".join(
+            f"{lbl} {forecast.format_race_time(pred[lbl])}"
+            for lbl in ("5k", "10k")
+            if lbl in pred
+        )
+        kpis.append(
+            Kpi(
+                "Race fitness",
+                f"{latest_vdot:.1f}",
+                "VDOT",
+                ctx or "Daniels VDOT from critical speed",
+                delta=v_text,
+                delta_dir=v_dir,
             )
         )
     if acwr:
@@ -1081,11 +1163,32 @@ def _build_kpis(
                 _readiness_tone(readiness_latest.score),
             )
         )
-    markers = (("vo2max", "VO2max", "ml/kg/min"), ("resting_hr", "Resting HR", "bpm"))
-    for key, label, unit in markers:
+    markers = (
+        ("vo2max", "VO2max", "ml/kg/min", True),
+        ("resting_hr", "Resting HR", "bpm", False),
+    )
+    for key, label, unit, up_good in markers:
         marker = latest_markers.get(key)
         if marker is not None:
-            kpis.append(Kpi(label, f"{marker[1]:.0f}", unit, f"latest {marker[0]}"))
+            md = deltas.get(key)
+            text, color = _kpi_delta(
+                marker[1],
+                marker[1] - md if md is not None else None,
+                pct=False,
+                up_good=up_good,
+            )
+            marker_tone = color if color in ("good", "bad") else "neutral"
+            kpis.append(
+                Kpi(
+                    label,
+                    f"{marker[1]:.0f}",
+                    unit,
+                    f"latest {marker[0]}",
+                    tone=marker_tone,
+                    delta=text,
+                    delta_dir=color,
+                )
+            )
     if life is not None and life.steps_30d is not None:
         kpis.append(Kpi("Steps/day", f"{life.steps_30d:,.0f}", "", "30-day mean"))
     if life is not None and life.sleep_30d is not None:

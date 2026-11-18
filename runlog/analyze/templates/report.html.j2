@@ -73,6 +73,9 @@
     font-variant-numeric: tabular-nums; }
   .kpi .k-unit { font-size: 13px; font-weight: 500; color: var(--sub); margin-left: 3px; }
   .kpi .k-context { color: var(--sub); font-size: 12.5px; }
+  .kpi .k-delta { font-size: 12px; font-weight: 600; margin-top: 2px; }
+  .kpi .k-delta.good { color: #16a34a; } .kpi .k-delta.bad { color: #dc2626; }
+  .kpi .k-delta.flat { color: var(--muted); font-weight: 500; }
   .figs { display: grid; gap: 34px; grid-template-columns: 1fr; }
   figure { margin: 0; background: var(--surface); border: 1px solid var(--line);
     border-radius: 10px; padding: 14px 14px 10px; box-shadow: var(--shadow); }
@@ -167,7 +170,7 @@
   <div id="overview" class="panel">
     {% if model.summary %}
     <div class="abstract">
-      <h2>Abstract</h2>
+      <h2>Training status</h2>
       <p>{{ model.summary }}</p>
     </div>
     {% endif %}
@@ -200,6 +203,7 @@
           <div class="k-label">{{ kpi.label }}</div>
           <div class="k-value">{{ kpi.value }}{% if kpi.unit %}<span class="k-unit">{{ kpi.unit }}</span>{% endif %}</div>
           {% if kpi.context %}<div class="k-context">{{ kpi.context }}</div>{% endif %}
+          {% if kpi.delta %}<div class="k-delta {{ kpi.delta_dir }}">{{ kpi.delta }}</div>{% endif %}
         </div>
         {% endfor %}
       </div>

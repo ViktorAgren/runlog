@@ -185,3 +185,29 @@ def test_render_activity_pages_writes_a_page_with_chart_and_laps(
         "LT1 (aerobic)" in html,  # a lactate-threshold estimate
     )
     assert checks == (True, True, True, True, True, True)
+
+
+def test_render_shows_kpi_delta_and_training_status(tmp_path: Path) -> None:
+    model = ReportModel(
+        title="Running analytics report",
+        subtitle="270 runs",
+        generated_at="2026-07-10 09:00",
+        kpis=[
+            Kpi(
+                "Fitness (CTL)",
+                "75",
+                context="form -1 TSB",
+                delta="▲ 10 in 4 wk",
+                delta_dir="good",
+            )
+        ],
+        sections=[],
+        summary="162 runs covered 1254 km; rolling volume up 18% over 4 weeks.",
+    )
+    html = html_report.render(model, tmp_path).read_text(encoding="utf-8")
+    assert (
+        'class="k-delta good"' in html
+        and "▲ 10 in 4 wk" in html
+        and "Training status" in html
+        and "rolling volume up" in html
+    )
