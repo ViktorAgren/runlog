@@ -50,22 +50,24 @@ def _bounds(values: Sequence[float]) -> tuple[float, float]:
     return low, high
 
 
-def _y_range(values: Sequence[float], min_span: float) -> tuple[float, float]:
-    """Robust y-axis range: the 2nd-98th percentile band, never below ``min_span``.
+_Y_MARGIN = 0.06  # headroom added beyond the data extremes
 
-    Raw min/max let a handful of stops/GPS spikes set the scale, squashing the
-    real signal into a sliver; a near-constant series would likewise amplify
-    quantization jitter to fill the plot. Scaling to the central band (every
-    point is still drawn, clamped to the axis) and holding a metric-appropriate
-    floor keeps a steady run flat and a varied run legible.
+
+def _y_range(values: Sequence[float], min_span: float) -> tuple[float, float]:
+    """Y-axis range spanning the full data, with headroom, never below ``min_span``.
+
+    Uses the true min/max so no point is clipped, plus a small margin so the
+    extremes sit inside the frame rather than on its edge. A near-constant series
+    is instead held to ``min_span`` so quantization jitter does not fill the plot.
     """
-    ys = sorted(values)
-    last = len(ys) - 1
-    low = ys[round(0.02 * last)]
-    high = ys[round(0.98 * last)]
-    if high - low < min_span:
+    low, high = min(values), max(values)
+    span = high - low
+    if span < min_span:
         mid = (high + low) / 2
         low, high = mid - min_span / 2, mid + min_span / 2
+    elif span > 0:
+        margin = span * _Y_MARGIN
+        low, high = low - margin, high + margin
     if low == high:
         return low - 1.0, high + 1.0
     return low, high

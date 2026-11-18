@@ -390,7 +390,7 @@ def _pace_series(buckets: list[_Bucket]) -> list[float | None]:
     return out
 
 
-_SMOOTH_FRAC = 0.03  # rolling-median window as a share of the bucket count
+_SMOOTH_FRAC = 0.015  # rolling-median window as a share of the bucket count
 
 
 def _smooth_window(n: int) -> int:
