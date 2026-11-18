@@ -39,6 +39,7 @@
     margin: 0 0 6px; letter-spacing: -0.01em; }
   .sub { color: var(--sub); font-size: 15.5px; }
   .gen { color: var(--muted); font-size: 12.5px; margin-top: 6px; font-family: var(--mono); }
+  .provenance { color: var(--muted); font-size: 12.5px; margin: 8px 0 0; }
   .theme-btn { flex: none; appearance: none; border: 1px solid var(--line-strong);
     background: var(--surface); color: var(--sub); border-radius: 8px; cursor: pointer;
     font-size: 13px; padding: 6px 12px; font-family: var(--sans); }
@@ -172,6 +173,9 @@
     <div class="abstract">
       <h2>Training status</h2>
       <p>{{ model.summary }}</p>
+      {% if model.provenance %}
+      <p class="provenance">{{ model.provenance }}</p>
+      {% endif %}
     </div>
     {% endif %}
 

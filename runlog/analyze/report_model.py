@@ -74,6 +74,7 @@ class ReportModel:
     stats: StatsTable | None = None
     activities: list[ActivityRow] = field(default_factory=list)
     summary: str = ""  # the analyst narrative, shown as the report's abstract
+    provenance: str = ""  # HR model and its source, shown under the status
 
 
 def acwr_tone(acwr: float) -> Tone:

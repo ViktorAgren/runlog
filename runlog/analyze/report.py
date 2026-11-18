@@ -992,6 +992,7 @@ def _run(
             anomalies,
             table,
         ),
+        provenance=_hr_provenance(hr_max, hr_rest, hr_max_value, hr_rest_value),
     )
     report_html = html_report.render(model, out_dir)
     return ReportResult(
@@ -1000,6 +1001,23 @@ def _run(
         report_html=report_html,
         activity_pages=activity_pages,
         data_exports=data_exports,
+    )
+
+
+def _hr_provenance(
+    hr_max: float | None,
+    hr_rest: float | None,
+    hr_max_value: float,
+    hr_rest_value: float,
+) -> str:
+    """State the HR anchors the analytics ran on and where each came from."""
+    max_src = "configured" if hr_max is not None else "estimated from runs"
+    rest_src = "athlete.toml" if hr_rest is not None else "measured median"
+    return (
+        f"HR model: max {hr_max_value:.0f} bpm ({max_src}), "
+        f"rest {hr_rest_value:.0f} bpm ({rest_src}) — the Karvonen reserve behind "
+        f"TRIMP load, HR zones and intensity. The Resting HR card below is passive "
+        f"Apple Watch data, tracked separately."
     )
 
 
