@@ -122,12 +122,35 @@ def test_build_energy_summary_scalars(conn: sqlite3.Connection) -> None:
     summary = energy.build_energy(conn, _ATHLETE, frozenset(), today=date(2026, 6, 4))
     assert summary is not None
     assert (
-        summary.bmr_latest,
+        summary.bmr,
         summary.active_30d,
         summary.tdee_30d,
         summary.weight_latest,
         summary.method,
     ) == (1700.0, 550.0, 2250.0, 70.0, "mifflin")
+
+
+def test_energy_series_drops_part_day_basal(conn: sqlite3.Connection) -> None:
+    _insert_daily(
+        conn,
+        "active_energy",
+        [(date(2026, 6, d), 500.0) for d in (2, 3, 4, 5)],
+    )
+    _insert_daily(
+        conn,
+        "basal_energy",
+        [
+            (date(2026, 6, 2), 1700.0),
+            (date(2026, 6, 3), 1680.0),
+            (date(2026, 6, 4), 1720.0),
+            (date(2026, 6, 5), 700.0),  # short-wear day: well under 0.6 * median
+        ],
+    )
+    assert [d.day for d in energy.energy_series(conn, _ATHLETE)] == [
+        date(2026, 6, 2),
+        date(2026, 6, 3),
+        date(2026, 6, 4),
+    ]
 
 
 def test_build_energy_none_without_athlete(conn: sqlite3.Connection) -> None:

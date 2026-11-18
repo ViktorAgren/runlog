@@ -566,6 +566,7 @@ def _run(
             )
 
     latest_markers: dict[str, tuple[date, float] | None] = {}
+    marker_levels: dict[str, tuple[date, float] | None] = {}
     marker_deltas: dict[str, float | None] = {}
     for metric, (title, ylabel) in _RECOVERY_MARKERS.items():
         series = metrics.metric_series(conn, metric, since=since)
@@ -573,7 +574,8 @@ def _run(
             (series[-1][0].date(), series[-1][1]) if series else None
         )
         daily = metrics.daily_means(series)
-        marker_deltas[metric] = _series_delta(daily)
+        marker_levels[metric] = _marker_level(daily)
+        marker_deltas[metric] = _marker_delta(daily)
         if daily:
             trend_series.append(
                 (f"{_figure_meta(metric)[0]} trend", "recovery", f"{ylabel}/30d", daily)
@@ -969,7 +971,7 @@ def _run(
             acwr,
             ef_trend,
             intensity,
-            latest_markers,
+            marker_levels,
             cs_model,
             readiness_latest,
             life,
@@ -977,7 +979,7 @@ def _run(
             energy_summary,
             marker_deltas,
             vdot_points,
-            predictions,
+            cs_series[-1][1] if cs_series else None,
         ),
         sections=_build_sections(produced, out_dir),
         stats=_stats_table(table),
@@ -1031,6 +1033,33 @@ def _series_delta(dated: Sequence[tuple[date, float]], days: int = 28) -> float 
     return latest_val - (past[-1] if past else dated[0][1])
 
 
+def _marker_level(
+    daily: Sequence[tuple[date, float]], window: int = 7
+) -> tuple[date, float] | None:
+    """Robust recent level: the latest date with the median of its last ``window`` days.
+
+    A single day's resting HR or VO2max swings with sensor noise, so the card
+    shows a short-window median rather than one possibly-outlying reading.
+    """
+    if not daily:
+        return None
+    return daily[-1][0], statistics.median([v for _, v in daily[-window:]])
+
+
+def _marker_delta(
+    daily: Sequence[tuple[date, float]], window: int = 7, lag: int = 28
+) -> float | None:
+    """Change in the ``window``-day median level versus ~``lag`` days earlier."""
+    if len(daily) < 2:
+        return None
+    recent = statistics.median([v for _, v in daily[-window:]])
+    cutoff = daily[-1][0] - timedelta(days=lag)
+    prior = [v for d, v in daily if d <= cutoff]
+    if not prior:
+        return None
+    return recent - statistics.median(prior[-window:])
+
+
 def _kpi_delta(
     current: float, reference: float | None, *, pct: bool, up_good: bool
 ) -> tuple[str, str]:
@@ -1071,13 +1100,30 @@ def _efficiency_tone(per_30_days: float, test: stats.TrendTest | None) -> str:
     return "good" if per_30_days >= 0 else "warn"
 
 
+def _vdot_race_context(model: cs.CsModel | None) -> str:
+    """5k/10k times from the same CS model the VDOT is derived from.
+
+    The headline VDOT is ``vdot(5k from critical speed)``, so the predicted
+    times must come from that model too; mixing in a Riegel estimate would print
+    a VDOT and times that describe different fitness.
+    """
+    if model is None:
+        return "Daniels VDOT from critical speed"
+    parts = [
+        f"{label} {forecast.format_race_time(secs)}"
+        for label, dist in (("5k", 5000.0), ("10k", 10000.0))
+        if (secs := model.predict_seconds(dist)) is not None
+    ]
+    return " · ".join(parts) or "Daniels VDOT from critical speed"
+
+
 def _build_kpis(
     overall: metrics.Summary,
     pmc: Sequence[analytics.PmcPoint],
     acwr: Sequence[tuple[date, float]],
     ef_trend: analytics.Trend | None,
     intensity: physiology.IntensityDistribution | None,
-    latest_markers: dict[str, tuple[date, float] | None],
+    marker_levels: dict[str, tuple[date, float] | None],
     cs_model: cs.CsModel | None,
     readiness_latest: readiness.ReadinessDay | None,
     life: lifestyle.LifestyleSummary | None = None,
@@ -1085,7 +1131,7 @@ def _build_kpis(
     energy_summary: energy.EnergySummary | None = None,
     marker_deltas: dict[str, float | None] | None = None,
     vdot_points: Sequence[tuple[date, float]] = (),
-    predictions: Sequence[metrics.RacePrediction] = (),
+    vdot_model: cs.CsModel | None = None,
 ) -> list[Kpi]:
     deltas = marker_deltas or {}
     kpis = [
@@ -1132,18 +1178,12 @@ def _build_kpis(
             pct=False,
             up_good=True,
         )
-        pred = {p.label: p.seconds for p in predictions}
-        ctx = " · ".join(
-            f"{lbl} {forecast.format_race_time(pred[lbl])}"
-            for lbl in ("5k", "10k")
-            if lbl in pred
-        )
         kpis.append(
             Kpi(
                 "Race fitness",
                 f"{latest_vdot:.1f}",
                 "VDOT",
-                ctx or "Daniels VDOT from critical speed",
+                _vdot_race_context(vdot_model),
                 delta=v_text,
                 delta_dir=v_dir,
             )
@@ -1214,7 +1254,7 @@ def _build_kpis(
         ("resting_hr", "Resting HR", "bpm", False),
     )
     for key, label, unit, up_good in markers:
-        marker = latest_markers.get(key)
+        marker = marker_levels.get(key)
         if marker is not None:
             md = deltas.get(key)
             text, color = _kpi_delta(
@@ -1229,7 +1269,7 @@ def _build_kpis(
                     label,
                     f"{marker[1]:.0f}",
                     unit,
-                    f"latest {marker[0]}",
+                    f"7-day median to {marker[0]}",
                     tone=marker_tone,
                     delta=text,
                     delta_dir=color,
@@ -1251,9 +1291,7 @@ def _build_kpis(
             else "Mifflin-St Jeor"
         )
         kpis.append(
-            Kpi(
-                "Resting (BMR)", f"{energy_summary.bmr_latest:,.0f}", "kcal/day", method
-            )
+            Kpi("Resting (BMR)", f"{energy_summary.bmr:,.0f}", "kcal/day", method)
         )
         if energy_summary.tdee_30d is not None:
             kpis.append(

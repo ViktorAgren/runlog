@@ -510,7 +510,7 @@ def energy_section(
         return ""
     method = _METHOD_LABELS.get(energy.method, energy.method)
     lines: list[str] = ["", "Energy expenditure", "=" * 40]
-    lines.append(f"Resting (BMR)  {energy.bmr_latest:,.0f} kcal/day ({method})")
+    lines.append(f"Resting (BMR)  {energy.bmr:,.0f} kcal/day ({method})")
     if energy.active_30d is not None:
         lines.append(f"Active (30d)   {energy.active_30d:,.0f} kcal/day")
     if energy.tdee_30d is not None:

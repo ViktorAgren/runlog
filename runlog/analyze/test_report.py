@@ -114,7 +114,7 @@ def test_energy_section_renders_bmr_and_tdee() -> None:
     )
     text = summary.energy_section(
         EnergySummary(
-            bmr_latest=1716.0,
+            bmr=1716.0,
             active_30d=520.0,
             tdee_30d=2236.0,
             weight_latest=74.2,
