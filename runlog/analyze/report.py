@@ -936,7 +936,7 @@ def _run(
 
     # Activities tab: a row per run, plus a full-resolution detail page each.
     activity_rows, activity_details = activities_view.build_activities(
-        conn, runs, hr_max_value, hr_rest_value
+        conn, runs, hr_max_value, hr_rest_value, sex
     )
     activity_pages = html_report.render_activity_pages(activity_details, out_dir)
     produced.append(charts.pace_by_session_chart(activity_rows, training_dir))

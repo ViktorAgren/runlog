@@ -42,6 +42,16 @@ def _row() -> ActivityRow:
         cadence=160,
         elevation_m=None,
         calories=300,
+        load=52,
+        ef=1.33,
+        gap_s=None,
+        gap_disp="-",
+        decoupling_pct=1.2,
+        easy_pct=80.0,
+        moderate_pct=15.0,
+        hard_pct=5.0,
+        is_pr=True,
+        is_off=False,
     )
 
 
@@ -119,6 +129,13 @@ def test_render_includes_activities_tab_and_rows(tmp_path: Path) -> None:
         "25:00" in html,  # the row's vital numbers
     )
     assert checks == (True, True, True, True, True)
+    analytical = (
+        ">Load<" in html and ">GAP<" in html and ">EF<" in html,  # new columns
+        '<span class="badge pr">PR</span>' in html,  # the PR row badge
+        'class="ibar"' in html,  # the intensity bar
+        'id="acts-summary"' in html,  # the live summary bar
+    )
+    assert analytical == (True, True, True, True)
 
 
 def test_render_activity_pages_writes_a_page_with_chart_and_laps(
@@ -146,6 +163,13 @@ def test_render_activity_pages_writes_a_page_with_chart_and_laps(
         thresholds=[("LT1 (aerobic)", "148 bpm")],
         intervals=None,
         laps=[LapRow(1, "1.00", "5:00", "5:00/km", 145, 160, 170)],
+        load=52,
+        ef=1.33,
+        gap_s=None,
+        decoupling_pct=1.2,
+        easy_pct=80.0,
+        moderate_pct=15.0,
+        hard_pct=5.0,
     )
 
     pages = html_report.render_activity_pages([detail], tmp_path)

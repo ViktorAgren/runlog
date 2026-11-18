@@ -14,7 +14,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from runlog.analyze import metrics
+from runlog.analyze import analytics, anomaly, metrics, records
 from runlog.db import quality
 from runlog.domain import ActivityId
 from runlog.plan import progress
@@ -22,8 +22,10 @@ from runlog.plan import progress
 if TYPE_CHECKING:
     import sqlite3
     from collections.abc import Sequence
+    from datetime import date
 
     from runlog.analyze.metrics import Run
+    from runlog.config import Sex
 
 
 def activity_page(activity_id: int) -> str:
@@ -52,6 +54,16 @@ class ActivityRow:
     cadence: int | None
     elevation_m: int | None
     calories: int | None
+    load: int | None  # per-run Banister TRIMP (relative effort)
+    ef: float | None  # efficiency factor: m/min per bpm (economy)
+    gap_s: float | None  # grade-adjusted pace, s/km
+    gap_disp: str
+    decoupling_pct: float | None  # within-run HR-pace drift
+    easy_pct: float | None
+    moderate_pct: float | None
+    hard_pct: float | None
+    is_pr: bool  # set an all-time best on this day
+    is_off: bool  # efficiency below its rolling baseline (off day)
 
 
 @dataclass(frozen=True)
@@ -100,6 +112,14 @@ class ActivityDetail:
     thresholds: list[tuple[str, str]]
     intervals: progress.IntervalSummary | None
     laps: list[LapRow]
+    # Row-summary scalars (also useful on the JSON detail endpoint).
+    load: int | None
+    ef: float | None
+    gap_s: float | None
+    decoupling_pct: float | None
+    easy_pct: float | None
+    moderate_pct: float | None
+    hard_pct: float | None
 
 
 @dataclass(frozen=True)
@@ -248,27 +268,38 @@ def _thresholds(hr_max: float, hr_rest: float) -> list[tuple[str, str]]:
 
 
 def _detect_session(
-    distance_km: float | None, zone_secs: list[float], structured: bool
+    distance_km: float | None, zone_secs: list[float], is_intervals: bool
 ) -> str:
-    """Infer the session type from distance, HR-zone mix, and lap structure."""
+    """Infer the session type from HR-zone mix, structure, then distance.
+
+    Intensity is tested before the long-run distance rule, so a hard session over
+    15 km reads as its workout type (Threshold/VO2max) rather than "Long".
+    """
     total = sum(zone_secs)
     if total <= 0:
         return "Run"
     z = [s / total for s in zone_secs]  # Z1..Z5 shares
     hard = z[3] + z[4]
-    if distance_km is not None and distance_km >= 15:
-        return "Long"
-    if structured and hard >= 0.12:
+    if is_intervals and hard >= 0.12:
         return "Intervals"
     if z[4] >= 0.15:
         return "VO2max"
     if hard >= 0.25:
         return "Threshold"
+    if distance_km is not None and distance_km >= 15:
+        return "Long"
     if z[2] >= 0.40:
         return "Tempo"
     if z[0] >= 0.65:
         return "Recovery"
     return "Easy"
+
+
+def _run_ef(run: Run) -> float | None:
+    """Efficiency factor: speed (m/min) per heartbeat — a running-economy proxy."""
+    if not run.distance_m or not run.moving_s or not run.avg_hr:
+        return None
+    return round(run.distance_m / (run.moving_s / 60.0) / run.avg_hr, 2)
 
 
 @dataclass(frozen=True)
@@ -471,7 +502,11 @@ def _header(detail: progress.WorkoutDetail, run: Run) -> list[tuple[str, str]]:
 
 
 def build_detail(
-    conn: sqlite3.Connection, run: Run, hr_max: float, hr_rest: float
+    conn: sqlite3.Connection,
+    run: Run,
+    hr_max: float,
+    hr_rest: float,
+    sex: Sex | None = None,
 ) -> ActivityDetail:
     """Full-resolution timeline data + laps for one run's detail page.
 
@@ -488,7 +523,9 @@ def build_detail(
     stream = _load_stream(conn, source_id)
     buckets = _resample(stream)
     zone_secs = _zone_seconds(stream, hr_max, hr_rest)
-    session = _detect_session(run.distance_km, zone_secs, len(detail.laps) >= 3)
+    intervals = progress.interval_summary(detail.laps)
+    session = _detect_session(run.distance_km, zone_secs, intervals is not None)
+    load = analytics.run_trimp(run, hr_max, hr_rest, sex)
     date = run.start.date().isoformat()
     return ActivityDetail(
         activity_id=int(run.activity_id),
@@ -505,16 +542,26 @@ def build_detail(
         charts=_charts(buckets),
         zones=_zone_bands(zone_secs, hr_max, hr_rest) if sum(zone_secs) else [],
         thresholds=_thresholds(hr_max, hr_rest),
-        intervals=progress.interval_summary(detail.laps),
+        intervals=intervals,
         laps=_lap_rows(detail.laps),
+        load=round(load) if load else None,
+        ef=_run_ef(run),
+        gap_s=detail.gap_pace_s_per_km,
+        decoupling_pct=detail.cardiac_drift_pct,
+        easy_pct=detail.easy_pct,
+        moderate_pct=detail.moderate_pct,
+        hard_pct=detail.hard_pct,
     )
 
 
-def _row(run: Run, detail: ActivityDetail) -> ActivityRow:
+def _row(
+    run: Run, detail: ActivityDetail, pr_days: set[date], off_days: set[date]
+) -> ActivityRow:
+    day = run.start.date()
     return ActivityRow(
         activity_id=int(run.activity_id),
         page=activity_page(int(run.activity_id)),
-        date=run.start.date().isoformat(),
+        date=day.isoformat(),
         weekday=run.start.strftime("%a"),
         sport=_sport_label(run),
         indoor=run.is_indoor,
@@ -530,18 +577,37 @@ def _row(run: Run, detail: ActivityDetail) -> ActivityRow:
         cadence=round(run.avg_cadence) if run.avg_cadence else None,
         elevation_m=detail.elevation_m,
         calories=round(run.calories) if run.calories else None,
+        load=detail.load,
+        ef=detail.ef,
+        gap_s=detail.gap_s,
+        gap_disp=_fmt_pace(detail.gap_s),
+        decoupling_pct=detail.decoupling_pct,
+        easy_pct=detail.easy_pct,
+        moderate_pct=detail.moderate_pct,
+        hard_pct=detail.hard_pct,
+        is_pr=day in pr_days,
+        is_off=day in off_days,
     )
 
 
 def build_activities(
-    conn: sqlite3.Connection, runs: Sequence[Run], hr_max: float, hr_rest: float
+    conn: sqlite3.Connection,
+    runs: Sequence[Run],
+    hr_max: float,
+    hr_rest: float,
+    sex: Sex | None = None,
 ) -> tuple[list[ActivityRow], list[ActivityDetail]]:
     """Table rows (newest first) and the detail payload for each run."""
     details = {
-        int(run.activity_id): build_detail(conn, run, hr_max, hr_rest) for run in runs
+        int(run.activity_id): build_detail(conn, run, hr_max, hr_rest, sex)
+        for run in runs
     }
+    pr_days = {
+        e.day for e in records.records_timeline(conn, runs) if e.scope == "all_time"
+    }
+    off_days = {a.day for a in anomaly.performance_anomalies(runs)}
     rows = [
-        _row(run, details[int(run.activity_id)])
+        _row(run, details[int(run.activity_id)], pr_days, off_days)
         for run in sorted(runs, key=lambda r: r.start, reverse=True)
     ]
     return rows, list(details.values())

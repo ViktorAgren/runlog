@@ -98,6 +98,16 @@ def test_build_activities_row_has_indoor_flag_and_detected_session(
             cadence=None,
             elevation_m=None,
             calories=None,
+            load=45,
+            ef=1.33,
+            gap_s=None,
+            gap_disp="-",
+            decoupling_pct=0.0,
+            easy_pct=100.0,
+            moderate_pct=0.0,
+            hard_pct=0.0,
+            is_pr=True,
+            is_off=False,
         )
     ]
 
@@ -217,3 +227,22 @@ def test_charts_derive_pace_cadence_efficiency_stride() -> None:
         and cadence == [176.0] * len(cadence)
         and all(abs(p - 1000 / 3) < 1.0 for p in pace)
     )
+
+
+@pytest.mark.parametrize(
+    ("distance_km", "zones", "is_intervals", "expected"),
+    [
+        (16.0, [0.0, 0.0, 0.0, 300.0, 0.0], False, "Threshold"),  # hard long != Long
+        (16.0, [0.0, 600.0, 0.0, 0.0, 0.0], False, "Long"),  # easy long run
+        (5.0, [0.0, 200.0, 0.0, 30.0, 0.0], True, "Intervals"),  # recovery -> intervals
+        (5.0, [0.0, 0.0, 0.0, 0.0, 100.0], False, "VO2max"),
+        (0.0, [0.0, 0.0, 0.0, 0.0, 0.0], False, "Run"),  # no HR time
+    ],
+)
+def test_detect_session_puts_intensity_before_the_long_rule(
+    distance_km: float,
+    zones: list[float],
+    is_intervals: bool,
+    expected: str,
+) -> None:
+    assert activities_view._detect_session(distance_km, zones, is_intervals) == expected
