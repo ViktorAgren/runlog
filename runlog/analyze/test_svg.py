@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from runlog.analyze.svg import _y_range, line_chart
+from runlog.analyze.svg import _float_decimals, _y_range, line_chart
 
 
 def test_line_chart_maps_points_to_a_polyline() -> None:
@@ -66,3 +66,21 @@ def test_y_range_shows_variation_above_a_small_floor() -> None:
 def test_y_range_floors_a_near_constant_series() -> None:
     low, high = _y_range([300.0, 300.0, 300.0, 301.0], 12.0)
     assert round(high - low, 1) == 12.0
+
+
+def test_float_decimals_separates_narrow_labels() -> None:
+    assert [
+        _float_decimals([0.90, 0.965, 1.03]),  # one decimal collides on 1.0
+        _float_decimals([100.0, 150.0, 200.0]),
+    ] == [2, 1]
+
+
+def test_line_chart_float_axis_labels_are_distinct() -> None:
+    points: list[tuple[float, float | None]] = [
+        (float(i), 0.9 + 0.003 * i) for i in range(50)
+    ]
+    svg = line_chart(
+        points, title="Stride", unit="m", color="#0d9488", y_format="float"
+    )
+    labels = [seg.split("</text>")[0] for seg in svg.split('class="ylab">')[1:]]
+    assert len(set(labels)) == 3  # no repeated '1.0' ticks

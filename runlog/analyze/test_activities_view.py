@@ -208,6 +208,19 @@ def test_resample_medians_per_bucket_and_caps_count() -> None:
     assert [b.hr for b in buckets] == [100.0, 150.0] and len(buckets) == 2
 
 
+def test_smooth_is_a_centered_median_that_preserves_gaps() -> None:
+    values: list[float | None] = [170.0, 162.0, 178.0, None, 170.0, 162.0, 178.0]
+    assert activities_view._smooth(values, window=3) == [
+        166.0,
+        170.0,
+        170.0,
+        None,
+        166.0,
+        170.0,
+        170.0,
+    ]
+
+
 def test_charts_derive_pace_cadence_efficiency_stride() -> None:
     # Dense 1 Hz steady 3 m/s run; per-leg cadence 88 should read as 176 spm, pace
     # should come from distance (~5:33/km), no watts/altitude -> no Power/Elevation.

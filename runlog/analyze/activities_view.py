@@ -390,6 +390,34 @@ def _pace_series(buckets: list[_Bucket]) -> list[float | None]:
     return out
 
 
+_SMOOTH_FRAC = 0.03  # rolling-median window as a share of the bucket count
+
+
+def _smooth_window(n: int) -> int:
+    window = max(3, round(n * _SMOOTH_FRAC))
+    return window if window % 2 else window + 1
+
+
+def _smooth(values: list[float | None], window: int) -> list[float | None]:
+    """Centered rolling median that spans gaps without filling them.
+
+    The resampled channels still carry per-bucket sensor jitter; a short median
+    window exposes the interval structure the raw hash hides, while None buckets
+    stay None so real breaks remain visible.
+    """
+    if window <= 1:
+        return values
+    half = window // 2
+    out: list[float | None] = []
+    for i, value in enumerate(values):
+        if value is None:
+            out.append(None)
+            continue
+        near = [v for v in values[max(0, i - half) : i + half + 1] if v is not None]
+        out.append(statistics.median(near) if near else value)
+    return out
+
+
 def _charts(buckets: list[_Bucket]) -> list[Chart]:
     if len(buckets) < 2:
         return []
@@ -413,9 +441,11 @@ def _charts(buckets: list[_Bucket]) -> list[Chart]:
         ("Power", "W", "#ea580c", "int", 20.0, [b.watts for b in buckets]),
         ("Elevation", "m", "#16a34a", "int", 20.0, [b.altitude for b in buckets]),
     ]
+    window = _smooth_window(len(buckets))
     charts: list[Chart] = []
     for title, unit, color, y_format, min_span, values in series:
-        present = [v for v in values if v is not None]
+        plotted = values if title == "Elevation" else _smooth(values, window)
+        present = [v for v in plotted if v is not None]
         if len(present) < 2 or (title == "Elevation" and max(present) == min(present)):
             continue
         charts.append(
@@ -424,7 +454,7 @@ def _charts(buckets: list[_Bucket]) -> list[Chart]:
                 unit=unit,
                 color=color,
                 y_format=y_format,
-                points=list(zip(x, values, strict=True)),
+                points=list(zip(x, plotted, strict=True)),
                 min_span=min_span,
             )
         )

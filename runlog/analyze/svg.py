@@ -20,14 +20,27 @@ _PAD_T = 24.0
 _PAD_B = 30.0
 
 
-def _format(value: float, kind: str) -> str:
-    """Axis label for a value: pace as m:ss, floats to one decimal, else integer."""
+def _format(value: float, kind: str, decimals: int = 1) -> str:
+    """Axis label: pace as m:ss, floats to ``decimals`` places, else integer."""
     if kind == "pace":
         total = int(round(value))
         return f"{total // 60}:{total % 60:02d}"
     if kind == "float":
-        return f"{value:.1f}"
+        return f"{value:.{decimals}f}"
     return f"{int(round(value))}"
+
+
+def _float_decimals(values: Sequence[float], limit: int = 3) -> int:
+    """Fewest decimals (>=1) that render every tick label distinctly.
+
+    A narrow range (e.g. stride 0.90-1.05) collapses to repeated '1.0' labels at
+    one decimal; widen the precision until the labels separate.
+    """
+    for decimals in range(1, limit + 1):
+        labels = [f"{v:.{decimals}f}" for v in values]
+        if len(set(labels)) == len(labels):
+            return decimals
+    return limit
 
 
 def _bounds(values: Sequence[float]) -> tuple[float, float]:
@@ -92,15 +105,16 @@ def line_chart(
         pen_down = True
     path = " ".join(segments)
 
+    tick_values = [ymin + frac * (ymax - ymin) for frac in (0.0, 0.5, 1.0)]
+    decimals = _float_decimals(tick_values) if y_format == "float" else 1
     gridlines: list[str] = []
-    for frac in (0.0, 0.5, 1.0):
-        value = ymin + frac * (ymax - ymin)
+    for value in tick_values:
         gy = sy(value)
         gridlines.append(
             f'<line x1="{_PAD_L:.0f}" y1="{gy:.1f}" x2="{_W - _PAD_R:.0f}" '
             f'y2="{gy:.1f}" class="grid"/>'
             f'<text x="{_PAD_L - 6:.0f}" y="{gy + 3:.1f}" class="ylab">'
-            f"{_format(value, y_format)}</text>"
+            f"{_format(value, y_format, decimals)}</text>"
         )
     xlabels = (
         f'<text x="{sx(xmin):.0f}" y="{_H - 10:.0f}" class="xlab">'
