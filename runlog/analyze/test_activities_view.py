@@ -131,9 +131,11 @@ def test_build_detail_has_charts_laps_and_five_zone_bands(
     detail = activities_view.build_detail(conn, run, hr_max=190.0, hr_rest=50.0)
 
     assert [c.title for c in detail.charts] == [
-        "Heart rate",
         "Pace",
+        "Heart rate",
+        "Efficiency",
         "Cadence",
+        "Stride",
         "Elevation",
     ]
     assert [lap.index for lap in detail.laps] == [1, 2, 3]
@@ -164,43 +166,54 @@ def test_build_detail_falls_back_to_the_apple_twins_stream(
     detail = activities_view.build_detail(conn, run, hr_max=190.0, hr_rest=50.0)
 
     assert [c.title for c in detail.charts] == [
-        "Heart rate",
         "Pace",
+        "Heart rate",
+        "Efficiency",
         "Cadence",
+        "Stride",
         "Elevation",
     ]
     assert [lap.index for lap in detail.laps] == [1, 2, 3]
 
 
-def test_smooth_series_rejects_spikes_and_preserves_gaps() -> None:
-    assert activities_view._smooth_series(
-        [100.0, 102.0, 500.0, 104.0, 106.0], window=3
-    ) == [101.0, 102.0, 104.0, 106.0, 105.0]
-    assert activities_view._smooth_series([100.0, None, 104.0], window=3) == [
-        100.0,
-        None,
-        104.0,
-    ]
+def _pt(offset: int, **ch: float | None) -> activities_view._StreamPt:
+    return activities_view._StreamPt(
+        offset_s=offset,
+        distance_m=ch.get("distance_m"),
+        hr=ch.get("hr"),
+        velocity_mps=ch.get("velocity_mps"),
+        cadence=ch.get("cadence"),
+        altitude_m=ch.get("altitude_m"),
+        watts=ch.get("watts"),
+    )
 
 
-def test_charts_normalize_cadence_add_power_and_floor_pace_span() -> None:
+def test_resample_medians_per_bucket_and_caps_count() -> None:
     stream = [
-        activities_view._StreamPt(
-            offset_s=i,
-            distance_m=float(i),
-            hr=150.0,
-            velocity_mps=3.0,
-            cadence=88.0,  # per-leg rpm -> 176 spm
-            altitude_m=None,
-            watts=250.0,
-        )
-        for i in range(6)
+        _pt(i, hr=h)
+        for i, h in enumerate([100.0, 100.0, 100.0, 200.0, 150.0, 150.0, 150.0, 150.0])
     ]
-    charts = {c.title: c for c in activities_view._charts(stream)}
+    buckets = activities_view._resample(stream, target=2)
+
+    assert [b.hr for b in buckets] == [100.0, 150.0] and len(buckets) == 2
+
+
+def test_charts_derive_pace_cadence_efficiency_stride() -> None:
+    # Dense 1 Hz steady 3 m/s run; per-leg cadence 88 should read as 176 spm, pace
+    # should come from distance (~5:33/km), no watts/altitude -> no Power/Elevation.
+    stream = [
+        _pt(i, distance_m=3.0 * i, hr=150.0, velocity_mps=3.0, cadence=88.0)
+        for i in range(120)
+    ]
+    charts = {
+        c.title: c
+        for c in activities_view._charts(activities_view._resample(stream, target=20))
+    }
 
     cadence = [y for _, y in charts["Cadence"].points if y is not None]
+    pace = [y for _, y in charts["Pace"].points if y is not None]
     assert (
-        set(charts) == {"Heart rate", "Pace", "Cadence", "Power"}
-        and charts["Pace"].min_span == 12.0
-        and cadence == [176.0] * 6
+        set(charts) == {"Pace", "Heart rate", "Efficiency", "Cadence", "Stride"}
+        and cadence == [176.0] * len(cadence)
+        and all(abs(p - 1000 / 3) < 1.0 for p in pace)
     )

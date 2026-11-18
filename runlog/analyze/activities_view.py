@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import dataclasses
 import statistics
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -93,6 +94,7 @@ class ActivityDetail:
     session: str
     elevation_m: int | None
     header: list[tuple[str, str]]
+    analysis: list[tuple[str, str]]
     charts: list[Chart]
     zones: list[ZoneBand]
     thresholds: list[tuple[str, str]]
@@ -186,15 +188,6 @@ def _load_stream(conn: sqlite3.Connection, activity_id: ActivityId) -> list[_Str
     ]
 
 
-def _pace_from_velocity(velocity_mps: float | None) -> float | None:
-    """Pace in s/km, dropping implausible values (stops, GPS spikes) as gaps."""
-    if not velocity_mps or velocity_mps <= 0:
-        return None
-    pace = 1000.0 / velocity_mps
-    low, high = metrics.PLAUSIBLE_PACE_S_PER_KM
-    return pace if low <= pace <= high else None
-
-
 # Physiological name per Karvonen zone, shown next to Z1..Z5.
 _ZONE_NAMES = ("Recovery", "Endurance", "Tempo", "Threshold", "VO2max")
 # Per-workout threshold *heart rates* as a fraction of heart-rate reserve: LT1
@@ -278,46 +271,116 @@ def _detect_session(
     return "Easy"
 
 
-# Centered rolling-median window (samples) that tames ~1 Hz sensor jitter
-# without hiding real structure.
-_SMOOTH_WINDOW = 5
+@dataclass(frozen=True)
+class _Bucket:
+    """One equal-time slice of the run, with each channel aggregated."""
+
+    t_mid_min: float  # bucket midpoint in minutes (chart x)
+    t_end_s: float  # last sample offset in the bucket (for cross-bucket pace)
+    hr: float | None
+    cadence: float | None
+    velocity: float | None
+    altitude: float | None
+    watts: float | None
+    dist_cum: float | None  # last cumulative distance in the bucket
 
 
-def _smooth_series(
-    values: list[float | None], window: int = _SMOOTH_WINDOW
-) -> list[float | None]:
-    """Centered rolling median, preserving None gaps and the series length."""
-    half = window // 2
-    out: list[float | None] = []
-    for i, value in enumerate(values):
-        if value is None:
+# A raw stream is thousands of jittery ~1 Hz samples; resampling to a few hundred
+# equal-time buckets gives a smooth, light line that still resolves intervals (a
+# 25 min session buckets to ~4 s, a 2 h run to ~24 s).
+_TARGET_BUCKETS = 300
+
+
+def _median_opt(values: list[float | None]) -> float | None:
+    present = [v for v in values if v is not None]
+    return statistics.median(present) if present else None
+
+
+def _resample(stream: list[_StreamPt], target: int = _TARGET_BUCKETS) -> list[_Bucket]:
+    """Aggregate a per-point stream into <= ``target`` equal-time buckets.
+
+    Each channel is cleaned (plausible_*) then median-aggregated per bucket, so the
+    plotted line is smooth regardless of sample rate; empty buckets are dropped, so
+    real gaps show as breaks between kept buckets.
+    """
+    if len(stream) < 2:
+        return []
+    start, end = stream[0].offset_s, stream[-1].offset_s
+    span = end - start
+    if span <= 0:
+        return []
+    width = span / target
+    groups: dict[int, list[_StreamPt]] = defaultdict(list)
+    for pt in stream:
+        groups[min(int((pt.offset_s - start) / width), target - 1)].append(pt)
+    buckets: list[_Bucket] = []
+    for idx in sorted(groups):
+        g = groups[idx]
+        offs = [pt.offset_s for pt in g]
+        dists = [pt.distance_m for pt in g if pt.distance_m is not None]
+        buckets.append(
+            _Bucket(
+                t_mid_min=(start + (idx + 0.5) * width) / 60.0,
+                t_end_s=offs[-1],
+                hr=_median_opt([quality.plausible_hr(pt.hr) for pt in g]),
+                cadence=_median_opt(
+                    [quality.plausible_cadence(pt.cadence) for pt in g]
+                ),
+                velocity=_median_opt(
+                    [quality.plausible_speed(pt.velocity_mps) for pt in g]
+                ),
+                altitude=_median_opt([pt.altitude_m for pt in g]),
+                watts=_median_opt(
+                    [pt.watts if pt.watts and pt.watts > 0 else None for pt in g]
+                ),
+                dist_cum=max(dists) if dists else None,
+            )
+        )
+    return buckets
+
+
+def _pace_series(buckets: list[_Bucket]) -> list[float | None]:
+    """Pace (s/km) from distance over time between consecutive buckets.
+
+    Distance/time is far steadier than the raw velocity channel (which is often
+    quantized on treadmills or jittery on GPS). The first bucket has no prior, so
+    it is None.
+    """
+    low, high = metrics.PLAUSIBLE_PACE_S_PER_KM
+    out: list[float | None] = [None]
+    for prev, cur in zip(buckets, buckets[1:], strict=False):
+        if prev.dist_cum is None or cur.dist_cum is None:
             out.append(None)
             continue
-        near = [v for v in values[max(0, i - half) : i + half + 1] if v is not None]
-        out.append(statistics.median(near) if near else None)
+        dd = cur.dist_cum - prev.dist_cum
+        dt = cur.t_end_s - prev.t_end_s
+        pace = dt / (dd / 1000.0) if dd > 0 and dt > 0 else None
+        out.append(pace if pace is not None and low <= pace <= high else None)
     return out
 
 
-def _charts(stream: list[_StreamPt]) -> list[Chart]:
-    minutes = [pt.offset_s / 60.0 for pt in stream]
-    # Clean (drop dropouts/spikes), normalize cadence to spm, then smooth; a raw
-    # per-point trace is otherwise jittery and axis-flattened. min_span is the
-    # narrowest y-span worth resolving in each metric's own unit.
-    hr = _smooth_series([quality.plausible_hr(pt.hr) for pt in stream])
-    pace = _smooth_series([_pace_from_velocity(pt.velocity_mps) for pt in stream])
-    cadence = _smooth_series(
-        quality.to_spm([quality.plausible_cadence(pt.cadence) for pt in stream])
-    )
-    power = _smooth_series(
-        [pt.watts if pt.watts and pt.watts > 0 else None for pt in stream]
-    )
-    elevation = [pt.altitude_m for pt in stream]
+def _charts(buckets: list[_Bucket]) -> list[Chart]:
+    if len(buckets) < 2:
+        return []
+    x = [b.t_mid_min for b in buckets]
+    cadence = quality.to_spm([b.cadence for b in buckets])
+    pace = _pace_series(buckets)
+    stride = [
+        b.velocity / (c / 60.0) if b.velocity and c else None
+        for b, c in zip(buckets, cadence, strict=True)
+    ]
+    efficiency = [
+        b.velocity / b.hr * 100 if b.velocity and b.hr else None for b in buckets
+    ]
+    # (title, unit, color, y_format, min_span, values)
     series: list[tuple[str, str, str, str, float, list[float | None]]] = [
-        ("Heart rate", "bpm", "#dc2626", "int", 20.0, hr),
         ("Pace", "min/km", "#2563eb", "pace", 12.0, pace),
+        ("Heart rate", "bpm", "#dc2626", "int", 20.0, [b.hr for b in buckets]),
+        ("Efficiency", "m/s per bpm x100", "#0891b2", "float", 0.3, efficiency),
         ("Cadence", "spm", "#7c3aed", "int", 10.0, cadence),
-        ("Power", "W", "#ea580c", "int", 20.0, power),
-        ("Elevation", "m", "#16a34a", "int", 20.0, elevation),
+        ("Stride", "m", "#0d9488", "float", 0.1, stride),
+        ("Power", "W", "#ea580c", "int", 20.0, [b.watts for b in buckets]),
+        ("Elevation", "m", "#16a34a", "int", 20.0, [b.altitude for b in buckets]),
     ]
     charts: list[Chart] = []
     for title, unit, color, y_format, min_span, values in series:
@@ -330,11 +393,37 @@ def _charts(stream: list[_StreamPt]) -> list[Chart]:
                 unit=unit,
                 color=color,
                 y_format=y_format,
-                points=list(zip(minutes, values, strict=True)),
+                points=list(zip(x, values, strict=True)),
                 min_span=min_span,
             )
         )
     return charts
+
+
+def _analysis_chips(
+    detail: progress.WorkoutDetail, cadence: list[float | None]
+) -> list[tuple[str, str]]:
+    """A one-line read of the run from already-computed signals."""
+    chips: list[tuple[str, str]] = []
+    drift = detail.cardiac_drift_pct
+    if drift is not None:
+        verdict = "held" if abs(drift) < 5 else "faded" if drift > 0 else "improved"
+        chips.append(("Aerobic durability", f"efficiency {verdict} ({drift:+.1f}%)"))
+    split = detail.negative_split_pct
+    if split is not None:
+        verdict = (
+            "even"
+            if abs(split) < 1
+            else "negative split" if split > 0 else "faded late"
+        )
+        chips.append(("Pacing", f"{verdict} ({split:+.1f}%)"))
+    present = [c for c in cadence if c is not None]
+    if len(present) >= 3:
+        mean = statistics.mean(present)
+        cv = statistics.pstdev(present) / mean * 100 if mean else 0.0
+        steady = "steady" if cv < 3 else "variable"
+        chips.append(("Cadence", f"{steady} ({mean:.0f} spm, CV {cv:.1f}%)"))
+    return chips
 
 
 def _lap_rows(laps: Sequence[progress.LapSplit]) -> list[LapRow]:
@@ -376,8 +465,6 @@ def _header(detail: progress.WorkoutDetail, run: Run) -> list[tuple[str, str]]:
         chips.append(("Avg power", f"{round(detail.avg_power_w)} W"))
     if detail.avg_stride_length_m is not None:
         chips.append(("Avg stride", f"{detail.avg_stride_length_m:.2f} m"))
-    if detail.cardiac_drift_pct is not None:
-        chips.append(("Cardiac drift", f"{detail.cardiac_drift_pct:+.1f}%"))
     if detail.gap_pace_s_per_km is not None:
         chips.append(("GAP", _fmt_pace(detail.gap_pace_s_per_km)))
     return chips
@@ -399,6 +486,7 @@ def build_detail(
     )
     detail = progress.workout_detail(conn, detail_run, hr_max, hr_rest)
     stream = _load_stream(conn, source_id)
+    buckets = _resample(stream)
     zone_secs = _zone_seconds(stream, hr_max, hr_rest)
     session = _detect_session(run.distance_km, zone_secs, len(detail.laps) >= 3)
     date = run.start.date().isoformat()
@@ -413,7 +501,8 @@ def build_detail(
             else None
         ),
         header=_header(detail, run),
-        charts=_charts(stream),
+        analysis=_analysis_chips(detail, quality.to_spm([b.cadence for b in buckets])),
+        charts=_charts(buckets),
         zones=_zone_bands(zone_secs, hr_max, hr_rest) if sum(zone_secs) else [],
         thresholds=_thresholds(hr_max, hr_rest),
         intervals=progress.interval_summary(detail.laps),

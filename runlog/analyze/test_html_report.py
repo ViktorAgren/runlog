@@ -131,6 +131,7 @@ def test_render_activity_pages_writes_a_page_with_chart_and_laps(
         session="Easy",
         elevation_m=None,
         header=[("Distance", "5.00 km")],
+        analysis=[("Pacing", "even (+0.2%)")],
         charts=[
             Chart(
                 title="Heart rate",

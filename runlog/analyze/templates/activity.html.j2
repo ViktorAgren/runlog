@@ -79,6 +79,15 @@
     {% endfor %}
   </div>
 
+  {% if detail.analysis %}
+  <h2>Analysis</h2>
+  <div class="chips">
+    {% for label, value in detail.analysis %}
+    <div class="chip"><span class="cl">{{ label }}</span><span class="cv">{{ value }}</span></div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   {% if detail.zones %}
   <h2>Heart-rate zones</h2>
   <div class="zones">
