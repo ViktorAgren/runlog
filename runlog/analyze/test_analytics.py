@@ -196,6 +196,47 @@ def test_best_effort_records_uses_continuous_segments() -> None:
     assert records["2k"] == (400.0, 200.0, date(2026, 6, 1))
 
 
+def test_mean_ef_averages_speed_per_hr_and_drops_zero_hr() -> None:
+    # ratios 10/100 and 10/200 -> mean 0.075; the hr<=0 sample is dropped.
+    assert math.isclose(
+        analytics._mean_ef([(100.0, 10.0), (200.0, 10.0), (0.0, 9.0)]), 0.075
+    )
+    assert analytics._mean_ef([]) == 0.0
+
+
+def test_aerobic_decoupling_flags_second_half_drift() -> None:
+    conn = store.connect(":memory:")  # type: ignore[arg-type]
+    store.init_db(conn)
+    # 8 km run at a steady 3 m/s: first half HR 140, second half 160, so
+    # speed-per-HR fades 3/140 -> 3/160 = 12.5% decoupling.
+    stream = tuple(
+        StreamPoint(
+            offset_s=i,
+            distance_m=i * 1000.0,
+            hr=140.0 if i < 4 else 160.0,
+            velocity_mps=3.0,
+        )
+        for i in range(8)
+    )
+    store.store_record(
+        conn,
+        ActivityRecord(
+            activity=Activity(
+                source="strava",
+                source_id=SourceId("long"),
+                sport_type="Run",
+                start_time_utc=datetime(2026, 6, 1, 7, tzinfo=UTC),
+                distance_m=8000.0,
+                moving_s=2667,
+                avg_pace_s_per_km=333.0,
+            ),
+            stream=stream,
+        ),
+    )
+    runs = metrics.canonical_run_activities(conn)
+    assert analytics.aerobic_decoupling(conn, runs) == [(date(2026, 6, 1), 12.5)]
+
+
 def test_fill_daily_zero_fills_rest_days() -> None:
     daily = [(date(2026, 1, 1), 10.0), (date(2026, 1, 3), 30.0)]
     assert analytics.fill_daily(daily) == [

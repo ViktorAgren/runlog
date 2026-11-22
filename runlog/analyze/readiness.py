@@ -53,6 +53,12 @@ def _goodness_sign(direction: Direction) -> float:
     return -1.0 if direction is Direction.HIGH else 1.0
 
 
+def _score(contributors: dict[str, float]) -> float:
+    """Average the oriented marker z-scores onto the 0-100 readiness scale."""
+    z_avg = sum(contributors.values()) / len(contributors)
+    return round(max(0.0, min(100.0, _MIDPOINT + _SCORE_SCALE * z_avg)), 1)
+
+
 def readiness_series(
     conn: sqlite3.Connection, since: date | None = None
 ) -> list[ReadinessDay]:
@@ -65,11 +71,9 @@ def readiness_series(
             by_day[reading.day][metric] = round(sign * reading.deviation, 2)
     days: list[ReadinessDay] = []
     for day, contributors in sorted(by_day.items()):
-        z_avg = sum(contributors.values()) / len(contributors)
-        score = max(0.0, min(100.0, _MIDPOINT + _SCORE_SCALE * z_avg))
         days.append(
             ReadinessDay(
-                day=day, score=round(score, 1), contributors=dict(contributors)
+                day=day, score=_score(contributors), contributors=dict(contributors)
             )
         )
     return days

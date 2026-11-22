@@ -8,8 +8,24 @@ from datetime import UTC, date, datetime, timedelta
 import pytest
 
 from runlog.analyze import readiness
+from runlog.analyze.anomaly import Direction
 from runlog.db import store
 from runlog.domain import HealthMetric
+
+
+def test_goodness_sign_orients_each_marker() -> None:
+    # Resting HR rising is worse (-1); HRV/sleep/HR-recovery falling is worse, so
+    # for them higher is better (+1).
+    assert readiness._goodness_sign(Direction.HIGH) == -1.0
+    assert readiness._goodness_sign(Direction.LOW) == 1.0
+
+
+def test_score_averages_markers_and_saturates() -> None:
+    assert readiness._score({"a": 1.0, "b": -1.0, "c": 0.0, "d": 0.0}) == 50.0
+    assert readiness._score({"a": 2.0, "b": 0.0, "c": 1.0, "d": 1.0}) == 65.0
+    # Extreme deviations saturate at the bounds rather than overshooting 0/100.
+    assert readiness._score({"a": -10.0}) == 0.0
+    assert readiness._score({"a": 10.0}) == 100.0
 
 
 @pytest.fixture

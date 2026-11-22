@@ -44,6 +44,15 @@ class TestStudentsT:
     def test_ppf_reference_values(self, p: float, df: float, expected: float) -> None:
         assert math.isclose(stats.students_t_ppf(p, df), expected, abs_tol=1e-3)
 
+    @pytest.mark.parametrize("p", [0.025, 0.1, 0.5, 0.9, 0.975, 0.995])
+    @pytest.mark.parametrize("df", [1.0, 5.0, 30.0, 200.0])
+    def test_cdf_ppf_round_trip(self, p: float, df: float) -> None:
+        # ppf is a bisection over cdf, so cdf(ppf(p)) must return p across the
+        # range, not just at the three pinned points.
+        assert math.isclose(
+            stats.students_t_cdf(stats.students_t_ppf(p, df), df), p, abs_tol=1e-4
+        )
+
 
 def test_format_p_bands() -> None:
     assert (

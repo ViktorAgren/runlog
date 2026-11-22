@@ -24,6 +24,9 @@ if TYPE_CHECKING:
 
 # Riegel's exponent fit to world records; the athlete's own value usually differs.
 _GENERIC_EXPONENT = 1.06
+# Human distance-runner VDOT never leaves this band; a value outside it is a
+# degenerate effort/model, not fitness, so it is dropped rather than shown.
+_PLAUSIBLE_VDOT = (20.0, 90.0)
 
 
 def vdot(distance_m: float, seconds: float) -> float | None:
@@ -40,7 +43,9 @@ def vdot(distance_m: float, seconds: float) -> float | None:
     )
     if pct_max <= 0 or vo2 <= 0:
         return None
-    return vo2 / pct_max
+    value = vo2 / pct_max
+    low, high = _PLAUSIBLE_VDOT
+    return value if low <= value <= high else None
 
 
 def fatigue_exponent(efforts: Sequence[tuple[float, float]]) -> float | None:
