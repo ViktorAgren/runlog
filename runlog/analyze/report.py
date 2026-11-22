@@ -264,7 +264,8 @@ _FIGURES: dict[str, tuple[str, str]] = {
     ),
     "pace_by_session": (
         "Pace by session type",
-        "Distribution of mean pace per run, by detected session type.",
+        "Pace distribution by detected session type; structured sessions "
+        "(intervals, threshold, tempo) use their work-rep pace, not the whole run.",
     ),
     "grade_adjusted_pace": (
         "Grade-adjusted pace",

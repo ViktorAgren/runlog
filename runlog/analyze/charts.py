@@ -1059,12 +1059,28 @@ def pace_hr_density_chart(pairs: Sequence[tuple[float, float]], out_dir: Path) -
     return style.save(fig, out_dir, "pace_hr_density.svg")
 
 
+# Structured sessions whose pace should reflect the work reps, not the whole run
+# (warm-up, cool-down and recovery jogs would otherwise slow and widen them).
+_WORK_PACE_SESSIONS = frozenset({"Intervals", "VO2max", "Threshold", "Tempo"})
+
+
+def _session_pace(row: ActivityRow) -> float:
+    """Work-rep pace for a structured session, else the whole-run pace."""
+    if row.session in _WORK_PACE_SESSIONS and row.work_pace_s:
+        return row.work_pace_s
+    return row.pace_s
+
+
 def pace_by_session_chart(rows: Sequence[ActivityRow], out_dir: Path) -> Path:
-    """Violin distribution of average pace per run, by detected session type."""
+    """Violin distribution of pace per run, by detected session type.
+
+    Structured sessions use their work-rep pace; the rest use whole-run pace.
+    """
     by_session: dict[str, list[float]] = {}
     for row in rows:
-        if row.pace_s and row.pace_s > 0:
-            by_session.setdefault(row.session, []).append(row.pace_s)
+        pace = _session_pace(row)
+        if pace and pace > 0:
+            by_session.setdefault(row.session, []).append(pace)
     groups = sorted(
         ((s, paces) for s, paces in by_session.items() if len(paces) >= 3),
         key=lambda item: statistics.median(item[1]),

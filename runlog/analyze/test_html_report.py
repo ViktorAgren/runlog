@@ -37,6 +37,7 @@ def _row() -> ActivityRow:
         duration_disp="25:00",
         pace_s=300.0,
         pace_disp="5:00/km",
+        work_pace_s=None,
         avg_hr=150,
         max_hr=170,
         cadence=160,

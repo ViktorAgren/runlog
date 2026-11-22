@@ -49,6 +49,7 @@ class ActivityRow:
     duration_disp: str
     pace_s: float  # 0.0 sorts to the end (missing)
     pace_disp: str
+    work_pace_s: float | None  # work-rep pace (WU/CD/recovery excluded), else None
     avg_hr: int | None
     max_hr: int | None
     cadence: int | None
@@ -120,6 +121,7 @@ class ActivityDetail:
     easy_pct: float | None
     moderate_pct: float | None
     hard_pct: float | None
+    work_pace_s: float | None = None  # work-rep pace (WU/CD/recovery excluded)
 
 
 @dataclass(frozen=True)
@@ -548,6 +550,7 @@ def build_detail(
         easy_pct=detail.easy_pct,
         moderate_pct=detail.moderate_pct,
         hard_pct=detail.hard_pct,
+        work_pace_s=progress.work_pace_s_per_km(detail.laps),
     )
 
 
@@ -569,6 +572,7 @@ def _row(
         duration_disp=_fmt_duration(run.moving_s),
         pace_s=run.avg_pace_s_per_km or 0.0,
         pace_disp=_fmt_pace(run.avg_pace_s_per_km),
+        work_pace_s=detail.work_pace_s,
         avg_hr=round(run.avg_hr) if run.avg_hr else None,
         max_hr=round(run.max_hr) if run.max_hr else None,
         cadence=round(run.avg_cadence) if run.avg_cadence else None,

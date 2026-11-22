@@ -232,7 +232,9 @@ def test_critical_speed_and_readiness_charts_write_png(tmp_path: Path) -> None:
     assert _wrote_png(charts.readiness_chart(days, tmp_path))
 
 
-def _activity_row(session: str, pace_s: float) -> object:
+def _activity_row(
+    session: str, pace_s: float, work_pace_s: float | None = None
+) -> object:
     from runlog.analyze.activities_view import ActivityRow
 
     return ActivityRow(
@@ -249,6 +251,7 @@ def _activity_row(session: str, pace_s: float) -> object:
         duration_disp="50:00",
         pace_s=pace_s,
         pace_disp="5:00/km",
+        work_pace_s=work_pace_s,
         avg_hr=150,
         max_hr=170,
         cadence=160,
@@ -273,6 +276,15 @@ def test_pace_by_session_chart(tmp_path: Path) -> None:
     ]
     assert _wrote_png(charts.pace_by_session_chart(rows, tmp_path))  # type: ignore[arg-type]
     assert _wrote_png(charts.pace_by_session_chart([], tmp_path))
+
+
+def test_session_pace_uses_work_pace_only_for_structured_sessions() -> None:
+    structured = _activity_row("Threshold", pace_s=360.0, work_pace_s=280.0)
+    easy = _activity_row("Easy", pace_s=330.0, work_pace_s=300.0)
+    # Threshold reflects the reps (280), not the WU/CD-slowed whole-run 360; an
+    # easy run keeps its whole-run pace even if a work-pace is present.
+    assert charts._session_pace(structured) == 280.0  # type: ignore[arg-type]
+    assert charts._session_pace(easy) == 330.0  # type: ignore[arg-type]
 
 
 def test_regression_trend_chart_with_bands(tmp_path: Path) -> None:
