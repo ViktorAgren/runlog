@@ -242,6 +242,39 @@ def test_report_run_writes_charts_and_summary(tmp_path: Path) -> None:
     assert "Energy expenditure not estimated" in result.summary_text
 
 
+def test_ensemble_race_predictions_empty_without_efforts() -> None:
+    conn = store.connect(":memory:")  # type: ignore[arg-type]
+    store.init_db(conn)
+    assert report._ensemble_race_predictions(conn, []) == []
+
+
+def test_ensemble_race_predictions_are_monotonic_in_distance() -> None:
+    conn = store.connect(":memory:")  # type: ignore[arg-type]
+    store.init_db(conn)
+    stream = tuple(
+        StreamPoint(offset_s=i, distance_m=4.0 * i, velocity_mps=4.0)
+        for i in range(1301)  # ~5.2 km at 4 m/s, so a 5k best effort exists
+    )
+    store.store_record(
+        conn,
+        ActivityRecord(
+            activity=Activity(
+                source="strava",
+                source_id=SourceId("fast"),
+                sport_type="Run",
+                start_time_utc=datetime(2026, 6, 1, 7, tzinfo=UTC),
+                distance_m=5200.0,
+                moving_s=1300,
+                avg_pace_s_per_km=250.0,
+            ),
+            stream=stream,
+        ),
+    )
+    runs = metrics.canonical_run_activities(conn)
+    preds = {p.label: p.seconds for p in report._ensemble_race_predictions(conn, runs)}
+    assert preds["5k"] < preds["10k"] < preds["Half"]
+
+
 def test_race_outlook_formats_distance_day_and_ci() -> None:
     from runlog.analyze.forecast import RaceForecast
 

@@ -360,8 +360,8 @@ def best_effort_pace_chart(efforts: Sequence[EffortRecord], out_dir: Path) -> Pa
 
 def race_prediction_chart(predictions: Sequence[RacePrediction], out_dir: Path) -> Path:
     fig, ax = style.figure(
-        "Predicted race times (Riegel)",
-        "Current-fitness projections from your best efforts",
+        "Predicted race times",
+        "Ensemble projections (Riegel, fitted fatigue exponent, critical speed)",
         "Race",
         "Time (minutes)",
     )

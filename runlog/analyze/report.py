@@ -290,7 +290,8 @@ _FIGURES: dict[str, tuple[str, str]] = {
     ),
     "race_predictions": (
         "Predicted race times",
-        "Riegel projections from current best efforts.",
+        "Ensemble projections (Riegel, fitted fatigue exponent, critical speed) "
+        "from current best efforts.",
     ),
     "records": (
         "Personal records",
@@ -511,7 +512,7 @@ def _run(
     weekly = metrics.weekly_volume(runs)
     efforts = analytics.best_effort_records(conn, runs)
     pace = metrics.pace_points(runs)
-    predictions = metrics.predict_races(runs)
+    predictions = _ensemble_race_predictions(conn, runs)
 
     # Workout HR samples (from run streams only) drive the histogram, zones, and
     # the HR-max estimate — never passive/resting HR.
@@ -1043,6 +1044,35 @@ def _hr_provenance(
         f"TRIMP load, HR zones and intensity. The Resting HR card below is passive "
         f"Apple Watch data, tracked separately."
     )
+
+
+def _ensemble_race_predictions(
+    conn: sqlite3.Connection, runs: Sequence[metrics.Run]
+) -> list[metrics.RacePrediction]:
+    """Race-time projections from the individualized ensemble (Riegel + the
+    athlete's fitted fatigue exponent + critical speed), over best efforts, rather
+    than a single-effort Riegel scaling."""
+    efforts = [
+        (e.distance_m, e.seconds) for e in analytics.best_effort_records(conn, runs)
+    ]
+    if not efforts:
+        return []
+    model = cs.critical_speed(conn, runs)
+    predictions: list[metrics.RacePrediction] = []
+    for label, dist_km in (
+        ("5k", 5.0),
+        ("10k", 10.0),
+        ("Half", 21.0975),
+        ("Marathon", 42.195),
+    ):
+        pred = race.predict(efforts, dist_km * 1000, model)
+        if pred is not None:
+            predictions.append(
+                metrics.RacePrediction(
+                    label=label, distance_km=dist_km, seconds=pred.seconds
+                )
+            )
+    return predictions
 
 
 def _race_outlook(fc: RaceForecast | None, today: date) -> str:
