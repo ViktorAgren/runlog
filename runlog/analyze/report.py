@@ -9,6 +9,7 @@ and never mixed into the training charts or totals.
 from __future__ import annotations
 
 import statistics
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -996,6 +997,7 @@ def _run(
             table,
         ),
         provenance=_hr_provenance(hr_max, hr_rest, hr_max_value, hr_rest_value),
+        coverage=_coverage(conn, runs, quarantined, cost_source),
     )
     report_html = html_report.render(model, out_dir)
     return ReportResult(
@@ -1022,6 +1024,38 @@ def _hr_provenance(
         f"TRIMP load, HR zones and intensity. The Resting HR card below is passive "
         f"Apple Watch data, tracked separately."
     )
+
+
+def _coverage(
+    conn: sqlite3.Connection,
+    runs: Sequence[metrics.Run],
+    quarantined: int,
+    calorie_source: str | None,
+) -> list[tuple[str, str]]:
+    """What the report actually ran on, so a reduced sample is never hidden."""
+    total = len(runs)
+    if not total:
+        return []
+    by_source = Counter(run.source for run in runs)
+    with_stream = sum(
+        1
+        for run in runs
+        if conn.execute(
+            "SELECT 1 FROM stream_points WHERE activity_id = ? LIMIT 1",
+            (int(queries.stream_bearing_id(conn, run.activity_id)),),
+        ).fetchone()
+    )
+    runs_label = f"{total}" + (f" · {quarantined} quarantined" if quarantined else "")
+    rows = [
+        ("Runs analysed", runs_label),
+        ("Sources", " · ".join(f"{src} {n}" for src, n in sorted(by_source.items()))),
+        ("Streams", f"{with_stream}/{total} with a usable trace"),
+        ("Heart rate", f"{sum(1 for r in runs if r.avg_hr)}/{total}"),
+        ("Cadence", f"{sum(1 for r in runs if r.avg_cadence)}/{total}"),
+    ]
+    if calorie_source:
+        rows.append(("Calories", f"pinned to {calorie_source}"))
+    return rows
 
 
 def _series_delta(dated: Sequence[tuple[date, float]], days: int = 28) -> float | None:

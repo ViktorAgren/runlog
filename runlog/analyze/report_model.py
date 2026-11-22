@@ -75,6 +75,9 @@ class ReportModel:
     activities: list[ActivityRow] = field(default_factory=list)
     summary: str = ""  # the analyst narrative, shown as the report's abstract
     provenance: str = ""  # HR model and its source, shown under the status
+    coverage: list[tuple[str, str]] = field(
+        default_factory=list
+    )  # what the report ran on
 
 
 def acwr_tone(acwr: float) -> Tone:

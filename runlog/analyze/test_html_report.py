@@ -205,6 +205,10 @@ def test_render_shows_kpi_delta_and_training_status(tmp_path: Path) -> None:
         sections=[],
         summary="162 runs covered 1254 km; rolling volume up 18% over 4 weeks.",
         provenance="HR model: max 193 bpm (configured), rest 43 bpm (athlete.toml).",
+        coverage=[
+            ("Streams", "190/236 with a usable trace"),
+            ("Sources", "strava 236"),
+        ],
     )
     html = html_report.render(model, tmp_path).read_text(encoding="utf-8")
     assert (
@@ -214,4 +218,6 @@ def test_render_shows_kpi_delta_and_training_status(tmp_path: Path) -> None:
         and "rolling volume up" in html
         and 'class="provenance"' in html
         and "rest 43 bpm (athlete.toml)" in html
+        and 'class="coverage"' in html
+        and "190/236 with a usable trace" in html
     )

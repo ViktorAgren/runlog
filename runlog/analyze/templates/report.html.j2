@@ -40,6 +40,10 @@
   .sub { color: var(--sub); font-size: 15.5px; }
   .gen { color: var(--muted); font-size: 12.5px; margin-top: 6px; font-family: var(--mono); }
   .provenance { color: var(--muted); font-size: 12.5px; margin: 8px 0 0; }
+  .coverage { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 10px 0 0; }
+  .coverage div { display: flex; gap: 6px; font-size: 12.5px; }
+  .coverage dt { color: var(--muted); }
+  .coverage dd { color: var(--sub); margin: 0; font-family: var(--mono); }
   .theme-btn { flex: none; appearance: none; border: 1px solid var(--line-strong);
     background: var(--surface); color: var(--sub); border-radius: 8px; cursor: pointer;
     font-size: 13px; padding: 6px 12px; font-family: var(--sans); }
@@ -175,6 +179,13 @@
       <p>{{ model.summary }}</p>
       {% if model.provenance %}
       <p class="provenance">{{ model.provenance }}</p>
+      {% endif %}
+      {% if model.coverage %}
+      <dl class="coverage">
+        {% for label, value in model.coverage %}
+        <div><dt>{{ label }}</dt><dd>{{ value }}</dd></div>
+        {% endfor %}
+      </dl>
       {% endif %}
     </div>
     {% endif %}
