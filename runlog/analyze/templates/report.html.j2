@@ -58,6 +58,21 @@
   .abstract h2 { font-family: var(--serif); font-size: 15px; text-transform: uppercase;
     letter-spacing: 0.08em; color: var(--sub); margin: 0 0 10px; font-weight: 600; }
   .abstract p { margin: 0; font-size: 15px; line-height: 1.7; color: var(--ink); }
+  .today { display: flex; align-items: stretch; gap: 16px; margin: 28px 0;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+    padding: 16px 20px; box-shadow: var(--shadow); max-width: 80ch;
+    border-left: 4px solid var(--muted); }
+  .today.t-go { border-left-color: #16a34a; }
+  .today.t-easy { border-left-color: #eab308; }
+  .today.t-rest { border-left-color: #dc2626; }
+  .t-call { font-family: var(--serif); font-weight: 700; font-size: 26px;
+    letter-spacing: 0.02em; display: flex; align-items: center; min-width: 4ch; }
+  .today.t-go .t-call { color: #16a34a; }
+  .today.t-easy .t-call { color: #eab308; }
+  .today.t-rest .t-call { color: #dc2626; }
+  .t-body { display: flex; flex-direction: column; justify-content: center; gap: 3px; }
+  .t-reason { font-size: 15px; color: var(--ink); }
+  .t-session, .t-race { font-size: 13px; color: var(--sub); }
   h2.sec { font-family: var(--serif); font-weight: 600; font-size: 21px;
     margin: 0 0 4px; letter-spacing: -0.01em; }
   .sec-num { color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 8px; }
@@ -173,6 +188,20 @@
   </nav>
 
   <div id="overview" class="panel">
+    {% if model.today %}
+    <div class="today t-{{ model.today.action|lower }}">
+      <div class="t-call">{{ model.today.action }}</div>
+      <div class="t-body">
+        <div class="t-reason">{{ model.today.reason }}</div>
+        {% if model.today.session %}
+        <div class="t-session">Next: {{ model.today.session }}</div>
+        {% endif %}
+        {% if model.today.race %}
+        <div class="t-race">Race: {{ model.today.race }}</div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
     {% if model.summary %}
     <div class="abstract">
       <h2>Training status</h2>

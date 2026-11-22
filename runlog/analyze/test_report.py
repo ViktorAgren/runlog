@@ -242,6 +242,34 @@ def test_report_run_writes_charts_and_summary(tmp_path: Path) -> None:
     assert "Energy expenditure not estimated" in result.summary_text
 
 
+def test_race_outlook_formats_distance_day_and_ci() -> None:
+    from runlog.analyze.forecast import RaceForecast
+
+    fc = RaceForecast(
+        race_day=date(2026, 12, 6),
+        distance_m=10000.0,
+        predicted_s=2576.0,  # 42:56
+        ci_low_s=2500.0,  # 41:40
+        ci_high_s=2650.0,  # 44:10
+        method="trend",
+        n_weeks=12,
+        current_best_s=2600.0,
+    )
+    assert report._race_outlook(fc, date(2026, 11, 22)) == (
+        "10 km on 2026-12-06 (14 d): 42:56 (95% CI 41:40–44:10)"
+    )
+    assert report._race_outlook(None, date(2026, 11, 22)) == ""
+
+
+def test_today_plan_surfaces_guidance_without_a_plan() -> None:
+    conn = store.connect(":memory:")  # type: ignore[arg-type]
+    store.init_db(conn)
+    plan = report._today_plan(
+        conn, None, date(2026, 6, 1), hr_max=193.0, hr_rest=43.0, sex="male"
+    )
+    assert plan.action == "EASY" and plan.session == "" and plan.race == ""
+
+
 def test_signed_has_no_negative_zero() -> None:
     assert [report._signed(v) for v in (-0.0004, 0.0, 0.005, -0.012)] == [
         "+0.000",
