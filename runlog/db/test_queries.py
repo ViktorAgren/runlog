@@ -57,6 +57,67 @@ def test_hr_samples_empty_for_no_runs() -> None:
     assert queries.hr_samples(conn, []) == []
 
 
+def _add_activity(
+    conn: sqlite3.Connection,
+    source: str,
+    source_id: str,
+    stream: tuple[StreamPoint, ...] = (),
+) -> ActivityId:
+    store.store_record(
+        conn,
+        ActivityRecord(
+            activity=Activity(
+                source=source,  # type: ignore[arg-type]
+                source_id=SourceId(source_id),
+                sport_type="Run",
+                start_time_utc=datetime(2026, 6, 1, 7, tzinfo=UTC),
+                distance_m=300.0,
+                moving_s=100,
+            ),
+            stream=stream,
+        ),
+    )
+    row = conn.execute(
+        "SELECT id FROM activities WHERE source = ? AND source_id = ?",
+        (source, source_id),
+    ).fetchone()
+    return ActivityId(int(row[0]))
+
+
+def _link(conn: sqlite3.Connection, strava: ActivityId, apple: ActivityId) -> None:
+    conn.execute(
+        "INSERT INTO activity_links "
+        "(strava_activity_id, apple_activity_id, match_confidence) VALUES (?, ?, 1.0)",
+        (int(strava), int(apple)),
+    )
+
+
+def test_stream_bearing_id_falls_back_to_a_linked_twin() -> None:
+    conn = _memory_db()
+    stream = tuple(
+        StreamPoint(offset_s=i, distance_m=float(i) * 3.0, hr=150.0, velocity_mps=3.0)
+        for i in range(5)
+    )
+    strava = _add_activity(conn, "strava", "s:1")  # canonical row, no stream
+    apple = _add_activity(conn, "apple_health", "a:1", stream)  # twin holds the trace
+    _link(conn, strava, apple)
+    assert queries.linked_twin_ids(conn, strava) == [int(apple)]
+    assert queries.stream_bearing_id(conn, strava) == apple
+
+
+def test_stream_bearing_id_prefers_own_stream_else_itself() -> None:
+    conn = _memory_db()
+    stream = tuple(
+        StreamPoint(offset_s=i, distance_m=float(i) * 3.0, velocity_mps=3.0)
+        for i in range(5)
+    )
+    owns = _add_activity(conn, "strava", "s:2", stream)
+    twinless = _add_activity(conn, "strava", "s:3")
+    _link(conn, owns, _add_activity(conn, "apple_health", "a:2"))  # twin, no stream
+    assert queries.stream_bearing_id(conn, owns) == owns  # own stream wins
+    assert queries.stream_bearing_id(conn, twinless) == twinless  # falls through
+
+
 def _memory_db() -> sqlite3.Connection:
     conn = store.connect(":memory:")  # type: ignore[arg-type]
     store.init_db(conn)

@@ -154,6 +154,40 @@ def test_full_stream_cleans_implausible_samples() -> None:
     assert [(s.hr, s.velocity_mps) for s in cleaned] == [(150.0, 3.0), (None, None)]
 
 
+def test_full_stream_reads_a_linked_twins_trace() -> None:
+    # The canonical Strava row carries no stream; its Apple twin does. Loading by
+    # the canonical id must find the twin's trace rather than return nothing.
+    conn, strava_id = _store_run_with_stream(0)  # canonical, stream-less
+    store.store_record(
+        conn,
+        ActivityRecord(
+            activity=Activity(
+                source="apple_health",
+                source_id=SourceId("a:1"),
+                sport_type="Run",
+                start_time_utc=datetime(2026, 6, 1, 7, tzinfo=UTC),
+                distance_m=30.0,
+                moving_s=10,
+            ),
+            stream=tuple(
+                StreamPoint(offset_s=i, distance_m=float(i) * 3.0, velocity_mps=3.0)
+                for i in range(10)
+            ),
+        ),
+    )
+    apple_id = int(
+        conn.execute(
+            "SELECT id FROM activities WHERE source = 'apple_health'"
+        ).fetchone()[0]
+    )
+    conn.execute(
+        "INSERT INTO activity_links "
+        "(strava_activity_id, apple_activity_id, match_confidence) VALUES (?, ?, 1.0)",
+        (int(strava_id), apple_id),
+    )
+    assert len(streams.full_stream(conn, strava_id)) == 10
+
+
 def _cad(offset: int, cadence: float | None) -> StreamSample:
     return StreamSample(
         offset_s=offset,

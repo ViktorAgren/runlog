@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from runlog.analyze.metrics import PLAUSIBLE_PACE_S_PER_KM
-from runlog.db import quality
+from runlog.db import quality, queries
 
 if TYPE_CHECKING:
     import sqlite3
@@ -75,6 +75,7 @@ def full_stream(
     key = int(activity_id)
     if cache is not None and key in cache:
         return cache[key]
+    source = int(queries.stream_bearing_id(conn, activity_id))
     stream = [
         StreamSample(
             offset_s=int(row["offset_s"]),
@@ -93,7 +94,7 @@ def full_stream(
             WHERE activity_id = ? AND distance_m IS NOT NULL AND offset_s IS NOT NULL
             ORDER BY seq
             """,
-            (key,),
+            (source,),
         )
     ]
     if cache is not None:

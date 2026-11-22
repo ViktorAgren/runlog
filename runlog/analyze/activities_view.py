@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from runlog.analyze import analytics, anomaly, metrics, records
-from runlog.db import quality
+from runlog.db import quality, queries
 from runlog.domain import ActivityId
 from runlog.plan import progress
 
@@ -150,39 +150,6 @@ def _fmt_pace(pace_s_per_km: float | None) -> str:
 
 def _sport_label(run: Run) -> str:
     return "Treadmill" if run.is_indoor else "Run"
-
-
-def _twin_ids(conn: sqlite3.Connection, activity_id: ActivityId) -> list[int]:
-    """Activities linked to this one as the same physical run (both directions)."""
-    queries = (
-        ("activity_links", "strava_activity_id", "apple_activity_id"),
-        ("activity_links", "apple_activity_id", "strava_activity_id"),
-        ("runna_links", "runna_activity_id", "twin_activity_id"),
-        ("runna_links", "twin_activity_id", "runna_activity_id"),
-    )
-    twins: list[int] = []
-    for table, key, other in queries:
-        twins += [
-            int(row[0])
-            for row in conn.execute(
-                f"SELECT {other} FROM {table} WHERE {key} = ?", (int(activity_id),)
-            )
-        ]
-    return twins
-
-
-def _stream_source(conn: sqlite3.Connection, activity_id: ActivityId) -> ActivityId:
-    """The canonical id, or a linked twin's, that actually carries a stream.
-
-    The canonical Strava row often lacks the per-second trace that its dropped
-    Apple twin recorded, so fall back to a twin that has one.
-    """
-    for candidate in (int(activity_id), *_twin_ids(conn, activity_id)):
-        if conn.execute(
-            "SELECT 1 FROM stream_points WHERE activity_id = ? LIMIT 1", (candidate,)
-        ).fetchone():
-            return ActivityId(candidate)
-    return activity_id
 
 
 def _load_stream(conn: sqlite3.Connection, activity_id: ActivityId) -> list[_StreamPt]:
@@ -543,7 +510,7 @@ def build_detail(
     Stream and laps come from whichever linked source actually recorded them (the
     canonical Strava row or its Apple twin); summary fields stay from the run.
     """
-    source_id = _stream_source(conn, run.activity_id)
+    source_id = queries.stream_bearing_id(conn, run.activity_id)
     detail_run = (
         run
         if source_id == run.activity_id
