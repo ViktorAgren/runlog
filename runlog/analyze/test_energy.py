@@ -158,6 +158,26 @@ def test_build_energy_none_without_athlete(conn: sqlite3.Connection) -> None:
     assert energy.build_energy(conn, None, frozenset()) is None
 
 
+def test_build_energy_omits_physiologically_impossible_bmr(
+    conn: sqlite3.Connection,
+) -> None:
+    # Measured basal systematically wrong (5000 kcal/day) survives the relative
+    # part-day filter but is impossible; energy is omitted, not rendered.
+    days = [date(2026, 6, d) for d in (2, 3, 4)]
+    _insert_daily(conn, "active_energy", [(d, 500.0) for d in days])
+    _insert_daily(conn, "basal_energy", [(d, 5000.0) for d in days])
+    assert energy.build_energy(conn, _ATHLETE, frozenset()) is None
+
+
+def test_energy_series_tdee_equals_bmr_plus_active(conn: sqlite3.Connection) -> None:
+    _insert_daily(conn, "body_mass", [(date(2026, 6, 1), 70.0)])
+    _insert_daily(
+        conn, "active_energy", [(date(2026, 6, 2), 480.0), (date(2026, 6, 3), 620.0)]
+    )
+    days = energy.energy_series(conn, _ATHLETE)
+    assert days and all(d.tdee == round(d.bmr + d.active, 1) for d in days)
+
+
 def test_energy_cost_series_kcal_per_km_and_skips_nulls() -> None:
     runs = [
         _run(date(2026, 6, 1), 10000.0, 700.0),  # 70.0 kcal/km

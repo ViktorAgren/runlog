@@ -9,17 +9,51 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from runlog.db import quality
+from runlog.domain import ActivityId
 
 if TYPE_CHECKING:
     import sqlite3
     from collections.abc import Sequence
 
-    from runlog.domain import ActivityId
-
 
 def in_placeholders(count: int) -> str:
     """A ``?,?,...`` list of ``count`` placeholders for a SQL ``IN`` clause."""
     return ",".join("?" for _ in range(count))
+
+
+def linked_twin_ids(conn: sqlite3.Connection, activity_id: ActivityId) -> list[int]:
+    """Activity ids linked to this one as the same physical run (both directions)."""
+    lookups = (
+        ("activity_links", "strava_activity_id", "apple_activity_id"),
+        ("activity_links", "apple_activity_id", "strava_activity_id"),
+        ("runna_links", "runna_activity_id", "twin_activity_id"),
+        ("runna_links", "twin_activity_id", "runna_activity_id"),
+    )
+    twins: list[int] = []
+    for table, key, other in lookups:
+        twins += [
+            int(row[0])
+            for row in conn.execute(
+                f"SELECT {other} FROM {table} WHERE {key} = ?", (int(activity_id),)
+            )
+        ]
+    return twins
+
+
+def stream_bearing_id(conn: sqlite3.Connection, activity_id: ActivityId) -> ActivityId:
+    """The id, or a linked twin's, that actually carries a stream.
+
+    A canonical Strava row often lacks the per-second trace its dropped Apple or
+    Runna twin recorded; fall back to a twin that has one. Returns a single id per
+    physical run (the canonical row is already deduped), so no stream is counted
+    twice.
+    """
+    for candidate in (int(activity_id), *linked_twin_ids(conn, activity_id)):
+        if conn.execute(
+            "SELECT 1 FROM stream_points WHERE activity_id = ? LIMIT 1", (candidate,)
+        ).fetchone():
+            return ActivityId(candidate)
+    return activity_id
 
 
 def hr_samples(conn: sqlite3.Connection, run_ids: Sequence[ActivityId]) -> list[float]:

@@ -31,6 +31,16 @@ class Kpi:
 
 
 @dataclass(frozen=True)
+class TodayPlan:
+    """The prescriptive top-of-report block: what to do today."""
+
+    action: str  # GO | EASY | REST
+    reason: str
+    session: str = ""  # next planned session (kind + description), "" if no plan
+    race: str = ""  # race-day outlook line, "" without a goal race
+
+
+@dataclass(frozen=True)
 class FigureRef:
     title: str
     path: str  # path relative to the report directory, e.g. "analytics/pmc.svg"
@@ -74,7 +84,11 @@ class ReportModel:
     stats: StatsTable | None = None
     activities: list[ActivityRow] = field(default_factory=list)
     summary: str = ""  # the analyst narrative, shown as the report's abstract
+    today: TodayPlan | None = None  # prescriptive guidance block, when available
     provenance: str = ""  # HR model and its source, shown under the status
+    coverage: list[tuple[str, str]] = field(
+        default_factory=list
+    )  # what the report ran on
 
 
 def acwr_tone(acwr: float) -> Tone:

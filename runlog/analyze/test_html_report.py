@@ -19,6 +19,7 @@ from runlog.analyze.report_model import (
     Section,
     StatsRow,
     StatsTable,
+    TodayPlan,
 )
 
 
@@ -37,6 +38,7 @@ def _row() -> ActivityRow:
         duration_disp="25:00",
         pace_s=300.0,
         pace_disp="5:00/km",
+        work_pace_s=None,
         avg_hr=150,
         max_hr=170,
         cadence=160,
@@ -204,6 +206,16 @@ def test_render_shows_kpi_delta_and_training_status(tmp_path: Path) -> None:
         sections=[],
         summary="162 runs covered 1254 km; rolling volume up 18% over 4 weeks.",
         provenance="HR model: max 193 bpm (configured), rest 43 bpm (athlete.toml).",
+        coverage=[
+            ("Streams", "190/236 with a usable trace"),
+            ("Sources", "strava 236"),
+        ],
+        today=TodayPlan(
+            action="GO",
+            reason="recovered and absorbing load",
+            session="Intervals — 6x800m @ 5k",
+            race="10 km on 2026-12-06 (14 d): 42:56",
+        ),
     )
     html = html_report.render(model, tmp_path).read_text(encoding="utf-8")
     assert (
@@ -213,4 +225,9 @@ def test_render_shows_kpi_delta_and_training_status(tmp_path: Path) -> None:
         and "rolling volume up" in html
         and 'class="provenance"' in html
         and "rest 43 bpm (athlete.toml)" in html
+        and 'class="coverage"' in html
+        and "190/236 with a usable trace" in html
+        and "today t-go" in html
+        and ">GO<" in html
+        and "6x800m @ 5k" in html
     )

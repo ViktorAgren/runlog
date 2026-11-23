@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import TYPE_CHECKING
 
+from runlog.db import queries
+
 if TYPE_CHECKING:
     import sqlite3
     from collections.abc import Sequence
@@ -234,6 +236,7 @@ def _stream(
     conn: sqlite3.Connection, activity_id: ActivityId
 ) -> list[tuple[int, float, float | None, float | None]]:
     """(offset_s, distance_m, hr, velocity_mps) for a run, ordered by position."""
+    source = int(queries.stream_bearing_id(conn, activity_id))
     return [
         (int(row["offset_s"]), float(row["distance_m"]), row["hr"], row["velocity_mps"])
         for row in conn.execute(
@@ -242,7 +245,7 @@ def _stream(
             WHERE activity_id = ? AND distance_m IS NOT NULL
             ORDER BY seq
             """,
-            (int(activity_id),),
+            (source,),
         )
     ]
 

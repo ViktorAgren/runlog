@@ -72,6 +72,19 @@ def test_standardized_effects() -> None:
     assert math.isclose(by_label["C"], 1.1547, abs_tol=1e-4)
 
 
+def test_significance_is_strict_at_the_alpha_boundary() -> None:
+    # One candidate, so bh_fdr leaves q == p: significant iff q < alpha, with no
+    # tolerance gap. q == alpha must read as NOT significant (the p=.057 bug class).
+    def _sig(p: float) -> bool:
+        table = importance.build_table(
+            [importance.Candidate("trend", "T", "x", "u", trend=_trend(p), sd=1.0)],
+            alpha=0.05,
+        )
+        return table.findings[0].significant
+
+    assert [_sig(0.0499), _sig(0.05), _sig(0.0501)] == [True, False, False]
+
+
 def test_unscored_candidates_are_skipped() -> None:
     candidates = [
         importance.Candidate("trend", "no test", "recovery", "u", trend=None),

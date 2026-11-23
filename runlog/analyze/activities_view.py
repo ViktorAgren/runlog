@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from runlog.analyze import analytics, anomaly, metrics, records
-from runlog.db import quality
+from runlog.db import quality, queries
 from runlog.domain import ActivityId
 from runlog.plan import progress
 
@@ -49,6 +49,7 @@ class ActivityRow:
     duration_disp: str
     pace_s: float  # 0.0 sorts to the end (missing)
     pace_disp: str
+    work_pace_s: float | None  # work-rep pace (WU/CD/recovery excluded), else None
     avg_hr: int | None
     max_hr: int | None
     cadence: int | None
@@ -120,6 +121,7 @@ class ActivityDetail:
     easy_pct: float | None
     moderate_pct: float | None
     hard_pct: float | None
+    work_pace_s: float | None = None  # work-rep pace (WU/CD/recovery excluded)
 
 
 @dataclass(frozen=True)
@@ -150,39 +152,6 @@ def _fmt_pace(pace_s_per_km: float | None) -> str:
 
 def _sport_label(run: Run) -> str:
     return "Treadmill" if run.is_indoor else "Run"
-
-
-def _twin_ids(conn: sqlite3.Connection, activity_id: ActivityId) -> list[int]:
-    """Activities linked to this one as the same physical run (both directions)."""
-    queries = (
-        ("activity_links", "strava_activity_id", "apple_activity_id"),
-        ("activity_links", "apple_activity_id", "strava_activity_id"),
-        ("runna_links", "runna_activity_id", "twin_activity_id"),
-        ("runna_links", "twin_activity_id", "runna_activity_id"),
-    )
-    twins: list[int] = []
-    for table, key, other in queries:
-        twins += [
-            int(row[0])
-            for row in conn.execute(
-                f"SELECT {other} FROM {table} WHERE {key} = ?", (int(activity_id),)
-            )
-        ]
-    return twins
-
-
-def _stream_source(conn: sqlite3.Connection, activity_id: ActivityId) -> ActivityId:
-    """The canonical id, or a linked twin's, that actually carries a stream.
-
-    The canonical Strava row often lacks the per-second trace that its dropped
-    Apple twin recorded, so fall back to a twin that has one.
-    """
-    for candidate in (int(activity_id), *_twin_ids(conn, activity_id)):
-        if conn.execute(
-            "SELECT 1 FROM stream_points WHERE activity_id = ? LIMIT 1", (candidate,)
-        ).fetchone():
-            return ActivityId(candidate)
-    return activity_id
 
 
 def _load_stream(conn: sqlite3.Connection, activity_id: ActivityId) -> list[_StreamPt]:
@@ -543,7 +512,7 @@ def build_detail(
     Stream and laps come from whichever linked source actually recorded them (the
     canonical Strava row or its Apple twin); summary fields stay from the run.
     """
-    source_id = _stream_source(conn, run.activity_id)
+    source_id = queries.stream_bearing_id(conn, run.activity_id)
     detail_run = (
         run
         if source_id == run.activity_id
@@ -581,6 +550,7 @@ def build_detail(
         easy_pct=detail.easy_pct,
         moderate_pct=detail.moderate_pct,
         hard_pct=detail.hard_pct,
+        work_pace_s=progress.work_pace_s_per_km(detail.laps),
     )
 
 
@@ -602,6 +572,7 @@ def _row(
         duration_disp=_fmt_duration(run.moving_s),
         pace_s=run.avg_pace_s_per_km or 0.0,
         pace_disp=_fmt_pace(run.avg_pace_s_per_km),
+        work_pace_s=detail.work_pace_s,
         avg_hr=round(run.avg_hr) if run.avg_hr else None,
         max_hr=round(run.max_hr) if run.max_hr else None,
         cadence=round(run.avg_cadence) if run.avg_cadence else None,

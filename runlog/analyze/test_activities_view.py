@@ -93,6 +93,7 @@ def test_build_activities_row_has_indoor_flag_and_detected_session(
             duration_disp="25:00",
             pace_s=300.0,
             pace_disp="5:00/km",
+            work_pace_s=None,
             avg_hr=150,
             max_hr=170,
             cadence=None,

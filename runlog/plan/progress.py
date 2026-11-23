@@ -205,6 +205,29 @@ def _laps(
     )
 
 
+def work_pace_s_per_km(laps: tuple[LapSplit, ...]) -> float | None:
+    """Distance-weighted pace of the work laps alone, or None without clear laps.
+
+    Keeps laps of at least ``_MIN_REP_M`` within ``_REP_PACE_TOLERANCE`` of the
+    fastest, so warm-up, cool-down and recovery jogs drop out and a structured
+    session's pace reflects the reps, not the whole workout.
+    """
+    paced: list[tuple[float, float]] = []
+    for lap in laps:
+        if (
+            lap.pace_s_per_km is not None
+            and lap.distance_m is not None
+            and lap.distance_m >= _MIN_REP_M
+        ):
+            paced.append((lap.distance_m, lap.pace_s_per_km))
+    if not paced:
+        return None
+    fastest = min(pace for _d, pace in paced)
+    work = [(d, pace) for d, pace in paced if pace <= fastest * _REP_PACE_TOLERANCE]
+    total_m = sum(d for d, _pace in work)
+    return sum(d * pace for d, pace in work) / total_m if total_m > 0 else None
+
+
 def _rep_set_stats(
     laps: tuple[LapSplit, ...],
 ) -> tuple[float | None, float | None]:

@@ -53,6 +53,11 @@ class EnergySummary:
     method: str  # "mifflin" | "measured-basal"
 
 
+# Adult basal metabolic rate (kcal/day) never leaves this band; a representative
+# value outside it signals bad weight or a sensor unit error, not metabolism.
+_PLAUSIBLE_BMR = (800.0, 3500.0)
+
+
 def mifflin_bmr(sex: Sex, weight_kg: float, height_cm: float, age_years: int) -> float:
     """Resting metabolic rate (kcal/day) via Mifflin-St Jeor."""
     base = 10.0 * weight_kg + 6.25 * height_cm - 5.0 * age_years
@@ -168,12 +173,18 @@ def build_energy(
     days = energy_series(conn, athlete, since=since)
     if not days:
         return None
+    bmr = statistics.median([d.bmr for d in days])
+    low, high = _PLAUSIBLE_BMR
+    if not low <= bmr <= high:
+        # A systematically wrong basal series (bad weight, a sensor unit error)
+        # would make TDEE wrong too; omit energy rather than render the impossible.
+        return None
     active_daily = [(d.day, d.active) for d in days]
     tdee_daily = [(d.day, d.tdee) for d in days]
     weight_daily = [(d.day, d.weight_kg) for d in days if d.weight_kg is not None]
     basal_present = bool(metrics.metric_series(conn, "basal_energy", since))
     return EnergySummary(
-        bmr=statistics.median([d.bmr for d in days]),
+        bmr=bmr,
         active_30d=lifestyle.trailing_mean(active_daily, today=today),
         tdee_30d=lifestyle.trailing_mean(tdee_daily, today=today),
         weight_latest=weight_daily[-1][1] if weight_daily else None,

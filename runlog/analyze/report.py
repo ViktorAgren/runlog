@@ -9,6 +9,7 @@ and never mixed into the training charts or totals.
 from __future__ import annotations
 
 import statistics
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -41,7 +42,13 @@ from runlog.analyze import (
     streams,
     summary,
 )
-from runlog.analyze.report_model import FigureRef, Kpi, ReportModel, Section
+from runlog.analyze.report_model import (
+    FigureRef,
+    Kpi,
+    ReportModel,
+    Section,
+    TodayPlan,
+)
 from runlog.analyze.series import Scalar, from_trends
 from runlog.db import queries, store
 
@@ -51,7 +58,9 @@ if TYPE_CHECKING:
     from datetime import date
     from pathlib import Path
 
+    from runlog.analyze.forecast import RaceForecast
     from runlog.config import Athlete, Sex
+    from runlog.plan.schedule import PlanSchedule
 
 
 # Passive, off-workout health metrics kept strictly separate from training data
@@ -264,7 +273,8 @@ _FIGURES: dict[str, tuple[str, str]] = {
     ),
     "pace_by_session": (
         "Pace by session type",
-        "Distribution of mean pace per run, by detected session type.",
+        "Pace distribution by detected session type; structured sessions "
+        "(intervals, threshold, tempo) use their work-rep pace, not the whole run.",
     ),
     "grade_adjusted_pace": (
         "Grade-adjusted pace",
@@ -280,7 +290,8 @@ _FIGURES: dict[str, tuple[str, str]] = {
     ),
     "race_predictions": (
         "Predicted race times",
-        "Riegel projections from current best efforts.",
+        "Ensemble projections (Riegel, fitted fatigue exponent, critical speed) "
+        "from current best efforts.",
     ),
     "records": (
         "Personal records",
@@ -453,6 +464,7 @@ def run(
     hr_rest: float | None = None,
     sex: Sex | None = None,
     athlete: Athlete | None = None,
+    schedule: PlanSchedule | None = None,
     save: bool = True,
 ) -> ReportResult:
     """Compute all metrics, render charts into ``out_dir``, return the summary."""
@@ -473,6 +485,7 @@ def run(
             hr_rest=hr_rest,
             sex=sex,
             athlete=athlete,
+            schedule=schedule,
             save=save,
         )
 
@@ -490,6 +503,7 @@ def _run(
     hr_rest: float | None,
     sex: Sex | None,
     athlete: Athlete | None,
+    schedule: PlanSchedule | None,
     save: bool,
 ) -> ReportResult:
     runs = metrics.canonical_run_activities(
@@ -498,7 +512,7 @@ def _run(
     weekly = metrics.weekly_volume(runs)
     efforts = analytics.best_effort_records(conn, runs)
     pace = metrics.pace_points(runs)
-    predictions = metrics.predict_races(runs)
+    predictions = _ensemble_race_predictions(conn, runs)
 
     # Workout HR samples (from run streams only) drive the histogram, zones, and
     # the HR-max estimate — never passive/resting HR.
@@ -994,7 +1008,16 @@ def _run(
             anomalies,
             table,
         ),
+        today=_today_plan(
+            conn,
+            schedule,
+            datetime.now().date(),
+            hr_max=hr_max_value,
+            hr_rest=hr_rest_value,
+            sex=sex,
+        ),
         provenance=_hr_provenance(hr_max, hr_rest, hr_max_value, hr_rest_value),
+        coverage=_coverage(conn, runs, quarantined, cost_source),
     )
     report_html = html_report.render(model, out_dir)
     return ReportResult(
@@ -1021,6 +1044,114 @@ def _hr_provenance(
         f"TRIMP load, HR zones and intensity. The Resting HR card below is passive "
         f"Apple Watch data, tracked separately."
     )
+
+
+def _ensemble_race_predictions(
+    conn: sqlite3.Connection, runs: Sequence[metrics.Run]
+) -> list[metrics.RacePrediction]:
+    """Race-time projections from the individualized ensemble (Riegel + the
+    athlete's fitted fatigue exponent + critical speed), over best efforts, rather
+    than a single-effort Riegel scaling."""
+    efforts = [
+        (e.distance_m, e.seconds) for e in analytics.best_effort_records(conn, runs)
+    ]
+    if not efforts:
+        return []
+    model = cs.critical_speed(conn, runs)
+    predictions: list[metrics.RacePrediction] = []
+    for label, dist_km in (
+        ("5k", 5.0),
+        ("10k", 10.0),
+        ("Half", 21.0975),
+        ("Marathon", 42.195),
+    ):
+        pred = race.predict(efforts, dist_km * 1000, model)
+        if pred is not None:
+            predictions.append(
+                metrics.RacePrediction(
+                    label=label, distance_km=dist_km, seconds=pred.seconds
+                )
+            )
+    return predictions
+
+
+def _race_outlook(fc: RaceForecast | None, today: date) -> str:
+    """One line: distance, race day, days out, projected time and CI band."""
+    if fc is None:
+        return ""
+    km = fc.distance_m / 1000
+    days = (fc.race_day - today).days
+    band = ""
+    if fc.ci_low_s is not None and fc.ci_high_s is not None:
+        band = (
+            f" (95% CI {forecast.format_race_time(fc.ci_low_s)}"
+            f"–{forecast.format_race_time(fc.ci_high_s)})"
+        )
+    return (
+        f"{km:.0f} km on {fc.race_day} ({days} d): "
+        f"{forecast.format_race_time(fc.predicted_s)}{band}"
+    )
+
+
+def _today_plan(
+    conn: sqlite3.Connection,
+    schedule: PlanSchedule | None,
+    today: date,
+    *,
+    hr_max: float,
+    hr_rest: float,
+    sex: Sex | None,
+) -> TodayPlan:
+    """Surface the coach's deterministic go/easy/rest call, next session, race."""
+    from runlog.coach import daily
+
+    card = daily.build_today(
+        conn, schedule, today, hr_max=hr_max, hr_rest=hr_rest, sex=sex
+    )
+    session = card.session
+    session_text = ""
+    if session is not None and session.is_rest:
+        session_text = "rest day"
+    elif session is not None:
+        session_text = f"{session.kind} — {session.description}".strip(" —")
+    return TodayPlan(
+        action=card.guidance.action,
+        reason=card.guidance.reasons[0],
+        session=session_text,
+        race=_race_outlook(card.forecast, today),
+    )
+
+
+def _coverage(
+    conn: sqlite3.Connection,
+    runs: Sequence[metrics.Run],
+    quarantined: int,
+    calorie_source: str | None,
+) -> list[tuple[str, str]]:
+    """What the report actually ran on, so a reduced sample is never hidden."""
+    total = len(runs)
+    if not total:
+        return []
+    by_source = Counter(run.source for run in runs)
+    with_stream = sum(
+        1
+        for run in runs
+        if conn.execute(
+            "SELECT 1 FROM stream_points WHERE activity_id = ? LIMIT 1",
+            (int(queries.stream_bearing_id(conn, run.activity_id)),),
+        ).fetchone()
+    )
+    runs_label = f"{total}" + (f" · {quarantined} quarantined" if quarantined else "")
+    rows = [
+        ("Runs analysed", runs_label),
+        ("Sources", " · ".join(f"{src} {n}" for src, n in sorted(by_source.items()))),
+        ("Streams", f"{with_stream}/{total} with a usable trace"),
+        ("Heart rate", f"{sum(1 for r in runs if r.avg_hr)}/{total}"),
+        ("Cadence", f"{sum(1 for r in runs if r.avg_cadence)}/{total}"),
+    ]
+    if calorie_source:
+        rows.append(("Calories", f"pinned to {calorie_source}"))
+    return rows
 
 
 def _series_delta(dated: Sequence[tuple[date, float]], days: int = 28) -> float | None:

@@ -213,6 +213,7 @@ def _cmd_report(args: argparse.Namespace) -> int:
         hr_rest=hr_rest,
         sex=cfg.sex,
         athlete=cfg.demographics(),
+        schedule=_resolve_schedule(getattr(args, "plan", None)),
         save=not args.no_save,
     )
     print(result.summary_text)

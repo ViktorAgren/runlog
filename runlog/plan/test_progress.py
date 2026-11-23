@@ -16,6 +16,7 @@ from runlog.plan.progress import (
     LapSplit,
     build_progress,
     interval_summary,
+    work_pace_s_per_km,
     workout_detail,
 )
 
@@ -212,6 +213,22 @@ def _lap(index: int, dist: float, pace: float, hr: float, cad: float) -> LapSpli
         avg_hr=hr,
         avg_cadence=cad,
     )
+
+
+def test_work_pace_isolates_the_reps() -> None:
+    laps = (
+        _lap(0, 1000.0, 360.0, 150.0, 160.0),  # warm-up, excluded
+        _lap(1, 400.0, 280.0, 170.0, 180.0),
+        _lap(2, 400.0, 284.0, 171.0, 181.0),
+        _lap(3, 400.0, 288.0, 172.0, 182.0),
+        _lap(4, 1000.0, 370.0, 150.0, 160.0),  # cool-down, excluded
+    )
+    # Distance-weighted over the three reps only: (280+284+288)/3 at equal 400 m.
+    assert work_pace_s_per_km(laps) == 284.0
+
+
+def test_work_pace_none_without_laps() -> None:
+    assert work_pace_s_per_km(()) is None
 
 
 def test_interval_summary_splits_work_from_recovery() -> None:
