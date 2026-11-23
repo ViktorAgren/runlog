@@ -39,6 +39,7 @@ web = [
 ]
 dev = [
     "pytest>=8.0",
+    "pytest-cov>=5",
     # Gate tools pinned exactly so local and CI never drift: an unpinned linter
     # bump (e.g. a new ruff rule) must be an explicit version change, not a
     # surprise red build.
@@ -88,5 +89,18 @@ module = ["matplotlib.*", "seaborn.*", "fitparse.*", "scipy.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
+# --cov is left off here so a single-file run isn't held to the whole-suite
+# gate; CI passes --cov explicitly to enforce fail_under below.
 addopts = "--disable-warnings"
 testpaths = ["runlog", "tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["runlog"]
+omit = ["*/test_*.py", "runlog/__main__.py"]
+
+[tool.coverage.report]
+show_missing = true
+# Current branch coverage is ~89%; hold the line a touch below so a regression
+# fails CI. Raise this with coverage, never lower it to pass (add tests instead).
+fail_under = 87

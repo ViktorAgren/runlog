@@ -16,6 +16,8 @@ env/
 .ruff_cache/
 .pytest_cache/
 .hypothesis/
+.coverage
+htmlcov/
 
 # Secrets
 .env
