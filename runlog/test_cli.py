@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import argparse
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -109,6 +111,61 @@ def test_cli_plan_ongoing_and_dated_dry_run(
         == 0
     )
     assert "RACE DATE: 2026-12-01" in capsys.readouterr().out
+
+
+def _write_plan(plans_dir: Path) -> None:
+    plans_dir.mkdir(parents=True)
+    (plans_dir / "plan-10k-ongoing-2026-11-16.md").write_text(
+        "# Training plan — 10k\n"
+        "block start 2026-11-16\n\n"
+        "| Date | Day | Type | Pace | HR | Session |\n"
+        "| --- | --- | --- | --- | --- | --- |\n"
+        "| Nov 16 | Mon | Easy | 5:40/km | 133-148 | 8 km |\n"
+        "| Nov 18 | Wed | Intervals | 4:00/km | 178-193 | 4x3min |\n"
+    )
+
+
+def _recording(
+    calls: dict[str, argparse.Namespace], key: str
+) -> Callable[[argparse.Namespace], int]:
+    def handler(args: argparse.Namespace) -> int:
+        calls[key] = args
+        return 0
+
+    return handler
+
+
+def test_cli_weekly_chains_sync_then_resolves_plan_review(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_dir = tmp_path / "data"
+    monkeypatch.setenv("RUNLOG_DATA_DIR", str(data_dir))
+    _write_plan(data_dir / "plans")
+    calls: dict[str, argparse.Namespace] = {}
+    monkeypatch.setattr("runlog.cli._cmd_sync", _recording(calls, "sync"))
+    monkeypatch.setattr("runlog.cli._cmd_plan_review", _recording(calls, "review"))
+
+    code = main(["weekly"])
+
+    assert (code, calls["sync"].report, calls["review"].start) == (
+        0,
+        True,
+        "2026-11-16",
+    )
+    assert str(calls["review"].plan).endswith("plan-10k-ongoing-2026-11-16.md")
+
+
+def test_cli_weekly_no_review_stops_after_sync(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("RUNLOG_DATA_DIR", str(tmp_path / "data"))
+    calls: dict[str, argparse.Namespace] = {}
+    monkeypatch.setattr("runlog.cli._cmd_sync", _recording(calls, "sync"))
+    monkeypatch.setattr("runlog.cli._cmd_plan_review", _recording(calls, "review"))
+
+    code = main(["weekly", "--no-review"])
+
+    assert (code, "sync" in calls, "review" in calls) == (0, True, False)
 
 
 def test_cli_today_and_last_on_empty_db(

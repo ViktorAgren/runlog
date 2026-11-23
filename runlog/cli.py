@@ -23,6 +23,9 @@ Commands:
          [--max-distance KM] [--max-time MIN] [--dry-run]
                                 generate an AI training plan (needs API key;
                                 --dry-run prints the prompt instead)
+    weekly [--no-review] [--dry-run]
+                                Sunday loop: sync + report, then plan-review the
+                                active plan (auto-resolves plan and block start)
 """
 
 from __future__ import annotations
@@ -399,6 +402,41 @@ def _cmd_plan_review(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_weekly(args: argparse.Namespace) -> int:
+    """Sunday loop: sync every source, rebuild the report, then AI plan-review.
+
+    Reuses the sync (+report) and plan-review commands; the active plan and its
+    block-start date (its first dated session) are resolved automatically.
+    """
+    from runlog.plan import schedule
+
+    rc = _cmd_sync(argparse.Namespace(apple=args.apple, runna=args.runna, report=True))
+    if rc != 0 or args.no_review:
+        return rc
+
+    active = schedule.find_active_plan(resolve_paths().data_dir / "plans")
+    if active is None:
+        print("\nNo plan in data/plans yet; skipping review.")
+        return 0
+    sched = schedule.load_schedule(active)
+    if not sched.sessions:
+        print(f"\n{active.name} has no dated sessions; skipping review.")
+        return 0
+
+    start = sched.sessions[0].day
+    print(f"\nReviewing {active.name} from block start {start.isoformat()}:\n")
+    return _cmd_plan_review(
+        argparse.Namespace(
+            plan=str(active),
+            start=start.isoformat(),
+            hr_max=args.hr_max,
+            out=None,
+            model=args.model,
+            dry_run=args.dry_run,
+        )
+    )
+
+
 def _cmd_serve(args: argparse.Namespace) -> int:
     try:
         import uvicorn
@@ -571,6 +609,34 @@ def _build_parser() -> argparse.ArgumentParser:
         help="print the review prompt instead of calling the API (no key/credits)",
     )
     review_cmd.set_defaults(func=_cmd_plan_review)
+
+    weekly_cmd = sub.add_parser(
+        "weekly",
+        help="Sunday loop: sync all sources, rebuild the report, then plan-review",
+    )
+    weekly_cmd.add_argument(
+        "--apple", help="Apple export ZIP (default: the archived export)"
+    )
+    weekly_cmd.add_argument(
+        "--runna", help="Runna export ZIP (default: the newest archived export)"
+    )
+    weekly_cmd.add_argument(
+        "--hr-max", type=float, help="your true max HR (overrides athlete.toml)"
+    )
+    weekly_cmd.add_argument(
+        "--model", default="claude-opus-4-8", help="Claude model for the review"
+    )
+    weekly_cmd.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="print the review prompt instead of calling the API (no key/credits)",
+    )
+    weekly_cmd.add_argument(
+        "--no-review",
+        action="store_true",
+        help="stop after sync + report; skip the AI plan-review",
+    )
+    weekly_cmd.set_defaults(func=_cmd_weekly)
 
     series_cmd = sub.add_parser(
         "series", help="export the persisted derived timeseries as CSV"
