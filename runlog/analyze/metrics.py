@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from runlog.analyze import dedup
+from runlog.analyze import dedup, zones
 from runlog.db import queries
 from runlog.db.quality import MAX_RUN_HR, MIN_RUN_HR, QUARANTINE_FLAGS
 from runlog.domain import ActivityId, Source
@@ -739,15 +739,11 @@ def consistency_summary(runs: Sequence[Run]) -> ConsistencySummary:
 
 # --- Heart-rate zones & training load (workout HR only) ---------------------
 
-# Zone boundaries as a fraction of heart-rate *reserve* (Karvonen), not raw
-# %HRmax: a plain %HRmax split pushes an efficient, low-resting-HR runner's easy
-# aerobic running up into the moderate band. Z5 upper bound is open.
-_HR_ZONES: tuple[tuple[str, float, float], ...] = (
-    ("Z1", 0.50, 0.60),
-    ("Z2", 0.60, 0.70),
-    ("Z3", 0.70, 0.80),
-    ("Z4", 0.80, 0.90),
-    ("Z5", 0.90, 10.0),
+# Karvonen reserve zones, from the canonical table in ``zones``. The open top of
+# Z5 is carried as 10.0 here (the sentinel the bound/index helpers below expect).
+_HR_ZONES: tuple[tuple[str, float, float], ...] = tuple(
+    (z.label, z.low_frac, z.high_frac if z.high_frac is not None else 10.0)
+    for z in zones.ZONES
 )
 
 

@@ -14,7 +14,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from runlog.analyze import analytics, anomaly, metrics, records
+from runlog.analyze import analytics, anomaly, metrics, records, zones
 from runlog.db import quality, queries
 from runlog.domain import ActivityId
 from runlog.plan import progress
@@ -178,13 +178,12 @@ def _load_stream(conn: sqlite3.Connection, activity_id: ActivityId) -> list[_Str
 
 
 # Physiological name per Karvonen zone, shown next to Z1..Z5.
-_ZONE_NAMES = ("Recovery", "Endurance", "Tempo", "Threshold", "VO2max")
-# Per-workout threshold *heart rates* as a fraction of heart-rate reserve: LT1
-# (aerobic threshold) at the Z2/Z3 boundary, LT2 (lactate/anaerobic threshold)
-# near the top of the threshold band (Z4/Z5 boundary). These are HR anchors in
-# bpm and are distinct from cs.LT1_OF_LT2, which relates threshold *speeds*.
-_LT1_HR_FRACTION = 0.70
-_LT2_HR_FRACTION = 0.90
+_ZONE_NAMES = tuple(zone.name for zone in zones.ZONES)
+# Per-workout threshold *heart rates* as a fraction of heart-rate reserve, pinned
+# to the zone boundaries. These are HR anchors in bpm and are distinct from
+# cs.LT1_OF_LT2, which relates threshold *speeds*.
+_LT1_HR_FRACTION = zones.LT1_RESERVE_FRACTION
+_LT2_HR_FRACTION = zones.LT2_RESERVE_FRACTION
 
 
 def _zone_seconds(

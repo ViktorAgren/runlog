@@ -36,6 +36,6 @@ def test_build_training_zones_shape() -> None:
     kinds = [z.kind for z in zones]
     assert kinds == ["Recovery", "Easy", "Marathon", "Threshold", "Interval", "Rep"]
     threshold = next(z for z in zones if z.kind == "Threshold")
-    assert (threshold.hr_low, threshold.hr_high) == (169, 176)  # 0.85/0.90 of reserve
+    assert (threshold.hr_low, threshold.hr_high) == (162, 176)  # Z4: 0.80/0.90
     # Reps are steered by feel, not HR.
     assert next(z for z in zones if z.kind == "Rep").hr_low is None
