@@ -178,7 +178,10 @@ def _cmd_sync(args: argparse.Namespace) -> int:
         print("Runna: no export found, skipping.")
 
     linked = link.link_activities(conn)
-    print(f"Linked {linked} Strava/Apple activity pairs.\n")
+    runna_linked = link.link_runna_apple(conn)
+    print(
+        f"Linked {linked} Strava/Apple and {runna_linked} Runna/Apple activity pairs.\n"
+    )
 
     counts = store.table_counts(conn)
     width = max(len(name) for name in counts)
